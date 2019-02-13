@@ -29,7 +29,7 @@ function(nvart_debug MSGSTR)
 endfunction()
 
 function(nvart_fatal MSGSTR)
-  message(STATUS "${BoldRed}[NVArt-Fatal]:${ColorReset} ${MSGSTR}")
+  message(FATAL_ERROR "${BoldRed}[NVArt-Fatal]:${ColorReset} ${MSGSTR}")
 endfunction()
 
 function(nvart_set_default_properties)
