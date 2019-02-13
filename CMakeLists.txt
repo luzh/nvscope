@@ -37,6 +37,8 @@ nvart_print("Using C++ compiler: ${CMAKE_CXX_COMPILER}")
 # Import LLVM's CMake modules.
 list(APPEND CMAKE_MODULE_PATH ${LLVM_CMAKE_DIR})
 include(AddLLVM)
+# Enable options like opt -stats -debug etc. But this adds LLVM_DEFINITIONS to
+# all build targets, which may be a potential issue.
 include(HandleLLVMOptions)
 
 # Set the project build type.
@@ -50,3 +52,4 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 
 # Add directories.
 add_subdirectory(lib)
+add_subdirectory(test)
