@@ -8,8 +8,10 @@ project(NVArt
   DESCRIPTION "Automated recovery testing tools for NVMM applications"
 )
 
+list(APPEND CMAKE_PREFIX_PATH "${CMAKE_HOME_DIRECTORY}/llvm")
+
 # Require LLVM and Clang for instrumentation.
-find_package(LLVM REQUIRED CONFIG)
+find_package(LLVM REQUIRED CONFIG 7.0.0)
 
 nvart_print("Found LLVM ${LLVM_PACKAGE_VERSION}")
 nvart_print("Using LLVMConfig.cmake in: ${LLVM_DIR}")
