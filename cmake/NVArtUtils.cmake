@@ -183,7 +183,7 @@ function(nvart_add_executable)
         COMMENT
           "Applying LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}"
         COMMAND
-          ${LLVM_TOOLS_BINARY_DIR}/opt ${PASS_ARGS} ${LLVM_BC_FILE} -o ${LLVM_OPT_BC_FILE}
+          ${LLVM_TOOLS_BINARY_DIR}/opt ${PASS_ARGS} ${LLVM_BC_FILE} -stats -o ${LLVM_OPT_BC_FILE}
         COMMAND
           ${LLVM_TOOLS_BINARY_DIR}/llvm-dis ${LLVM_OPT_BC_FILE}
         COMMAND
