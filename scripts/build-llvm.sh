@@ -4,10 +4,6 @@
 
 set -e
 
-errexit() {
-  echo "### Error: $1" && exit 1
-}
-
 VERSION=7.0.1
 
 PACKAGE=llvmorg-$VERSION.tar.gz
@@ -16,26 +12,30 @@ SRC_DIR=/tmp/llvm-project-$VERSION
 BUILD_DIR=$SRC_DIR/build
 INSTALL_DIR=$PWD/llvm
 
-test -d $BUILD_DIR && errexit "$BUILD_DIR already exists!"
-test -d $INSTALL_DIR && errexit "$INSTALL_DIR already exists!"
+if [ ! -d $SRC_DIR ]; then
+  mkdir -p $SRC_DIR
+  wget $SRC_URL -O $SRC_DIR/$PACKAGE
+  tar -zxvf $SRC_DIR/$PACKAGE -C $SRC_DIR --strip-components=1
+fi
 
-mkdir -p $SRC_DIR $BUILD_DIR $INSTALL_DIR
-wget $SRC_URL -O $SRC_DIR/$PACKAGE
-tar -zxvf $SRC_DIR/$PACKAGE -C $SRC_DIR --strip-components=1
-
-cd $BUILD_DIR
-
-# clang-tools-extra is enabled with clang
-cmake -G "Unix Makefiles" \
-  -S $SRC_DIR/llvm \
-  -DLLVM_ENABLE_ASSERTIONS=ON \
-  -DLLVM_TARGETS_TO_BUILD="X86" \
-  -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-  -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR
+if [ ! -d $BUILD_DIR ]; then
+  mkdir -p $BUILD_DIR
+  # clang-tools-extra is enabled with clang
+  cmake -G "Unix Makefiles" \
+    -B $BUILD_DIR -S $SRC_DIR/llvm \
+    -DLLVM_ENABLE_ASSERTIONS=ON \
+    -DLLVM_TARGETS_TO_BUILD="X86" \
+    -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
+    -DLLVM_INSTALL_UTILS=ON \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR
+fi
 
 cpus=$(getconf _NPROCESSORS_ONLN)
-make -j$cpus
+# cd $BUILD_DIR && make -j$cpus
+cmake --build $BUILD_DIR --parallel $cpus
 
-make install
+mkdir -p $INSTALL_DIR
+# make install
+cmake --build $BUILD_DIR --target install
