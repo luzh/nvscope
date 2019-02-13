@@ -1,0 +1,89 @@
+# AFL Findings
+findings
+
+# AFL Binaries
+as
+afl-analyze
+afl-as
+afl-clang
+afl-clang++
+afl-clang-fast
+afl-clang-fast++
+afl-fuzz
+afl-g++
+afl-gcc
+afl-gotcpu
+afl-showmap
+afl-tmin
+
+# Cscope Data
+cscope.in.out
+cscope.out
+cscope.po.out
+
+# CMake generated files
+build
+
+# Other temporaty files
+llvm
+vimtabs
+
+# Other Generated Files
+*.s
+*.log
+*.rel
+
+# https://github.com/github/gitignore/blob/master/C.gitignore
+
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
