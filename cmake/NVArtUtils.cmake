@@ -146,13 +146,13 @@ function(nvart_add_executable)
   #     ${LLVM_IR_FILE}
   # )
 
-    get_source_file_property(LLVM_PASSES ${SRC_FILE} LLVM_PASSES)
-    if (LLVM_PASSES STREQUAL "NOTFOUND")
-      set(LLVM_PASSES "")
+    get_source_file_property(LLVM_OPT_PASSES ${SRC_FILE} LLVM_OPT_PASSES)
+    if (LLVM_OPT_PASSES STREQUAL "NOTFOUND")
+      set(LLVM_OPT_PASSES "")
     endif()
 
     set(PASS_ID "0")
-    foreach(LLVM_PASS ${LLVM_PASSES})
+    foreach(LLVM_OPT_PASS ${LLVM_OPT_PASSES})
       math(EXPR PASS_ID "${PASS_ID} + 1")
       set(LLVM_OPT_BC_NAME "${SRC_BASE_NAME}.opt${PASS_ID}.bc")
       set(LLVM_OPT_IR_NAME "${SRC_BASE_NAME}.opt${PASS_ID}.ll")
@@ -161,17 +161,27 @@ function(nvart_add_executable)
       set(LLVM_OPT_IR_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_IR_NAME}")
       set(LLVM_OPT_AS_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_AS_NAME}")
 
-      # convert string to list to remove quotes
-      separate_arguments(PASS_ARGS UNIX_COMMAND ${LLVM_PASS})
-      nvart_print("Will apply LLVM pass '${LLVM_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}")
+      # Convert string to list to remove quotes.
+      separate_arguments(PASS_ARGS UNIX_COMMAND ${LLVM_OPT_PASS})
+      nvart_print("Will apply LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}")
+
+      # Extract dependent pass modules from the arguments.
+      set(LLVM_OPT_DEPS "")
+      string(REGEX MATCHALL "-load[ \t=]*([^ \t\n\r]*)$?" LLVM_OPT_LOADS ${LLVM_OPT_PASS})
+      foreach(LLVM_OPT_LOAD ${LLVM_OPT_LOADS})
+        string(REGEX REPLACE "-load[ \t=]*" "" LLVM_OPT_LOAD ${LLVM_OPT_LOAD})
+        if (NOT LLVM_OPT_LOAD IN_LIST LLVM_OPT_DEPS)
+          list(APPEND LLVM_OPT_DEPS ${LLVM_OPT_LOAD})
+        endif()
+      endforeach()
 
       add_custom_command(
         OUTPUT
           ${LLVM_OPT_BC_FILE} ${LLVM_OPT_IR_FILE} ${LLVM_OPT_AS_FILE}
         DEPENDS
-          ${LLVM_BC_FILE}
+          ${LLVM_BC_FILE} ${LLVM_OPT_DEPS}
         COMMENT
-          "Applying LLVM pass '${LLVM_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}"
+          "Applying LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}"
         COMMAND
           ${LLVM_TOOLS_BINARY_DIR}/opt ${PASS_ARGS} ${LLVM_BC_FILE} -o ${LLVM_OPT_BC_FILE}
         COMMAND
