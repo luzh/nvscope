@@ -46,6 +46,8 @@ nvart_print("Project build type: ${CMAKE_BUILD_TYPE}")
 
 # Show details of the make flow.
 set(CMAKE_VERBOSE_MAKEFILE ON)
+set(CMAKE_INSTALL_PREFIX /tmp/nvart)
+nvart_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
 # Add directories.
 add_subdirectory(lib)

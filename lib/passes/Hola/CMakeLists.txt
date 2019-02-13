@@ -8,3 +8,5 @@ if(NOT ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
 endif()
 
 target_include_directories(LLVMHola PRIVATE ${LLVM_INCLUDE_DIRS})
+
+install(TARGETS LLVMHola DESTINATION lib)
