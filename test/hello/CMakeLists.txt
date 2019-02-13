@@ -1,3 +1,13 @@
-add_executable(hello hello.c)
+nvart_set_default_properties(hello.c)
 
-install(TARGETS hello DESTINATION bin)
+set_property(
+  SOURCE
+    hello.c
+  PROPERTY LLVM_PASSES
+    "-load ${NVART_PASSES_DIR}/Hola/LLVMHola.so -hola"
+    "-load ${NVART_PASSES_DIR}/Hola/LLVMHola.so -hola2"
+)
+
+nvart_add_executable(hello hello.c)
+
+add_dependencies(hello LLVMHola)
