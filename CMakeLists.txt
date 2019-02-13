@@ -21,7 +21,7 @@ find_package(LLVM REQUIRED CONFIG 7.0.1)
 
 # Print LLVM information.
 nvart_print("Found LLVM ${LLVM_PACKAGE_VERSION}")
-nvart_print("LLVM build type is ${LLVM_BUILD_TYPE}")
+nvart_print("LLVM build type: ${LLVM_BUILD_TYPE}")
 nvart_print("LLVM_CMAKE_DIR: ${LLVM_CMAKE_DIR}")
 nvart_print("Using LLVMConfig.cmake in: ${LLVM_DIR}")
 nvart_print("LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")
@@ -37,15 +37,12 @@ nvart_print("Using C++ compiler: ${CMAKE_CXX_COMPILER}")
 # Import LLVM's CMake modules.
 list(APPEND CMAKE_MODULE_PATH ${LLVM_CMAKE_DIR})
 include(AddLLVM)
-# Enable options like opt -stats -debug etc. But this adds LLVM_DEFINITIONS to
-# all build targets, which may be a potential issue.
-include(HandleLLVMOptions)
 
 # Set the project build type.
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
-nvart_print("Project build type is ${CMAKE_BUILD_TYPE}")
+nvart_print("Project build type: ${CMAKE_BUILD_TYPE}")
 
 # Show details of the make flow.
 set(CMAKE_VERBOSE_MAKEFILE ON)
