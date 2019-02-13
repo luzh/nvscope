@@ -38,7 +38,7 @@ function(nvart_set_default_properties)
     SOURCE
       ${ARGV}
     PROPERTY INCLUDE_DIRECTORIES
-      ${CMAKE_HOME_DIRECTORY}/include
+      ${CMAKE_SOURCE_DIR}/include
   )
 
   set_property(
@@ -114,6 +114,9 @@ function(nvart_add_executable)
       set(COMPILE_FLAGS_ARGS "")
     endif()
 
+    # This applies user-defined COMPILE_FLAGS_ARGS to the source file, which may
+    # contain clang's built-in optimizations, e.g. -O2, -O3. Therefore, other
+    # user-specified passes will apply after them.
     add_custom_command(
       OUTPUT
         ${LLVM_BC_FILE} ${LLVM_IR_FILE} ${LLVM_AS_FILE}

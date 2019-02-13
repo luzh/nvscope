@@ -5,11 +5,11 @@ project(NVArt
 )
 
 # Add CMake modules for NVArt.
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_HOME_DIRECTORY}/cmake)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include(NVArtUtils)
 
 if(NOT LLVM_INSTALL_DIR)
-  set(LLVM_INSTALL_DIR "${CMAKE_HOME_DIRECTORY}/llvm/lib/cmake/llvm")
+  set(LLVM_INSTALL_DIR "${CMAKE_SOURCE_DIR}/llvm/lib/cmake/llvm")
 endif()
 if(NOT EXISTS ${LLVM_INSTALL_DIR})
   nvart_fatal("LLVM_INSTALL_DIR '${LLVM_INSTALL_DIR}' does not exist!")
@@ -22,8 +22,7 @@ find_package(LLVM REQUIRED CONFIG 7.0.1)
 # Print LLVM information.
 nvart_print("Found LLVM ${LLVM_PACKAGE_VERSION}")
 nvart_print("LLVM build type: ${LLVM_BUILD_TYPE}")
-nvart_print("LLVM_CMAKE_DIR: ${LLVM_CMAKE_DIR}")
-nvart_print("Using LLVMConfig.cmake in: ${LLVM_DIR}")
+nvart_print("Using LLVMConfig.cmake in: ${LLVM_CMAKE_DIR}")
 nvart_print("LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")
 nvart_print("LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
 nvart_print("LLVM_TOOLS_BINARY_DIR: ${LLVM_TOOLS_BINARY_DIR}")
@@ -47,6 +46,9 @@ nvart_print("Project build type: ${CMAKE_BUILD_TYPE}")
 # Show details of the make flow.
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_INSTALL_PREFIX /tmp/nvart)
+# This is for test and tools to find the latest build of NVArt passes.
+set(NVART_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
+
 nvart_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
 # Add directories.
