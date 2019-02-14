@@ -11,6 +11,9 @@ SRC_URL=https://github.com/llvm/llvm-project/archive/$PACKAGE
 SRC_DIR=/tmp/llvm-project-$VERSION
 BUILD_DIR=$SRC_DIR/build
 INSTALL_DIR=$PWD/llvm
+# SRC_DIR=$HOME/local/source/llvm-project-$VERSION
+# BUILD_DIR=/tmp/llvm-build-$VERSION
+# INSTALL_DIR=$HOME/local/install/llvm-$VERSION
 
 if [ ! -d $SRC_DIR ]; then
   mkdir -p $SRC_DIR
