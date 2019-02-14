@@ -185,6 +185,7 @@ function(nvart_add_executable)
     )
   # IR always generates with Bitcode. Don't need this target explicitly unless
   # `make <source>.ll` is desired on the command line.
+  #
   # add_custom_target(
   #   ${LLVM_IR_NAME}
   #   DEPENDS
@@ -253,15 +254,18 @@ function(nvart_add_executable)
     list(APPEND LLVM_BC_FILES ${LLVM_BC_FILE})
   endforeach()
 
- #add_custom_target(
- #  ${EXE_TARGET} ALL
- #  DEPENDS
- #    ${LLVM_BC_FILES}
- #  COMMENT
- #    "Generating executable ${EXE_TARGET}"
- #  COMMAND
- #    ${CMAKE_C_COMPILER} ${LLVM_BC_FILES} -o ${EXE_TARGET}
- #)
+# Custom target also works for this function. But CMake does not support custom
+# target in some other handy functions, such as target_link_libraries().
+#
+# add_custom_target(
+#   ${EXE_TARGET} ALL
+#   DEPENDS
+#     ${LLVM_BC_FILES}
+#   COMMENT
+#     "Generating executable ${EXE_TARGET}"
+#   COMMAND
+#     ${CMAKE_C_COMPILER} ${LLVM_BC_FILES} -o ${EXE_TARGET}
+# )
 
   set_source_files_properties(
     ${LLVM_BC_FILES}
