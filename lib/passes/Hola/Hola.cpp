@@ -27,7 +27,7 @@ STATISTIC(HolaCounter, "Counts number of functions greeted");
 namespace {
 // Hola - The first implementation, without getAnalysisUsage.
 struct Hola : public FunctionPass {
-  static char ID; // Pass identification, replacement for typeid
+  static char ID;  // Pass identification, replacement for typeid
   Hola() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
@@ -37,7 +37,7 @@ struct Hola : public FunctionPass {
     return false;
   }
 };
-} // namespace
+}  // namespace
 
 char Hola::ID = 0;
 static RegisterPass<Hola> X("hola", "Hola Mundo Pass");
@@ -45,7 +45,7 @@ static RegisterPass<Hola> X("hola", "Hola Mundo Pass");
 namespace {
 // Hola2 - The second implementation with getAnalysisUsage implemented.
 struct Hola2 : public FunctionPass {
-  static char ID; // Pass identification, replacement for typeid
+  static char ID;  // Pass identification, replacement for typeid
   Hola2() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
@@ -60,8 +60,8 @@ struct Hola2 : public FunctionPass {
     AU.setPreservesAll();
   }
 };
-} // namespace
+}  // namespace
 
 char Hola2::ID = 0;
-static RegisterPass<Hola2>
-    Y("hola2", "Hola Mundo Pass (with getAnalysisUsage implemented)");
+static RegisterPass<Hola2> Y(
+    "hola2", "Hola Mundo Pass (with getAnalysisUsage implemented)");
