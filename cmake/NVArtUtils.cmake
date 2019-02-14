@@ -99,17 +99,16 @@ function(nvart_add_executable)
 
   nvart_print("Sources for target ${EXE_TARGET}: ${SRC_NAMES}")
 
-  set(LINKER_LANG "")
-  set(LLVM_BC_FILES "")
   set(C_SRC_EXTS "H;C")
   set(CXX_SRC_EXTS "HPP;CC;CPP")
+  set(SRC_HEADER_EXTS "H;HPP")
+
+  set(LINKER_LANG "")
+  set(LLVM_BC_FILES "")
 
   foreach(SRC_NAME ${SRC_NAMES})
-    get_filename_component(SRC_FILE ${SRC_NAME} ABSOLUTE)
-    get_filename_component(SRC_BASE_NAME ${SRC_NAME} NAME_WE)
-
     string(REGEX MATCHALL "\.([a-z]+)$" SRC_NAME_EXT ${SRC_NAME})
-    string(TOUPPER ${CMAKE_MATCH_1} SRC_NAME_EXT)
+    string(TOUPPER ${CMAKE_MATCH_1} SRC_NAME_EXT) # last file extension
     if(SRC_NAME_EXT IN_LIST CXX_SRC_EXTS)
       set(LINKER_LANG "CXX")
     elseif(SRC_NAME_EXT IN_LIST C_SRC_EXTS)
@@ -120,9 +119,17 @@ function(nvart_add_executable)
       nvart_fatal("Unsupported source type: ${SRC_NAME}")
     endif()
 
-    set(LLVM_BC_NAME "${SRC_BASE_NAME}.bc")
-    set(LLVM_IR_NAME "${SRC_BASE_NAME}.ll")
-    set(LLVM_AS_NAME "${SRC_BASE_NAME}.s")
+    if(SRC_NAME_EXT IN_LIST SRC_HEADER_EXTS)
+      continue() # Do not process headers.
+    endif()
+
+    get_filename_component(SRC_FILE ${SRC_NAME} ABSOLUTE)
+
+    string(REGEX REPLACE "/" "_" SRC_FLAT_NAME ${SRC_NAME})
+
+    set(LLVM_BC_NAME "${SRC_FLAT_NAME}.bc")
+    set(LLVM_IR_NAME "${SRC_FLAT_NAME}.ll")
+    set(LLVM_AS_NAME "${SRC_FLAT_NAME}.s")
 
     set(LLVM_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
     set(LLVM_BC_FILE "${LLVM_OUT_DIR}/${LLVM_BC_NAME}")
@@ -192,9 +199,9 @@ function(nvart_add_executable)
     set(PASS_ID "0")
     foreach(LLVM_OPT_PASS ${LLVM_OPT_PASSES})
       math(EXPR PASS_ID "${PASS_ID} + 1")
-      set(LLVM_OPT_BC_NAME "${SRC_BASE_NAME}.opt${PASS_ID}.bc")
-      set(LLVM_OPT_IR_NAME "${SRC_BASE_NAME}.opt${PASS_ID}.ll")
-      set(LLVM_OPT_AS_NAME "${SRC_BASE_NAME}.opt${PASS_ID}.s")
+      set(LLVM_OPT_BC_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.bc")
+      set(LLVM_OPT_IR_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.ll")
+      set(LLVM_OPT_AS_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.s")
       set(LLVM_OPT_BC_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_BC_NAME}")
       set(LLVM_OPT_IR_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_IR_NAME}")
       set(LLVM_OPT_AS_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_AS_NAME}")
