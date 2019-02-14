@@ -1,4 +1,4 @@
-nvart_set_default_properties(nvstack.c)
+nvart_set_sources_properties(C_Default nvstack.c)
 
 set_property(
   SOURCE

@@ -43,18 +43,30 @@ function(nvart_set_pass_properties PASS_TARGET)
     target_include_directories(${PASS_TARGET} PRIVATE ${LLVM_INCLUDE_DIRS})
 endfunction()
 
-function(nvart_set_default_properties)
-  nvart_print("Setting default properties for ${ARGV}")
+function(nvart_set_sources_properties PROFILE)
+# set(options)
+# set(oneValueArgs PROFILE)
+# set(multiValueArgs FILES)
+# cmake_parse_arguments(
+#   NVART_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+  set(VALID_PROFILES "C_Default")
+  if (NOT PROFILE IN_LIST VALID_PROFILES)
+    nvart_fatal("Invalid source profile: ${PROFILE}")
+  endif()
+
+  set(SRCS ${ARGN})
+
+  nvart_print("Using ${PROFILE} properties for ${SRCS}")
   set_property(
     SOURCE
-      ${ARGV}
+      ${SRCS}
     PROPERTY INCLUDE_DIRECTORIES
       ${CMAKE_SOURCE_DIR}/include
   )
 
   set_property(
     SOURCE
-      ${ARGV}
+      ${SRCS}
     PROPERTY COMPILE_DEFINITIONS
       GNU_SOURCE
       PRINT_COLOR
@@ -69,7 +81,7 @@ function(nvart_set_default_properties)
 
   set_property(
     SOURCE
-      ${ARGV}
+      ${SRCS}
     PROPERTY COMPILE_FLAGS
       -Wall -Wextra -std=gnu99 ${EXTRA_COMPILE_FLAGS} -emit-llvm
   )

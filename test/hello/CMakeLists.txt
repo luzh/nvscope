@@ -1,4 +1,4 @@
-nvart_set_default_properties(hello.c)
+nvart_set_sources_properties(C_Default hello.c)
 
 set_property(
   SOURCE
