@@ -43,13 +43,15 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 nvart_print("Project build type: ${CMAKE_BUILD_TYPE}")
 
-# Show details of the make flow.
-set(CMAKE_VERBOSE_MAKEFILE ON)
+# Show details of the make flow. Or use make VERBOSE=1 for the same purpose.
+# set(CMAKE_VERBOSE_MAKEFILE ON)
+
+# Set install prefix.
 set(CMAKE_INSTALL_PREFIX /tmp/nvart)
+nvart_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+
 # This is for test and tools to find the latest build of NVArt passes.
 set(NVART_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
-
-nvart_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
 # Add directories.
 add_subdirectory(lib)
