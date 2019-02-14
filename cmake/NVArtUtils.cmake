@@ -50,7 +50,7 @@ function(nvart_set_sources_properties PROFILE)
 # cmake_parse_arguments(
 #   NVART_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
   set(VALID_PROFILES "C_Default")
-  if (NOT PROFILE IN_LIST VALID_PROFILES)
+  if(NOT PROFILE IN_LIST VALID_PROFILES)
     nvart_fatal("Invalid source profile: ${PROFILE}")
   endif()
 
@@ -73,9 +73,9 @@ function(nvart_set_sources_properties PROFILE)
   )
 
   set(EXTRA_COMPILE_FLAGS "")
-  if (CMAKE_BUILD_TYPE STREQUAL "Release")
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(EXTRA_COMPILE_FLAGS -O3 -DNDEBUG)
-  elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(EXTRA_COMPILE_FLAGS -ggdb)
   endif()
 
@@ -99,11 +99,26 @@ function(nvart_add_executable)
 
   nvart_print("Sources for target ${EXE_TARGET}: ${SRC_NAMES}")
 
+  set(LINKER_LANG "")
   set(LLVM_BC_FILES "")
+  set(C_SRC_EXTS "H;C")
+  set(CXX_SRC_EXTS "HPP;CC;CPP")
 
   foreach(SRC_NAME ${SRC_NAMES})
     get_filename_component(SRC_FILE ${SRC_NAME} ABSOLUTE)
     get_filename_component(SRC_BASE_NAME ${SRC_NAME} NAME_WE)
+
+    string(REGEX MATCHALL "\.([a-z]+)$" SRC_NAME_EXT ${SRC_NAME})
+    string(TOUPPER ${CMAKE_MATCH_1} SRC_NAME_EXT)
+    if(SRC_NAME_EXT IN_LIST CXX_SRC_EXTS)
+      set(LINKER_LANG "CXX")
+    elseif(SRC_NAME_EXT IN_LIST C_SRC_EXTS)
+      if(NOT LINKER_LANG STREQUAL "CXX")
+        set(LINKER_LANG "C")
+      endif()
+    else()
+      nvart_fatal("Unsupported source type: ${SRC_NAME}")
+    endif()
 
     set(LLVM_BC_NAME "${SRC_BASE_NAME}.bc")
     set(LLVM_IR_NAME "${SRC_BASE_NAME}.ll")
@@ -115,7 +130,7 @@ function(nvart_add_executable)
     set(LLVM_AS_FILE "${LLVM_OUT_DIR}/${LLVM_AS_NAME}")
 
     get_source_file_property(INCLUDE_DIRS ${SRC_FILE} INCLUDE_DIRECTORIES)
-    if (INCLUDE_DIRS STREQUAL "NOTFOUND")
+    if(INCLUDE_DIRS STREQUAL "NOTFOUND")
       set(INCLUDE_DIRS_ARGS "")
     else()
       list(JOIN INCLUDE_DIRS " -I" INCLUDE_DIRS_ARGS)
@@ -124,7 +139,7 @@ function(nvart_add_executable)
     separate_arguments(INCLUDE_DIRS_ARGS UNIX_COMMAND ${INCLUDE_DIRS_ARGS})
 
     get_source_file_property(COMPILE_DEFS ${SRC_FILE} COMPILE_DEFINITIONS)
-    if (COMPILE_DEFS STREQUAL "NOTFOUND")
+    if(COMPILE_DEFS STREQUAL "NOTFOUND")
       set(COMPILE_DEFS_ARGS "")
     else()
       list(JOIN COMPILE_DEFS " -D" COMPILE_DEFS_ARGS)
@@ -133,7 +148,7 @@ function(nvart_add_executable)
     separate_arguments(COMPILE_DEFS_ARGS UNIX_COMMAND ${COMPILE_DEFS_ARGS})
 
     get_source_file_property(COMPILE_FLAGS_ARGS ${SRC_FILE} COMPILE_FLAGS)
-    if (COMPILE_FLAGS_ARGS STREQUAL "NOTFOUND")
+    if(COMPILE_FLAGS_ARGS STREQUAL "NOTFOUND")
       set(COMPILE_FLAGS_ARGS "")
     endif()
 
@@ -170,7 +185,7 @@ function(nvart_add_executable)
   # )
 
     get_source_file_property(LLVM_OPT_PASSES ${SRC_FILE} LLVM_OPT_PASSES)
-    if (LLVM_OPT_PASSES STREQUAL "NOTFOUND")
+    if(LLVM_OPT_PASSES STREQUAL "NOTFOUND")
       set(LLVM_OPT_PASSES "")
     endif()
 
@@ -193,7 +208,7 @@ function(nvart_add_executable)
       string(REGEX MATCHALL "-load[ \t=]*([^ \t\n\r]*)$?" LLVM_OPT_LOADS ${LLVM_OPT_PASS})
       foreach(LLVM_OPT_LOAD ${LLVM_OPT_LOADS})
         string(REGEX REPLACE "-load[ \t=]*" "" LLVM_OPT_LOAD ${LLVM_OPT_LOAD})
-        if (NOT LLVM_OPT_LOAD IN_LIST LLVM_OPT_DEPS)
+        if(NOT LLVM_OPT_LOAD IN_LIST LLVM_OPT_DEPS)
           list(APPEND LLVM_OPT_DEPS ${LLVM_OPT_LOAD})
         endif()
       endforeach()
@@ -250,9 +265,10 @@ function(nvart_add_executable)
 
   add_executable(${EXE_TARGET} ${LLVM_BC_FILES})
 
+  nvart_print("Linker language for executable '${EXE_TARGET}': ${LINKER_LANG}")
   set_target_properties(
     ${EXE_TARGET}
     PROPERTIES
-      LINKER_LANGUAGE C
+      LINKER_LANGUAGE ${LINKER_LANG}
   )
 endfunction()
