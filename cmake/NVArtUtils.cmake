@@ -231,13 +231,28 @@ function(nvart_add_executable)
     list(APPEND LLVM_BC_FILES ${LLVM_BC_FILE})
   endforeach()
 
-  add_custom_target(
-    ${EXE_TARGET} ALL
-    DEPENDS
-      ${LLVM_BC_FILES}
-    COMMENT
-      "Generating executable ${EXE_TARGET}"
-    COMMAND
-      ${CMAKE_C_COMPILER} ${LLVM_BC_FILES} -o ${EXE_TARGET}
+ #add_custom_target(
+ #  ${EXE_TARGET} ALL
+ #  DEPENDS
+ #    ${LLVM_BC_FILES}
+ #  COMMENT
+ #    "Generating executable ${EXE_TARGET}"
+ #  COMMAND
+ #    ${CMAKE_C_COMPILER} ${LLVM_BC_FILES} -o ${EXE_TARGET}
+ #)
+
+  set_source_files_properties(
+    ${LLVM_BC_FILES}
+    PROPERTIES
+      EXTERNAL_OBJECT true
+      GENERATED true
+  )
+
+  add_executable(${EXE_TARGET} ${LLVM_BC_FILES})
+
+  set_target_properties(
+    ${EXE_TARGET}
+    PROPERTIES
+      LINKER_LANGUAGE C
   )
 endfunction()
