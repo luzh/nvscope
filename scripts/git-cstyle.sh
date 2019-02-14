@@ -8,7 +8,8 @@ if [ ! -f $CLANG_FORMAT ]; then
   exit 1
 fi
 
-MODIFIED_FILES=`git diff --name-only -- *.{c,cc,cpp,h,hpp}`
+# Check modified files, both unstaged and staged.
+MODIFIED_FILES=`git diff --name-only HEAD -- *.{c,cc,cpp,h,hpp}`
 
 show_diff() {
   for file in $MODIFIED_FILES; do
