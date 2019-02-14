@@ -25,43 +25,43 @@ using namespace llvm;
 STATISTIC(HolaCounter, "Counts number of functions greeted");
 
 namespace {
-  // Hola - The first implementation, without getAnalysisUsage.
-  struct Hola : public FunctionPass {
-    static char ID; // Pass identification, replacement for typeid
-    Hola() : FunctionPass(ID) {}
+// Hola - The first implementation, without getAnalysisUsage.
+struct Hola : public FunctionPass {
+  static char ID; // Pass identification, replacement for typeid
+  Hola() : FunctionPass(ID) {}
 
-    bool runOnFunction(Function &F) override {
-      ++HolaCounter;
-      errs() << "Hola: ";
-      errs().write_escaped(F.getName()) << '\n';
-      return false;
-    }
-  };
-}
+  bool runOnFunction(Function &F) override {
+    ++HolaCounter;
+    errs() << "Hola: ";
+    errs().write_escaped(F.getName()) << '\n';
+    return false;
+  }
+};
+} // namespace
 
 char Hola::ID = 0;
 static RegisterPass<Hola> X("hola", "Hola Mundo Pass");
 
 namespace {
-  // Hola2 - The second implementation with getAnalysisUsage implemented.
-  struct Hola2 : public FunctionPass {
-    static char ID; // Pass identification, replacement for typeid
-    Hola2() : FunctionPass(ID) {}
+// Hola2 - The second implementation with getAnalysisUsage implemented.
+struct Hola2 : public FunctionPass {
+  static char ID; // Pass identification, replacement for typeid
+  Hola2() : FunctionPass(ID) {}
 
-    bool runOnFunction(Function &F) override {
-      ++HolaCounter;
-      errs() << "Hola: ";
-      errs().write_escaped(F.getName()) << '\n';
-      return false;
-    }
+  bool runOnFunction(Function &F) override {
+    ++HolaCounter;
+    errs() << "Hola: ";
+    errs().write_escaped(F.getName()) << '\n';
+    return false;
+  }
 
-    // We don't modify the program, so we preserve all analyses.
-    void getAnalysisUsage(AnalysisUsage &AU) const override {
-      AU.setPreservesAll();
-    }
-  };
-}
+  // We don't modify the program, so we preserve all analyses.
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.setPreservesAll();
+  }
+};
+} // namespace
 
 char Hola2::ID = 0;
 static RegisterPass<Hola2>
-Y("hola2", "Hola Mundo Pass (with getAnalysisUsage implemented)");
+    Y("hola2", "Hola Mundo Pass (with getAnalysisUsage implemented)");
