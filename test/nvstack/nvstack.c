@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
     printf("User-specified index is %u\n", idx);
   }
 
-  idx = idx + 10; // to be transformed by the NVArt pass
+  idx = idx + 10;  // to be transformed by the NVArt pass
   printf("Transformed index is (idx + 10) %u\n", idx);
 
   uint64_t *bufptr = (uint64_t *)(buf + idx);
