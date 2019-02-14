@@ -13,7 +13,7 @@ MODIFIED_FILES=`git diff --name-only HEAD -- *.{c,cc,cpp,h,hpp}`
 
 show_diff() {
   for file in $MODIFIED_FILES; do
-    $CLANG_FORMAT -style=llvm $file | git --no-pager diff --color=always --no-index -- $file -
+    $CLANG_FORMAT -style=google $file | git --no-pager diff --color=always --no-index -- $file -
   done
 }
 
