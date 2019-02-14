@@ -47,31 +47,31 @@
 #define PCWHT
 #endif
 
-#define printerr(fmt, ...)                                                     \
-  do {                                                                         \
-    (errno) ? fprintf(stderr, PCRED "Error: " PCRST "%s, %d, %s(): %s, " fmt,  \
-                      __FILE__, __LINE__, __func__, strerror(errno),           \
-                      ##__VA_ARGS__)                                           \
-            : fprintf(stderr, PCRED "Error: " PCRST "%s, %d, %s(): " fmt,      \
-                      __FILE__, __LINE__, __func__, ##__VA_ARGS__);            \
+#define printerr(fmt, ...)                                                    \
+  do {                                                                        \
+    (errno) ? fprintf(stderr, PCRED "Error: " PCRST "%s, %d, %s(): %s, " fmt, \
+                      __FILE__, __LINE__, __func__, strerror(errno),          \
+                      ##__VA_ARGS__)                                          \
+            : fprintf(stderr, PCRED "Error: " PCRST "%s, %d, %s(): " fmt,     \
+                      __FILE__, __LINE__, __func__, ##__VA_ARGS__);           \
   } while (0)
 
-#define printwarn(fmt, ...)                                                    \
-  do {                                                                         \
-    fprintf(stdout, PCYLW "Warning: " PCRST "%s, %d, %s(): " fmt, __FILE__,    \
-            __LINE__, __func__, ##__VA_ARGS__);                                \
+#define printwarn(fmt, ...)                                                 \
+  do {                                                                      \
+    fprintf(stdout, PCYLW "Warning: " PCRST "%s, %d, %s(): " fmt, __FILE__, \
+            __LINE__, __func__, ##__VA_ARGS__);                             \
   } while (0)
 
-#define errout(fmt, ...)                                                       \
-  do {                                                                         \
-    printerr(fmt, ##__VA_ARGS__);                                              \
-    goto out;                                                                  \
+#define errout(fmt, ...)          \
+  do {                            \
+    printerr(fmt, ##__VA_ARGS__); \
+    goto out;                     \
   } while (0)
 
 #ifdef DEBUG
-#define printdbg(fmt, ...)                                                     \
-  do {                                                                         \
-    fprintf(stdout, PCYLW "-> " PCRST "%s(): " fmt, __func__, ##__VA_ARGS__);  \
+#define printdbg(fmt, ...)                                                    \
+  do {                                                                        \
+    fprintf(stdout, PCYLW "-> " PCRST "%s(): " fmt, __func__, ##__VA_ARGS__); \
   } while (0)
 #else
 #define printdbg(fmt, ...)
