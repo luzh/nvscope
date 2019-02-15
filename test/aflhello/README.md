@@ -3,7 +3,7 @@
 The program `afl-clang-fast` or `afl-clang-fast++` (not included in this repo)
 wraps `clang` or `clang++` in the following manner.
 
-```C
+```Bash
 /path/to/clang -Xclang -load -Xclang /path/to/afl-llvm-pass.so \
 -Qunused-arguments -O3 -funroll-loops -Wall -D_FORTIFY_SOURCE=2 -g \
 -Wno-pointer-sign -DAFL_PATH="/path/to/afl" -DBIN_PATH="/path/to/afl" \
