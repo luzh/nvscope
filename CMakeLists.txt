@@ -56,3 +56,4 @@ set(NVART_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
 # Add directories.
 add_subdirectory(lib)
 add_subdirectory(test)
+add_subdirectory(tools)
