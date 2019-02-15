@@ -13,6 +13,16 @@ add_dependencies(aflhello LLVMAFL)
 
 target_link_libraries(aflhello afl)
 
+add_custom_target(
+  run
+  DEPENDS
+    aflhello
+  COMMENT
+    "Running aflhello (instrumented, no fuzzing) ..."
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/aflhello
+)
+
 set(AFL_FUZZ ${CMAKE_BINARY_DIR}/tools/afl/afl-fuzz)
 add_custom_target(
   fuzz-aflhello
