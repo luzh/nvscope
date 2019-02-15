@@ -282,4 +282,12 @@ function(nvart_add_executable)
     PROPERTIES
       LINKER_LANGUAGE ${LINKER_LANG}
   )
+
+  add_custom_command(
+    TARGET ${EXE_TARGET} POST_BUILD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND
+      objdump -M intel -S --disassemble ${EXE_TARGET} > ${EXE_TARGET}.s
+    VERBATIM
+  )
 endfunction()
