@@ -2,6 +2,8 @@ set(SRCS afl-fuzz.c)
 
 add_executable(afl-fuzz ${SRCS})
 
+# Check afl-2.52b/Makefile for compile flags, options, and definitions.
+
 target_compile_features(afl-fuzz PUBLIC c_std_99)
 target_compile_options(
   afl-fuzz PUBLIC -Wall -funroll-loops -Wno-pointer-sign -masm=intel

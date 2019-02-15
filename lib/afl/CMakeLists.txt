@@ -4,6 +4,8 @@ set(SRCS afl-llvm-rt.o.c)
 # say "No instrumentation detected".
 add_library(afl STATIC ${SRCS})
 
+# Check afl-2.52b/llvm_mode/Makefile for compile flags, options, and definitions.
+
 target_compile_features(afl PUBLIC c_std_99)
 target_compile_options(
   afl PUBLIC -Wall -Wextra -funroll-loops -Wno-pointer-sign -masm=intel
