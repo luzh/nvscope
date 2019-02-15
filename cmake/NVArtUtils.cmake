@@ -68,7 +68,7 @@ function(nvart_set_sources_properties PROFILE)
     SOURCE
       ${SRCS}
     PROPERTY COMPILE_DEFINITIONS
-      GNU_SOURCE
+      _GNU_SOURCE
       PRINT_COLOR
   )
 
