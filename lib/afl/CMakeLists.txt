@@ -1,6 +1,8 @@
 set(SRCS afl-llvm-rt.o.c)
 
-add_library(afl SHARED ${SRCS})
+# This library has to build into the fuzzed program, otherwise afl-fuzz would
+# say "No instrumentation detected".
+add_library(afl STATIC ${SRCS})
 
 target_compile_features(afl PUBLIC c_std_99)
 target_compile_options(
