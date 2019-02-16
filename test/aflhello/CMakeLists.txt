@@ -1,38 +1,41 @@
-nvart_set_sources_properties(C_Default aflhello.c)
+set(SRCS aflhello.c)
+set(PROG aflhello)
+
+nvart_set_sources_properties(C_Default ${SRCS})
 
 set_property(
   SOURCE
-    aflhello.c
+    ${SRCS}
   PROPERTY LLVM_OPT_PASSES
     "-load ${NVART_PASSES_DIR}/AFL/LLVMAFL.so -aflcov"
 )
 
-nvart_add_executable(aflhello aflhello.c)
+nvart_add_executable(${PROG} ${SRCS})
 
-add_dependencies(aflhello LLVMAFL)
+add_dependencies(${PROG} LLVMAFL)
 
-target_link_libraries(aflhello afl)
+target_link_libraries(${PROG} afl)
 
 add_custom_target(
   run
   DEPENDS
-    aflhello
+    ${PROG}
   COMMENT
-    "Running aflhello (instrumented, no fuzzing) ..."
+    "Running aflhello (no fuzzing) ..."
   COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/aflhello
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG}
 )
 
 set(AFL_FUZZ ${CMAKE_BINARY_DIR}/tools/afl/afl-fuzz)
 add_custom_target(
-  fuzz-aflhello
+  fuzz
   DEPENDS
-    afl-fuzz aflhello
+    afl-fuzz ${PROG}
   COMMENT
     "Fuzzing (AFL) aflhello ..."
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMAND
     ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/testcases testcases
   COMMAND
-    ${AFL_FUZZ} -i testcases -o findings ${CMAKE_CURRENT_BINARY_DIR}/aflhello
+    ${AFL_FUZZ} -i testcases -o findings ${CMAKE_CURRENT_BINARY_DIR}/${PROG}
 )
