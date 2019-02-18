@@ -226,13 +226,13 @@
     PP(cRST "\n");                            \
   } while (0)
 
-#define PPVAR32i(x) PPVAR("%s = %d", #x, (int32_t)x)
-#define PPVAR32u(x) PPVAR("%s = %u", #x, (uint32_t)x)
-#define PPVAR32x(x) PPVAR("%s = 0x%x", #x, (uint32_t)x)
+#define PPVAR32I(x) PPVAR("%s = %d", #x, (int32_t)x)
+#define PPVAR32U(x) PPVAR("%s = %u", #x, (uint32_t)x)
+#define PPVAR32X(x) PPVAR("%s = 0x%x", #x, (uint32_t)x)
 
-#define PPVAR64i(x) PPVAR("%s = %ld", #x, (int64_t)x)
-#define PPVAR64u(x) PPVAR("%s = %lu", #x, (uint64_t)x)
-#define PPVAR64x(x) PPVAR("%s = 0x%lx", #x, (uint64_t)x)
+#define PPVAR64I(x) PPVAR("%s = %ld", #x, (int64_t)x)
+#define PPVAR64U(x) PPVAR("%s = %lu", #x, (uint64_t)x)
+#define PPVAR64X(x) PPVAR("%s = 0x%lx", #x, (uint64_t)x)
 
 #define PPSTR(x)                                               \
   do {                                                         \
