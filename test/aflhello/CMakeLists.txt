@@ -17,7 +17,7 @@ add_dependencies(${PROG} LLVMAFL)
 target_link_libraries(${PROG} afl)
 
 add_custom_target(
-  run
+  run-${PROG}
   DEPENDS
     ${PROG}
   COMMENT
@@ -28,7 +28,7 @@ add_custom_target(
 
 set(AFL_FUZZ ${CMAKE_BINARY_DIR}/tools/afl/afl-fuzz)
 add_custom_target(
-  fuzz
+  fuzz-${PROG}
   DEPENDS
     afl-fuzz ${PROG}
   COMMENT
