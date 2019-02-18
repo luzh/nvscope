@@ -159,6 +159,14 @@
     PP(cRST "\n");          \
   } while (0)
 
+/* Show a prefixed "instrumented" message. */
+
+#define PPISTR(x...)        \
+  do {                      \
+    PP(cYEL "[*] " cRST x); \
+    PP(cRST "\n");          \
+  } while (0)
+
 /* Show a prefixed "success" message. */
 
 #define PPDONE(x...)        \
