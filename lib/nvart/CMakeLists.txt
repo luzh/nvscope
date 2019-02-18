@@ -1,6 +1,7 @@
 set(SRCS condstore.c)
 
-add_library(nvart SHARED ${SRCS})
+# Link statically for performance (inline) and initializations before main().
+add_library(nvart STATIC ${SRCS})
 
 target_compile_features(nvart PUBLIC c_std_99)
 target_compile_options(nvart PUBLIC -Wall -Wextra -masm=intel)
