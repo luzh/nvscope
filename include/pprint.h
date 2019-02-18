@@ -138,116 +138,113 @@
 /* Debug & error macros */
 
 #ifdef MESSAGES_TO_STDOUT
-#define SAYF(x...) printf(x)
+#define PP(x...) printf(x)
 #else
-#define SAYF(x...) fprintf(stderr, x)
+#define PP(x...) fprintf(stderr, x)
 #endif /* ^MESSAGES_TO_STDOUT */
 
 /* Show a prefixed warning. */
 
-#define WARNF(x...)                            \
-  do {                                         \
-    SAYF(cYEL "[!] " cBRI "WARNING: " cRST x); \
-    SAYF(cRST "\n");                           \
+#define PPWARN(x...)                         \
+  do {                                       \
+    PP(cYEL "[!] " cBRI "WARNING: " cRST x); \
+    PP(cRST "\n");                           \
   } while (0)
 
 /* Show a prefixed "doing something" message. */
 
-#define ACTF(x...)            \
-  do {                        \
-    SAYF(cLBL "[*] " cRST x); \
-    SAYF(cRST "\n");          \
+#define PPWORK(x...)        \
+  do {                      \
+    PP(cLBL "[*] " cRST x); \
+    PP(cRST "\n");          \
   } while (0)
 
 /* Show a prefixed "success" message. */
 
-#define OKF(x...)             \
-  do {                        \
-    SAYF(cLGN "[+] " cRST x); \
-    SAYF(cRST "\n");          \
+#define PPDONE(x...)        \
+  do {                      \
+    PP(cLGN "[+] " cRST x); \
+    PP(cRST "\n");          \
   } while (0)
 
-/* Show a prefixed fatal error message (not used in afl). */
+/* Show a prefixed error message. */
 
-#define BADF(x...)              \
-  do {                          \
-    SAYF(cLRD "\n[-] " cRST x); \
-    SAYF(cRST "\n");            \
+#define PPERR(x...)           \
+  do {                        \
+    PP(cLRD "\n[-] " cRST x); \
+    PP(cRST "\n");            \
   } while (0)
 
 /* Die with a verbose non-OS fatal error message. */
 
-#define FATAL(x...)                                                          \
-  do {                                                                       \
-    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                \
-         "\n[-] PROGRAM ABORT : " cBRI x);                                   \
-    SAYF(cLRD "\n         Location : " cRST "%s(), %s:%u\n\n", __FUNCTION__, \
-         __FILE__, __LINE__);                                                \
-    exit(1);                                                                 \
+#define FATAL(x...)                                                           \
+  do {                                                                        \
+    PP(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD "\n[-] PROGRAM ABORT : " cBRI x); \
+    PP(cLRD "\n         Location : " cRST "%s(), %s:%u\n\n", __FUNCTION__,    \
+       __FILE__, __LINE__);                                                   \
+    exit(1);                                                                  \
   } while (0)
 
 /* Die by calling abort() to provide a core dump. */
 
-#define ABORT(x...)                                                          \
-  do {                                                                       \
-    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                \
-         "\n[-] PROGRAM ABORT : " cBRI x);                                   \
-    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n\n", __FUNCTION__, \
-         __FILE__, __LINE__);                                                \
-    abort();                                                                 \
+#define ABORT(x...)                                                           \
+  do {                                                                        \
+    PP(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD "\n[-] PROGRAM ABORT : " cBRI x); \
+    PP(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n\n", __FUNCTION__,    \
+       __FILE__, __LINE__);                                                   \
+    abort();                                                                  \
   } while (0)
 
 /* Die while also including the output of perror(). */
 
-#define PFATAL(x...)                                                       \
-  do {                                                                     \
-    fflush(stdout);                                                        \
-    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                              \
-         "\n[-]  SYSTEM ERROR : " cBRI x);                                 \
-    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n", __FUNCTION__, \
-         __FILE__, __LINE__);                                              \
-    SAYF(cLRD "       OS message : " cRST "%s\n", strerror(errno));        \
-    exit(1);                                                               \
+#define FATAL_PE(x...)                                                        \
+  do {                                                                        \
+    fflush(stdout);                                                           \
+    PP(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD "\n[-]  SYSTEM ERROR : " cBRI x); \
+    PP(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n", __FUNCTION__,      \
+       __FILE__, __LINE__);                                                   \
+    PP(cLRD "       OS message : " cRST "%s\n", strerror(errno));             \
+    exit(1);                                                                  \
   } while (0)
 
 /* Die with FAULT() or PFAULT() depending on the value of res (used to
    interpret different failure modes for read(), write(), etc). */
 
-#define RPFATAL(res, x...) \
-  do {                     \
-    if (res < 0)           \
-      PFATAL(x);           \
-    else                   \
-      FATAL(x);            \
+#define FATAL_RES(res, x...) \
+  do {                       \
+    if (res < 0)             \
+      PFATAL(x);             \
+    else                     \
+      FATAL(x);              \
   } while (0)
 
 /* Variable and definition printers */
 
-#define PVAR(x...)                              \
-  do {                                          \
-    SAYF(cYEL "[>] " cLCY "Variable: " cRST x); \
-    SAYF(cRST "\n");                            \
+#define PPVAR(x...)                           \
+  do {                                        \
+    PP(cYEL "[>] " cLCY "Variable: " cRST x); \
+    PP(cRST "\n");                            \
   } while (0)
 
-#define PVAR32i(x) PVAR("%s = %d", #x, (int32_t)x)
-#define PVAR32u(x) PVAR("%s = %u", #x, (uint32_t)x)
-#define PVAR32x(x) PVAR("%s = 0x%x", #x, (uint32_t)x)
+#define PPVAR32i(x) PPVAR("%s = %d", #x, (int32_t)x)
+#define PPVAR32u(x) PPVAR("%s = %u", #x, (uint32_t)x)
+#define PPVAR32x(x) PPVAR("%s = 0x%x", #x, (uint32_t)x)
 
-#define PVAR64i(x) PVAR("%s = %ld", #x, (int64_t)x)
-#define PVAR64u(x) PVAR("%s = %lu", #x, (uint64_t)x)
-#define PVAR64x(x) PVAR("%s = 0x%lx", #x, (uint64_t)x)
+#define PPVAR64i(x) PPVAR("%s = %ld", #x, (int64_t)x)
+#define PPVAR64u(x) PPVAR("%s = %lu", #x, (uint64_t)x)
+#define PPVAR64x(x) PPVAR("%s = 0x%lx", #x, (uint64_t)x)
 
-#define PSTR(x)                                                  \
-  do {                                                           \
-    SAYF(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x); \
-    SAYF(cRST "\n");                                             \
+#define PPSTR(x)                                               \
+  do {                                                         \
+    PP(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x); \
+    PP(cRST "\n");                                             \
   } while (0)
 
 #define DEFSTR(x) #x
-#define PDEF(x)                                                          \
-  do {                                                                   \
-    SAYF(cYEL "[>] " cLCY "Definition: " cRST "%s = %s", #x, DEFSTR(x)); \
-    SAYF(cRST "\n");                                                     \
+#define PPDEF(x)                                                       \
+  do {                                                                 \
+    PP(cYEL "[>] " cLCY "Definition: " cRST "%s = %s", #x, DEFSTR(x)); \
+    PP(cRST "\n");                                                     \
   } while (0)
 
 #endif /* ! _PPRINT_H */
