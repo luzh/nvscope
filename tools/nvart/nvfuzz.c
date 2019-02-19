@@ -88,7 +88,7 @@ static void setup_shm(void) {
    * on, perhaps?
    */
 
-  if (!dumb_mode) setenv(SHM_ENV_VAR, shm_str, 1);
+  if (!dumb_mode) setenv(NVART_SHM_ENV_VAR, shm_str, 1);
 
   ck_free(shm_str);
 
@@ -214,12 +214,39 @@ static void check_binary(uint8_t* fname) {
 int main(int argc, char** argv) {
   if (argc != 2) FATAL("Usage: %s <target>", argv[0]);
 
-  char* target = argv[1];
-
-  ACTF("Prepare to test program %s", target);
+  check_binary(argv[1]);
+  ACTF("Preparing to test program %s", target_path);
 
   setup_shm();
-  check_binary(target);
+
+  int status;
+  pid_t pid = fork();
+  if (pid == -1) {
+    PFATAL("fork() failed");
+    exit(EXIT_FAILURE);
+  } else if (pid == 0) {
+    OKF("Forked, child process pid %u", getpid());
+    char* args[] = {target_path, NULL};
+    execv(target_path, args);
+    // char *args[] = {"ls","-lart","/home",NULL};
+    // execv("ls", args);
+    exit(0);
+  } else {
+    OKF("Forked, parent process pid %u child process pid %u", getppid(), pid);
+    if (waitpid(pid, &status, 0) > 0) {
+      if (WIFEXITED(status) && !WEXITSTATUS(status)) {
+        OKF("Target program finished normally.");
+      } else if (WIFEXITED(status) && WEXITSTATUS(status)) {
+        if (WEXITSTATUS(status) == 127)
+          BADF("execv() failed");
+        else
+          WARNF("Target program finished normally with a non-zero status.");
+      } else
+        BADF("Target program did not finish normally");
+    } else
+      BADF("waitpid() failed");
+    exit(0);
+  }
 
   return 0;
 }
