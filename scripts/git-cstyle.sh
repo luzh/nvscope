@@ -1,6 +1,9 @@
 #!/bin/bash
 
-CLANG_FORMAT=$PWD/llvm/bin/clang-format
+if [ -z $CLANG_FORMAT ]; then
+  CLANG_FORMAT=$PWD/llvm/bin/clang-format
+fi
+
 PAGER="less -FrX"
 STYLE=google
 
