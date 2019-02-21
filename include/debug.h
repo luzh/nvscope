@@ -145,10 +145,18 @@
 
 /* Show a prefixed warning. */
 
-#define WARNF(x...)                            \
-  do {                                         \
-    SAYF(cYEL "[!] " cBRI "WARNING: " cRST x); \
-    SAYF(cRST "\n");                           \
+#define WARNF(x...)           \
+  do {                        \
+    SAYF(cYEL "[!] " cRST x); \
+    SAYF(cRST "\n");          \
+  } while (0)
+
+/* Show a prefixed testing message. */
+
+#define TESTF(x...)           \
+  do {                        \
+    SAYF(cPIN "[>] " cRST x); \
+    SAYF(cRST "\n");          \
   } while (0)
 
 /* Show a prefixed "doing something" message. */
