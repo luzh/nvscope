@@ -23,7 +23,7 @@ add_custom_target(
   COMMENT
     "Running ${PROG} ..."
   COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ./file push
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ./nvfile push
 )
 
 add_custom_target(
@@ -33,15 +33,15 @@ add_custom_target(
   COMMENT
     "Running ${PROG} ..."
   COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ./file pop
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ./nvfile pop
 )
 
 add_custom_target(
-  print-${PROG}
+  show-${PROG}
   DEPENDS
     ${PROG}
   COMMENT
     "Running ${PROG} ..."
   COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ./file print
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ./nvfile show
 )
