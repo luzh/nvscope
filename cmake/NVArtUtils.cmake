@@ -70,6 +70,7 @@ function(nvart_set_sources_properties PROFILE)
     PROPERTY COMPILE_DEFINITIONS
       _GNU_SOURCE
       PRINT_COLOR
+      MESSAGES_TO_STDOUT
   )
 
   set(EXTRA_COMPILE_FLAGS "")
