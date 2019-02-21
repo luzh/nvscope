@@ -1,7 +1,7 @@
 #include "afl/config.h"
+#include "debug.h"
 #include "headers.h"
 #include "nvart/config.h"
-#include "debug.h"
 
 #define CONST_PRIO 0  // constructor priority
 
