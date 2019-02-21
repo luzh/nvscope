@@ -28,9 +28,10 @@
 
 #include "afl/alloc-inl.h"
 #include "afl/config.h"
-#include "afl/debug.h"
 #include "afl/hash.h"
 #include "afl/types.h"
+
+#include "debug.h"
 
 #include <ctype.h>
 #include <dirent.h>

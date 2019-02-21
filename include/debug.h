@@ -1,32 +1,17 @@
+#ifndef _DEBUG_H
+#define _DEBUG_H
+
 /*
-   american fuzzy lop - debug / error handling macros
-   --------------------------------------------------
-
-   Written and maintained by Michal Zalewski <lcamtuf@google.com>
-
-   Copyright 2013, 2014, 2015, 2016 Google Inc. All rights reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
+ * definitions and handy macros for debugging
+ *
+ * This code is mostly from AFL's debug.h (american fuzzy lop, version 2.52b).
  */
-
-#ifndef _HAVE_DEBUG_H
-#define _HAVE_DEBUG_H
 
 #include <errno.h>
 
-#include "config.h"
-#include "types.h"
+/* Terminal colors */
 
-/*******************
- * Terminal colors *
- *******************/
-
-#ifdef USE_COLOR
+#ifdef PRINT_COLOR
 
 #define cBLK "\x1b[0;30m"
 #define cRED "\x1b[0;31m"
@@ -100,11 +85,9 @@
 #define bgLCY ""
 #define bgBRI ""
 
-#endif /* ^USE_COLOR */
+#endif /* ^PPRINT */
 
-/*************************
- * Box drawing sequences *
- *************************/
+/* Box drawing sequences */
 
 #ifdef FANCY_BOXES
 
@@ -144,9 +127,7 @@
 
 #endif /* ^FANCY_BOXES */
 
-/***********************
- * Misc terminal codes *
- ***********************/
+/* Misc terminal codes */
 
 #define TERM_HOME "\x1b[H"
 #define TERM_CLEAR TERM_HOME "\x1b[2J"
@@ -154,11 +135,7 @@
 #define CURSOR_HIDE "\x1b[?25l"
 #define CURSOR_SHOW "\x1b[?25h"
 
-/************************
- * Debug & error macros *
- ************************/
-
-/* Just print stuff to the appropriate stream. */
+/* Debug & error macros */
 
 #ifdef MESSAGES_TO_STDOUT
 #define SAYF(x...) printf(x)
@@ -190,9 +167,9 @@
     SAYF(cRST "\n");          \
   } while (0)
 
-/* Show a prefixed fatal error message (not used in afl). */
+/* Show a prefixed fatal error message. */
 
-#define BADF(x...)              \
+#define ERRF(x...)              \
   do {                          \
     SAYF(cLRD "\n[-] " cRST x); \
     SAYF(cRST "\n");            \
@@ -261,4 +238,33 @@
     if (_res != _len) RPFATAL(_res, "Short read from %s", fn); \
   } while (0)
 
-#endif /* ! _HAVE_DEBUG_H */
+/* Variable and definition printers */
+
+#define VARF(x...)                              \
+  do {                                          \
+    SAYF(cYEL "[>] " cLCY "Variable: " cRST x); \
+    SAYF(cRST "\n");                            \
+  } while (0)
+
+#define VAR32I(x) VARF("%s = %d", #x, (int32_t)x)
+#define VAR32U(x) VARF("%s = %u", #x, (uint32_t)x)
+#define VAR32X(x) VARF("%s = 0x%x", #x, (uint32_t)x)
+
+#define VAR64I(x) VARF("%s = %ld", #x, (int64_t)x)
+#define VAR64U(x) VARF("%s = %lu", #x, (uint64_t)x)
+#define VAR64X(x) VARF("%s = 0x%lx", #x, (uint64_t)x)
+
+#define VARSTR(x)                                                \
+  do {                                                           \
+    SAYF(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x); \
+    SAYF(cRST "\n");                                             \
+  } while (0)
+
+#define TOSTR(x) #x
+#define DEFSTR(x)                                                      \
+  do {                                                                 \
+    SAYF(cYEL "[>] " cLCY "Definition: " cRST "%s: %s", #x, TOSTR(x)); \
+    SAYF(cRST "\n");                                                   \
+  } while (0)
+
+#endif /* ! _DEBUG_H */

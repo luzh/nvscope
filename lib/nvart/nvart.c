@@ -1,7 +1,7 @@
 #include "afl/config.h"
 #include "headers.h"
 #include "nvart/config.h"
-#include "pprint.h"
+#include "debug.h"
 
 #define CONST_PRIO 0  // constructor priority
 
@@ -39,16 +39,16 @@ static void __nvart_map_shm(void) {
      */
     __nvart_area_ptr[0] = 1;
 
-    PPISTR("NVArt SHM attached");
+    OKF("NVArt SHM attached");
   } else {
-    PPWARN("NVArt SHM NOT found");
+    WARNF("NVArt SHM NOT found");
   }
 }
 
 /* Fork server logic */
 static void __nvart_start_forkserver(void) {
   /* setup NVART forkserver */
-  PPWARN("NVArt forkserver logic not implemented");
+  WARNF("NVArt forkserver logic not implemented");
 }
 
 /*
@@ -63,7 +63,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
     __nvart_start_forkserver();
     init_done = 1;
 
-    PPISTR("NVArt runtime initialized");
+    OKF("NVArt runtime initialized");
   }
 }
 
@@ -71,8 +71,8 @@ void condstore(uint64_t *ptr, uint64_t val) {
   srand(time(0));
   if (rand() & 1) {
     *ptr = val;
-    PPISTR("Performing store %zu to %p", val, (void *)ptr);
+    ACTF("Performing store %zu to %p", val, (void *)ptr);
   } else {
-    PPISTR("Skipping store %zu to %p", val, (void *)ptr);
+    ACTF("Skipping store %zu to %p", val, (void *)ptr);
   }
 }

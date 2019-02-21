@@ -9,7 +9,7 @@
 #define AFL_LLVM_PASS
 
 #include "afl/config.h"
-#include "afl/debug.h"
+#include "debug.h"
 
 #include <stdio.h>
 #include <stdlib.h>

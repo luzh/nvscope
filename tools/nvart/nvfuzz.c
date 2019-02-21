@@ -238,13 +238,13 @@ int main(int argc, char** argv) {
         OKF("Target program finished normally.");
       } else if (WIFEXITED(status) && WEXITSTATUS(status)) {
         if (WEXITSTATUS(status) == 127)
-          BADF("execv() failed");
+          ERRF("execv() failed");
         else
           WARNF("Target program finished normally with a non-zero status.");
       } else
-        BADF("Target program did not finish normally");
+        ERRF("Target program did not finish normally");
     } else
-      BADF("waitpid() failed");
+      ERRF("waitpid() failed");
     exit(0);
   }
 
