@@ -28,12 +28,12 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "nvart"
+#define DEBUG_TYPE "[NVArt Pass]"
 
 STATISTIC(NVArtFunctions, "Number of scanned functions");
 STATISTIC(NVArtCallInsts, "Number of CallInst instructions");
 STATISTIC(NVArtStoreInsts, "Number of StoreInst instructions");
-STATISTIC(NVArtCacheOps, "Number of Cache flush/write-back operations");
+STATISTIC(NVArtCacheOps, "Number of cache flush/wb operations");
 STATISTIC(NVArtSFenceOps, "Number of sfence operations");
 
 namespace {
@@ -91,7 +91,7 @@ struct NVArtTransformStores : public FunctionPass {
 
   bool runOnFunction(Function &F) override {
     NVArtFunctions++;
-    errs() << "NVArt: transforming stores in function ";
+    errs() << "NVArt: Transforming stores in function ";
     errs().write_escaped(F.getName()) << "()\n";
 
     // Get the function to call from our runtime library.
@@ -150,16 +150,16 @@ struct NVArtTransformStores : public FunctionPass {
           continue;
         }
       }
-
-      for (auto &SI : VecSI) {
-        SI->eraseFromParent();
-      }
+    }
+    // Moving this loop into for (auto &B : F) causes segfault, why?
+    for (auto &SI : VecSI) {
+      SI->eraseFromParent();
     }
 
-    errs() << "NVArt: CallInsts " << NVArtCallInsts << "\n";
-    errs() << "NVArt: StoreInsts " << NVArtStoreInsts << "\n";
-    errs() << "NVArt: NVArtCacheOps " << NVArtCacheOps << "\n";
-    errs() << "NVArt: NVArtSFenceOps " << NVArtSFenceOps << "\n";
+    // errs() << "NVArt: CallInsts " << NVArtCallInsts << "\n";
+    // errs() << "NVArt: StoreInsts " << NVArtStoreInsts << "\n";
+    // errs() << "NVArt: NVArtCacheOps " << NVArtCacheOps << "\n";
+    // errs() << "NVArt: NVArtSFenceOps " << NVArtSFenceOps << "\n";
 
     if (NVArtStoreInsts > 0) return true;
 
