@@ -3,12 +3,12 @@ set(PROG nvstack)
 
 nvart_set_sources_properties(C_Default ${SRCS})
 
-set_property(
-  SOURCE
-    ${SRCS}
-  PROPERTY LLVM_OPT_PASSES
-    "-load ${NVART_PASSES_DIR}/NVArt/LLVMNVArt.so -transform-stores"
-)
+# set_property(
+#   SOURCE
+#     ${SRCS}
+#   PROPERTY LLVM_OPT_PASSES
+#     "-load ${NVART_PASSES_DIR}/NVArt/LLVMNVArt.so -transform-stores"
+# )
 
 nvart_add_executable(${PROG} ${SRCS})
 
