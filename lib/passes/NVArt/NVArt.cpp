@@ -32,6 +32,7 @@ using namespace llvm;
 
 STATISTIC(NVArtFunctions, "Number of scanned functions");
 STATISTIC(NVArtCallInsts, "Number of CallInst instructions");
+STATISTIC(NVArtMmapOps, "Number of mmap operations");
 STATISTIC(NVArtStoreInsts, "Number of StoreInst instructions");
 STATISTIC(NVArtCacheOps, "Number of cache flush/wb operations");
 STATISTIC(NVArtSFenceOps, "Number of sfence operations");
@@ -96,32 +97,40 @@ struct NVArtTransformStores : public FunctionPass {
 
     // Get the function to call from our runtime library.
     LLVMContext &Ctx = F.getContext();
-    std::vector<Type *> ParamTypes = {Type::getInt64PtrTy(Ctx),
-                                      Type::getInt64Ty(Ctx)};
     Type *RetType = Type::getVoidTy(Ctx);
-    FunctionType *CondStoreFuncType =
-        FunctionType::get(RetType, ParamTypes, false);
-    Constant *CondStoreFunc =
-        F.getParent()->getOrInsertFunction("condstore", CondStoreFuncType);
 
-    std::vector<StoreInst *> VecSI;
+    std::vector<Type *> Store64ParamTypes = {Type::getInt64PtrTy(Ctx),
+                                             Type::getInt64Ty(Ctx)};
+    FunctionType *ProcStore64Type =
+        FunctionType::get(RetType, Store64ParamTypes, false);
+    Constant *ProcStore64 =
+        F.getParent()->getOrInsertFunction("process_store64", ProcStore64Type);
 
+    std::vector<StoreInst *> StoreInsts;
+
+    bool modified = false;
     for (auto &B : F) {
       for (auto &I : B) {
         if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+          Value *Val = SI->getValueOperand();
+          Value *Ptr = SI->getPointerOperand();
+
+          // Todo: Should also handle other sizes.
+          if (Val->getType() != Type::getInt64Ty(Ctx) ||
+              Ptr->getType() != Type::getInt64PtrTy(Ctx))
+            continue;
+
           // Insert after the store instruction.
           IRBuilder<> IRB(SI);
           IRB.SetInsertPoint(&B, IRB.GetInsertPoint());
 
-          Value *Val = SI->getValueOperand();
-          Value *Ptr = SI->getPointerOperand();
-
           // Insert a call to our function.
           Value *Args[] = {Ptr, Val};
-          IRB.CreateCall(CondStoreFunc, Args);
+          IRB.CreateCall(ProcStore64, Args);
 
-          VecSI.push_back(SI);
+          StoreInsts.push_back(SI);
 
+          modified = true;
           NVArtStoreInsts++;
 
           continue;
@@ -139,6 +148,9 @@ struct NVArtTransformStores : public FunctionPass {
             } else if (FName == "llvm.x86.sse.sfence") {
               errs() << "NVArt: _mm_sfence()\n";
               NVArtSFenceOps++;
+            } else if (FName == "mmap") {
+              errs() << "NVArt: mmap()\n";
+              NVArtMmapOps++;
             }
           } else {
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
@@ -151,19 +163,13 @@ struct NVArtTransformStores : public FunctionPass {
         }
       }
     }
+
     // Moving this loop into for (auto &B : F) causes segfault, why?
-    for (auto &SI : VecSI) {
+    for (auto &SI : StoreInsts) {
       SI->eraseFromParent();
     }
 
-    // errs() << "NVArt: CallInsts " << NVArtCallInsts << "\n";
-    // errs() << "NVArt: StoreInsts " << NVArtStoreInsts << "\n";
-    // errs() << "NVArt: NVArtCacheOps " << NVArtCacheOps << "\n";
-    // errs() << "NVArt: NVArtSFenceOps " << NVArtSFenceOps << "\n";
-
-    if (NVArtStoreInsts > 0) return true;
-
-    return false;
+    return modified;
   }
 };
 }  // namespace
