@@ -115,7 +115,8 @@ struct NVArtTransformStores : public FunctionPass {
     FunctionType *ProbeStore64Type =
         FunctionType::get(VoidTy, ProcStore64Params, false);
     Constant *ProbeStore64 =
-        F.getParent()->getOrInsertFunction("probe_store64", ProbeStore64Type);
+        F.getParent()->getOrInsertFunction("__nvart_probe_store64",
+                                           ProbeStore64Type);
 
     std::vector<StoreInst *> StoreInsts;
 

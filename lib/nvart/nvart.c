@@ -67,12 +67,29 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   }
 }
 
-void condstore(uint64_t *ptr, uint64_t val) {
-  srand(time(0));
-  if (rand() & 1) {
-    *ptr = val;
-    ACTF("Performing store %zu to %p", val, (void *)ptr);
-  } else {
-    ACTF("Skipping store %zu to %p", val, (void *)ptr);
-  }
+#ifdef NDEBUG
+void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
+#else
+void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
+                           int line) {
+#endif
+// srand(time(0));
+// if (rand() & 1) {
+//  *ptr = val;
+//  ACTF("Performing store %zu to %p", val, (void *)ptr);
+//} else {
+//  TESTF("Skipping store %zu to %p", val, (void *)ptr);
+//}
+#ifdef NDEBUG
+  TESTF("Seeing store %zu to %p", val, (void *)ptr);
+#else
+  TESTF("[%s, %s(), line %d]: Seeing store %zu to %p", file, func, line, val,
+        (void *)ptr);
+#endif
 }
+
+void __nvart_probe_clflush(uint64_t *ptr) {
+  TESTF("Seeing a CLFLUSH on %p", (void *)ptr);
+}
+
+void __nvart_probe_sfence() { TESTF("Seeing an SFENCE"); }
