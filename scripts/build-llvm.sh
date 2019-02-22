@@ -6,6 +6,14 @@ set -e
 
 VERSION=7.0.1
 
+# Compiler flags to enable statistics
+#
+# LLVM's cmake does not recognize -DLLVM_ENABLE_STATS. Enabling assertions with
+# -DLLVM_ENABLE_ASSERTIONS=ON can enable stats, but it may cause weird assertion
+# failures (e.g. IRBuilder.CreateGlobalStringPtr).
+export CFLAGS="-DLLVM_ENABLE_STATS"
+export CXXFLAGS="-DLLVM_ENABLE_STATS"
+
 PACKAGE=llvmorg-$VERSION.tar.gz
 SRC_URL=https://github.com/llvm/llvm-project/archive/$PACKAGE
 SRC_DIR=/tmp/llvm-project-$VERSION
@@ -26,10 +34,11 @@ if [ ! -d $BUILD_DIR ]; then
   # clang-tools-extra is enabled with clang
   cmake -G "Unix Makefiles" \
     -B $BUILD_DIR -S $SRC_DIR/llvm \
-    -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_TARGETS_TO_BUILD="X86" \
     -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
     -DLLVM_INSTALL_UTILS=ON \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR
@@ -40,5 +49,5 @@ cpus=$(getconf _NPROCESSORS_ONLN)
 cmake --build $BUILD_DIR --parallel $cpus
 
 mkdir -p $INSTALL_DIR
-# make install
+# make install && cd -
 cmake --build $BUILD_DIR --target install
