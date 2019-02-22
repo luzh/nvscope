@@ -33,12 +33,12 @@ function(nvart_fatal MSGSTR)
 endfunction()
 
 function(nvart_set_pass_properties PASS_TARGET)
-  if(NOT ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
-    # On non-Debug builds cmake automatically defines NDEBUG. Explicitly
-    # undefine it to enable opt's -stats and -debug output. See more details
-    # in: llvm/lib/cmake/llvm/HandleLLVMOptions.cmake
-    target_compile_options(${PASS_TARGET} PRIVATE -UNDEBUG)
-  endif()
+# if(NOT ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+#   # On non-Debug builds cmake automatically defines NDEBUG. Explicitly
+#   # undefine it to enable opt's -stats and -debug output. See more details
+#   # in: llvm/lib/cmake/llvm/HandleLLVMOptions.cmake
+#   target_compile_options(${PASS_TARGET} PRIVATE -UNDEBUG)
+# endif()
 
   target_include_directories(${PASS_TARGET} PRIVATE ${LLVM_INCLUDE_DIRS})
 endfunction()
