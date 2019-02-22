@@ -11,6 +11,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
@@ -97,38 +98,67 @@ struct NVArtTransformStores : public FunctionPass {
 
     // Get the function to call from our runtime library.
     LLVMContext &Ctx = F.getContext();
-    Type *RetType = Type::getVoidTy(Ctx);
+    Type *VoidTy = Type::getVoidTy(Ctx);
 
-    std::vector<Type *> Store64ParamTypes = {Type::getInt64PtrTy(Ctx),
-                                             Type::getInt64Ty(Ctx)};
-    FunctionType *ProcStore64Type =
-        FunctionType::get(RetType, Store64ParamTypes, false);
-    Constant *ProcStore64 =
-        F.getParent()->getOrInsertFunction("process_store64", ProcStore64Type);
+    Type *Int64Ty = Type::getInt64Ty(Ctx);
+    Type *Int64PtrTy = Type::getInt64PtrTy(Ctx);
+
+#ifdef NDEBUG
+    std::vector<Type *> ProcStore64Params = {Int64PtrTy, Int64Ty};
+#else
+    Type *Int32Ty = Type::getInt32Ty(Ctx);
+    Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
+    std::vector<Type *> ProcStore64Params = {Int64PtrTy, Int64Ty, Int8PtrTy,
+                                             Int8PtrTy, Int32Ty};
+#endif
+
+    FunctionType *ProbeStore64Type =
+        FunctionType::get(VoidTy, ProcStore64Params, false);
+    Constant *ProbeStore64 =
+        F.getParent()->getOrInsertFunction("probe_store64", ProbeStore64Type);
 
     std::vector<StoreInst *> StoreInsts;
 
     bool modified = false;
     for (auto &B : F) {
       for (auto &I : B) {
-        if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
-          Value *Val = SI->getValueOperand();
-          Value *Ptr = SI->getPointerOperand();
+#ifndef NDEBUG
+        int LineNr = -1;
+        StringRef FileName = "Unknown source file";
+        if (DILocation *Loc = I.getDebugLoc()) {
+          LineNr = Loc->getLine();
+          FileName = Loc->getFilename();
+          // StringRef Dir = Loc->getDirectory();
+          // bool ImplicitCode = Loc->isImplicitCode();
+        }
+#endif
+
+        if (I.getOpcode() == Instruction::Store) {
+          StoreInst *StI = dyn_cast<StoreInst>(&I);
+          Value *Val = StI->getValueOperand();
+          Value *Ptr = StI->getPointerOperand();
 
           // Todo: Should also handle other sizes.
-          if (Val->getType() != Type::getInt64Ty(Ctx) ||
-              Ptr->getType() != Type::getInt64PtrTy(Ctx))
+          if (Ptr->getType() != Int64PtrTy || Val->getType() != Int64Ty)
             continue;
 
-          // Insert after the store instruction.
-          IRBuilder<> IRB(SI);
+          // Insert before the store instruction.
+          IRBuilder<> IRB(StI);
           IRB.SetInsertPoint(&B, IRB.GetInsertPoint());
 
-          // Insert a call to our function.
+#ifdef NDEBUG
           Value *Args[] = {Ptr, Val};
-          IRB.CreateCall(ProcStore64, Args);
+#else
+          // Debug information
+          Value *File = IRB.CreateGlobalStringPtr(FileName);
+          Value *Func = IRB.CreateGlobalStringPtr(F.getName());
+          Value *Line = ConstantInt::get(Int32Ty, LineNr, false);
+          Value *Args[] = {Ptr, Val, File, Func, Line};
+#endif
+          // Insert a call to the probe function.
+          IRB.CreateCall(ProbeStore64, Args);
 
-          StoreInsts.push_back(SI);
+          StoreInsts.push_back(StI);
 
           modified = true;
           NVArtStoreInsts++;
@@ -136,19 +166,20 @@ struct NVArtTransformStores : public FunctionPass {
           continue;
         }
 
-        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+        if (I.getOpcode() == Instruction::Call) {
+          CallInst *CI = dyn_cast<CallInst>(&I);
           Function *CIF = CI->getCalledFunction();
 
           if (CIF) {
-            StringRef FName = CIF->getName();
+            StringRef FNameStr = CIF->getName();
 
-            if (FName == "llvm.x86.sse2.clflush") {
+            if (FNameStr == "llvm.x86.sse2.clflush") {
               errs() << "NVArt: _mm_clflush(?)\n";
               NVArtCacheOps++;
-            } else if (FName == "llvm.x86.sse.sfence") {
+            } else if (FNameStr == "llvm.x86.sse.sfence") {
               errs() << "NVArt: _mm_sfence()\n";
               NVArtSFenceOps++;
-            } else if (FName == "mmap") {
+            } else if (FNameStr == "mmap") {
               errs() << "NVArt: mmap()\n";
               NVArtMmapOps++;
             }
@@ -165,9 +196,9 @@ struct NVArtTransformStores : public FunctionPass {
     }
 
     // Moving this loop into for (auto &B : F) causes segfault, why?
-    for (auto &SI : StoreInsts) {
-      SI->eraseFromParent();
-    }
+    // for (auto &StI : StoreInsts) {
+    //  StI->eraseFromParent();
+    //}
 
     return modified;
   }
