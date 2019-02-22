@@ -29,6 +29,10 @@
 #include "debug.h"
 #include "types.h"
 
+#ifndef NDEBUG
+#define DEBUG_BUILD
+#endif
+
 /* User-facing macro to sprintf() to a dynamically allocated buffer. */
 
 #define alloc_printf(_str...)                        \
