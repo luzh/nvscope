@@ -32,12 +32,12 @@ int push(void *pmem, uint64_t value) {
   }
 
   *(top + 1) = value;
-  _mm_clflush(top);
-  // _mm_sfence();
+  _mm_clflushopt(top);
+  _mm_sfence();
 
   *pnvals = nvals + 1;
-  _mm_clflush(pnvals);
-  // _mm_sfence();
+  _mm_clflushopt(pnvals);
+  _mm_sfence();
 
   ACTF("Pushed value 0x%lx into the stack!", value);
 
@@ -62,7 +62,6 @@ int pop(void *pmem, uint64_t *retval) {
 
   *pnvals = nvals - 1;
   _mm_clflush(pnvals);
-  // _mm_sfence();
 
   ACTF("Poped value 0x%lx off the stack!", value);
 
