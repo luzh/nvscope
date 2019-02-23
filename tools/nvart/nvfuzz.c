@@ -1,11 +1,12 @@
+#define AFL_MAIN
+#define MESSAGES_TO_STDOUT
+#define _FILE_OFFSET_BITS 64
+
 #include "afl/alloc-inl.h"
 #include "headers.h"
 #include "nvart/config.h"
 
-#define AFL_MAIN
 #define HAVE_AFFINITY 1
-#define MESSAGES_TO_STDOUT
-#define _FILE_OFFSET_BITS 64
 
 static int32_t shm_id; /* ID of the SHM region */
 
