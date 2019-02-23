@@ -80,11 +80,16 @@ function(nvart_set_sources_properties PROFILE)
     set(EXTRA_COMPILE_FLAGS -ggdb)
   endif()
 
+  # Specify -march for clflushopt/clwb to compile.
+  # Skylake server processors (-march=skx) support both clflushopt and clwb.
+  # Compile for a different architecture can raise run-time errors if the
+  # executing maching does not have corresponding instructions.
+  # See llvm/lib/Target/X86/X86.td for supported march options.
   set_property(
     SOURCE
       ${SRCS}
     PROPERTY COMPILE_FLAGS
-      -Wall -Wextra -std=gnu99 ${EXTRA_COMPILE_FLAGS} -emit-llvm
+      -Wall -Wextra -march=native -std=gnu99 ${EXTRA_COMPILE_FLAGS} -emit-llvm
   )
 endfunction()
 
