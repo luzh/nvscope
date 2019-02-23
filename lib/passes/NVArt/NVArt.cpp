@@ -31,12 +31,14 @@ using namespace llvm;
 
 #define DEBUG_TYPE "[NVArt Pass]"
 
-STATISTIC(NVArtFunctions, "Number of scanned functions");
-STATISTIC(NVArtCallInsts, "Number of CallInst instructions");
-STATISTIC(NVArtMmapOps, "Number of mmap operations");
-STATISTIC(NVArtStoreInsts, "Number of StoreInst instructions");
-STATISTIC(NVArtCacheOps, "Number of cache flush/wb operations");
-STATISTIC(NVArtSFenceOps, "Number of sfence operations");
+STATISTIC(NVArtFunctions, "Scanned functions");
+STATISTIC(NVArtCallInsts, "CallInst instructions");
+STATISTIC(NVArtMMapOps, "mmap() calls");
+STATISTIC(NVArtStoreInsts, "StoreInst instructions");
+STATISTIC(NVArtCLFlushOps, "CLFLUSH operations");
+STATISTIC(NVArtCLFOptOps, "CLFLUSHOPT operations");
+STATISTIC(NVArtCLWBOps, "CLWB operations");
+STATISTIC(NVArtSFenceOps, "SFENCE operations");
 
 namespace {
 // NVArtHello - Replace the first binary operator (+, -, etc.) in every
@@ -114,9 +116,8 @@ struct NVArtTransformStores : public FunctionPass {
 
     FunctionType *ProbeStore64Type =
         FunctionType::get(VoidTy, ProcStore64Params, false);
-    Constant *ProbeStore64 =
-        F.getParent()->getOrInsertFunction("__nvart_probe_store64",
-                                           ProbeStore64Type);
+    Constant *ProbeStore64 = F.getParent()->getOrInsertFunction(
+        "__nvart_probe_store64", ProbeStore64Type);
 
     std::vector<StoreInst *> StoreInsts;
 
@@ -174,15 +175,21 @@ struct NVArtTransformStores : public FunctionPass {
           if (CIF) {
             StringRef FNameStr = CIF->getName();
 
-            if (FNameStr == "llvm.x86.sse2.clflush") {
-              errs() << "NVArt: _mm_clflush(?)\n";
-              NVArtCacheOps++;
+            if (FNameStr == "mmap") {
+              errs() << "NVArt: mmap()\n";
+              NVArtMMapOps++;
+            } else if (FNameStr == "llvm.x86.sse2.clflush") {
+              errs() << "NVArt: _mm_clflush()\n";
+              NVArtCLFlushOps++;
+            } else if (FNameStr == "llvm.x86.clflushopt") {
+              errs() << "NVArt: _mm_clflushopt()\n";
+              NVArtCLFOptOps++;
+            } else if (FNameStr == "llvm.x86.clwb") {
+              errs() << "NVArt: _mm_clwb()\n";
+              NVArtCLWBOps++;
             } else if (FNameStr == "llvm.x86.sse.sfence") {
               errs() << "NVArt: _mm_sfence()\n";
               NVArtSFenceOps++;
-            } else if (FNameStr == "mmap") {
-              errs() << "NVArt: mmap()\n";
-              NVArtMmapOps++;
             }
           } else {
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
