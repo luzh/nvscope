@@ -52,6 +52,7 @@ nvart_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
 # This is for test and tools to find the latest build of NVArt passes.
 set(NVART_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
+set(NVART_TOOLS_DIR ${CMAKE_BINARY_DIR}/tools/nvart)
 
 # Add directories.
 add_subdirectory(lib)
