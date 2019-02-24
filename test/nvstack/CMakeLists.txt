@@ -7,7 +7,7 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVART_PASSES_DIR}/NVArt/LLVMNVArt.so -transform-stores"
+    "-load ${NVART_PASSES_DIR}/NVArt/LLVMNVArt.so -probes"
 )
 
 nvart_add_executable(${PROG} ${SRCS})

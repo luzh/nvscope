@@ -88,14 +88,14 @@ static RegisterPass<NVArtHello> NVArtHelloPass("hello", "NVArt Hello Pass");
 /* --- */
 
 namespace {
-// NVArtTransformStores
-struct NVArtTransformStores : public FunctionPass {
+// NVArtProbes
+struct NVArtProbes : public FunctionPass {
   static char ID;  // Pass identification, replacement for typeid
-  NVArtTransformStores() : FunctionPass(ID) {}
+  NVArtProbes() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
     NVArtFunctions++;
-    errs() << "NVArt: Transforming stores in function ";
+    errs() << "NVArt: probing function ";
     errs().write_escaped(F.getName()) << "()\n";
 
     // Get the function to call from our runtime library.
@@ -216,7 +216,7 @@ struct NVArtTransformStores : public FunctionPass {
               // Insert a call to the probe function.
               IRB.CreateCall(ProbeSFence, SfArgs);
               Modified = true;
-              errs() << "NVArt: _mm_sfence()\n";
+              errs() << "NVArt: _mm_sfence() #" << SfenceId << "\n";
               NVArtSFenceOps = SfenceId;
             }
           } else {
@@ -241,6 +241,6 @@ struct NVArtTransformStores : public FunctionPass {
 };
 }  // namespace
 
-char NVArtTransformStores::ID = 0;
-static RegisterPass<NVArtTransformStores> NVArtTransformStoresPass(
-    "transform-stores", "NVArt Store Transformation Pass");
+char NVArtProbes::ID = 0;
+static RegisterPass<NVArtProbes> NVArtInsertProbesPass(
+    "probes", "NVArt Probes Insertion Pass");
