@@ -69,27 +69,32 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
 
 #ifdef NDEBUG
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
+  TESTF("Store64 [%p] <- %zu", (void *)ptr, val);
 #else
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
                            int line) {
+  TESTF("[%s, %s(), line %d]: Store64 [%p] <- %zu", file, func, line,
+        (void *)ptr, val);
 #endif
-// srand(time(0));
-// if (rand() & 1) {
-//  *ptr = val;
-//  ACTF("Performing store %zu to %p", val, (void *)ptr);
-//} else {
-//  TESTF("Skipping store %zu to %p", val, (void *)ptr);
-//}
-#ifdef NDEBUG
-  TESTF("Seeing store %zu to %p", val, (void *)ptr);
-#else
-  TESTF("[%s, %s(), line %d]: Seeing store %zu to %p", file, func, line, val,
-        (void *)ptr);
-#endif
+  // srand(time(0));
+  // if (rand() & 1) {
+  //  *ptr = val;
+  //  ACTF("Performing store %zu to %p", val, (void *)ptr);
+  //} else {
+  //  TESTF("Skipping store %zu to %p", val, (void *)ptr);
+  //}
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
   TESTF("Seeing a CLFLUSH on %p", (void *)ptr);
 }
 
-void __nvart_probe_sfence() { TESTF("Seeing an SFENCE"); }
+#ifdef NDEBUG
+void __nvart_probe_sfence(uint64_t sfid) {
+  TESTF("SFence #%lu", sfid);
+#else
+void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
+  TESTF("[%s, %s(), line %d]: SFence #%lu", file, func, line, sfid);
+#endif
+  /* Implementation */
+}

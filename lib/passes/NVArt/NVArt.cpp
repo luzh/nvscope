@@ -106,27 +106,36 @@ struct NVArtTransformStores : public FunctionPass {
     Type *Int64PtrTy = Type::getInt64PtrTy(Ctx);
 
 #ifdef NDEBUG
-    std::vector<Type *> ProcStore64Params = {Int64PtrTy, Int64Ty};
+    std::vector<Type *> ProbeStore64Params = {Int64PtrTy, Int64Ty};
+    std::vector<Type *> ProbeSFenceParams = {Int64Ty};
 #else
     Type *Int32Ty = Type::getInt32Ty(Ctx);
     Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
-    std::vector<Type *> ProcStore64Params = {Int64PtrTy, Int64Ty, Int8PtrTy,
-                                             Int8PtrTy, Int32Ty};
+    std::vector<Type *> ProbeStore64Params = {Int64PtrTy, Int64Ty, Int8PtrTy,
+                                              Int8PtrTy, Int32Ty};
+    std::vector<Type *> ProbeSFenceParams = {Int64Ty, Int8PtrTy, Int8PtrTy,
+                                             Int32Ty};
 #endif
 
     FunctionType *ProbeStore64Type =
-        FunctionType::get(VoidTy, ProcStore64Params, false);
+        FunctionType::get(VoidTy, ProbeStore64Params, false);
     Constant *ProbeStore64 = F.getParent()->getOrInsertFunction(
         "__nvart_probe_store64", ProbeStore64Type);
 
-    std::vector<StoreInst *> StoreInsts;
+    FunctionType *ProbeSFenceType =
+        FunctionType::get(VoidTy, ProbeSFenceParams, false);
+    Constant *ProbeSFence = F.getParent()->getOrInsertFunction(
+        "__nvart_probe_sfence", ProbeSFenceType);
 
-    bool modified = false;
+    // std::vector<StoreInst *> StoreInsts;
+
+    uint64_t SfenceId = 0;
+    bool Modified = false;
     for (auto &B : F) {
       for (auto &I : B) {
 #ifndef NDEBUG
         int LineNr = -1;
-        StringRef FileName = "Unknown source file";
+        StringRef FileName = "unknown source file";
         if (DILocation *Loc = I.getDebugLoc()) {
           LineNr = Loc->getLine();
           FileName = Loc->getFilename();
@@ -149,20 +158,20 @@ struct NVArtTransformStores : public FunctionPass {
           IRB.SetInsertPoint(&B, IRB.GetInsertPoint());
 
 #ifdef NDEBUG
-          Value *Args[] = {Ptr, Val};
+          Value *StArgs[] = {Ptr, Val};
 #else
           // Debug information
           Value *File = IRB.CreateGlobalStringPtr(FileName);
           Value *Func = IRB.CreateGlobalStringPtr(F.getName());
           Value *Line = ConstantInt::get(Int32Ty, LineNr, false);
-          Value *Args[] = {Ptr, Val, File, Func, Line};
+          Value *StArgs[] = {Ptr, Val, File, Func, Line};
 #endif
           // Insert a call to the probe function.
-          IRB.CreateCall(ProbeStore64, Args);
+          IRB.CreateCall(ProbeStore64, StArgs);
 
-          StoreInsts.push_back(StI);
+          // StoreInsts.push_back(StI);
 
-          modified = true;
+          Modified = true;
           NVArtStoreInsts++;
 
           continue;
@@ -188,8 +197,27 @@ struct NVArtTransformStores : public FunctionPass {
               errs() << "NVArt: _mm_clwb()\n";
               NVArtCLWBOps++;
             } else if (FNameStr == "llvm.x86.sse.sfence") {
+              CallInst *SfI = dyn_cast<CallInst>(&I);
+              // Insert before the sfence instruction.
+              IRBuilder<> IRB(SfI);
+              IRB.SetInsertPoint(&B, IRB.GetInsertPoint());
+
+              SfenceId++;
+              Value *SfId = ConstantInt::get(Int64Ty, SfenceId, false);
+#ifdef NDEBUG
+              Value *SfArgs[] = {SfId};
+#else
+              // Debug information
+              Value *File = IRB.CreateGlobalStringPtr(FileName);
+              Value *Func = IRB.CreateGlobalStringPtr(F.getName());
+              Value *Line = ConstantInt::get(Int32Ty, LineNr, false);
+              Value *SfArgs[] = {SfId, File, Func, Line};
+#endif
+              // Insert a call to the probe function.
+              IRB.CreateCall(ProbeSFence, SfArgs);
+              Modified = true;
               errs() << "NVArt: _mm_sfence()\n";
-              NVArtSFenceOps++;
+              NVArtSFenceOps = SfenceId;
             }
           } else {
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
@@ -208,7 +236,7 @@ struct NVArtTransformStores : public FunctionPass {
     //  StI->eraseFromParent();
     //}
 
-    return modified;
+    return Modified;
   }
 };
 }  // namespace
