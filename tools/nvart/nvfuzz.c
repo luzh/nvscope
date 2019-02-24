@@ -213,7 +213,9 @@ static void check_binary(uint8_t* fname) {
 }
 
 int main(int argc, char** argv) {
-  if (argc != 2) FATAL("Usage: %s <target>", argv[0]);
+  if (argc < 2) FATAL("Usage: %s <target>", argv[0]);
+
+  char** target_argv = argv + 1;  // skip the fuzzer program
 
   check_binary(argv[1]);
   ACTF("Preparing to test program %s", target_path);
@@ -227,11 +229,11 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   } else if (pid == 0) {
     OKF("Forked, child process pid %u", getpid());
-    char* args[] = {target_path, NULL};
-    execv(target_path, args);
-    // char *args[] = {"ls","-lart","/home",NULL};
-    // execv("ls", args);
-    exit(0);
+
+    // Note: target_argv should contain target_path
+    execv(target_path, target_argv);
+
+    // exit(0);
   } else {
     OKF("Forked, parent process pid %u child process pid %u", getppid(), pid);
     if (waitpid(pid, &status, 0) > 0) {
@@ -246,7 +248,8 @@ int main(int argc, char** argv) {
         ERRF("Target program did not finish normally");
     } else
       ERRF("waitpid() failed");
-    exit(0);
+
+    // exit(0);
   }
 
   return 0;
