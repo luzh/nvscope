@@ -61,7 +61,8 @@ int pop(void *pmem, uint64_t *retval) {
   if (retval != NULL) *retval = value;
 
   *pnvals = nvals - 1;
-  _mm_clflush(pnvals);
+  _mm_clflushopt(pnvals);
+  _mm_sfence();
 
   ACTF("Poped value 0x%lx off the stack!", value);
 
