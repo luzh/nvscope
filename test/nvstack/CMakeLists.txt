@@ -43,6 +43,14 @@ add_custom_target(
 )
 
 add_custom_target(
+  check-${PROG} DEPENDS ${PROG} COMMENT "Running ${PROG} (check) ..."
+  COMMAND
+    test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} check
+)
+
+add_custom_target(
   fuzz-push-${PROG} DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
   DEPENDS nvfuzz
   COMMAND
