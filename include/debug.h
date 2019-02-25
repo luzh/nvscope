@@ -254,22 +254,22 @@
     SAYF(cRST "\n");                            \
   } while (0)
 
-#define VAR32I(x) VARF("%s = %d", #x, (int32_t)x)
-#define VAR32U(x) VARF("%s = %u", #x, (uint32_t)x)
-#define VAR32X(x) VARF("%s = 0x%x", #x, (uint32_t)x)
+#define PRINT_VAR32I(x) VARF("%s = %d", #x, (int32_t)x)
+#define PRINT_VAR32U(x) VARF("%s = %u", #x, (uint32_t)x)
+#define PRINT_VAR32X(x) VARF("%s = 0x%x", #x, (uint32_t)x)
 
-#define VAR64I(x) VARF("%s = %ld", #x, (int64_t)x)
-#define VAR64U(x) VARF("%s = %lu", #x, (uint64_t)x)
-#define VAR64X(x) VARF("%s = 0x%lx", #x, (uint64_t)x)
+#define PRINT_VAR64I(x) VARF("%s = %ld", #x, (int64_t)x)
+#define PRINT_VAR64U(x) VARF("%s = %lu", #x, (uint64_t)x)
+#define PRINT_VAR64X(x) VARF("%s = 0x%lx", #x, (uint64_t)x)
 
-#define VARSTR(x)                                                \
+#define PRINT_VARSTR(x)                                          \
   do {                                                           \
     SAYF(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x); \
     SAYF(cRST "\n");                                             \
   } while (0)
 
 #define TOSTR(x) #x
-#define DEFSTR(x)                                                      \
+#define PRINT_DEFSTR(x)                                                \
   do {                                                                 \
     SAYF(cYEL "[>] " cLCY "Definition: " cRST "%s: %s", #x, TOSTR(x)); \
     SAYF(cRST "\n");                                                   \
