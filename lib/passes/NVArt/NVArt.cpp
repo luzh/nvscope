@@ -87,6 +87,8 @@ static RegisterPass<NVArtHello> NVArtHelloPass("hello", "NVArt Hello Pass");
 
 /* --- */
 
+uint64_t SFenceId = 0;
+
 namespace {
 // NVArtProbes
 struct NVArtProbes : public FunctionPass {
@@ -102,20 +104,27 @@ struct NVArtProbes : public FunctionPass {
     LLVMContext &Ctx = F.getContext();
     Type *VoidTy = Type::getVoidTy(Ctx);
 
+    Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
     Type *Int64Ty = Type::getInt64Ty(Ctx);
     Type *Int64PtrTy = Type::getInt64PtrTy(Ctx);
 
 #ifdef NDEBUG
+    std::vector<Type *> ProbeMmapParams = {Int64Ty, Int64Ty};
     std::vector<Type *> ProbeStore64Params = {Int64PtrTy, Int64Ty};
     std::vector<Type *> ProbeSFenceParams = {Int64Ty};
 #else
     Type *Int32Ty = Type::getInt32Ty(Ctx);
-    Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
+    std::vector<Type *> ProbeMmapParams = {Int64Ty, Int64Ty, Int8PtrTy,
+                                           Int8PtrTy, Int32Ty};
     std::vector<Type *> ProbeStore64Params = {Int64PtrTy, Int64Ty, Int8PtrTy,
                                               Int8PtrTy, Int32Ty};
     std::vector<Type *> ProbeSFenceParams = {Int64Ty, Int8PtrTy, Int8PtrTy,
                                              Int32Ty};
 #endif
+    FunctionType *ProbeMmapType =
+        FunctionType::get(VoidTy, ProbeMmapParams, false);
+    Constant *ProbeMmap =
+        F.getParent()->getOrInsertFunction("__nvart_probe_mmap", ProbeMmapType);
 
     FunctionType *ProbeStore64Type =
         FunctionType::get(VoidTy, ProbeStore64Params, false);
@@ -129,7 +138,6 @@ struct NVArtProbes : public FunctionPass {
 
     // std::vector<StoreInst *> StoreInsts;
 
-    uint64_t SfenceId = 0;
     bool Modified = false;
     for (auto &B : F) {
       for (auto &I : B) {
@@ -186,6 +194,27 @@ struct NVArtProbes : public FunctionPass {
 
             if (FNameStr == "mmap") {
               errs() << "NVArt: mmap()\n";
+
+              CallInst *MmapI = dyn_cast<CallInst>(&I);
+              IRBuilder<> IRB(MmapI);
+              // Insert after the mmap() call.
+              IRB.SetInsertPoint(&B, ++IRB.GetInsertPoint());
+
+              // Todo: How to get the mmap'ed size and address?
+              Value *MapAddr = ConstantInt::get(Int64Ty, 0, false);
+              Value *MapSize = ConstantInt::get(Int64Ty, 0, false);
+#ifdef NDEBUG
+              Value *MmapArgs[] = {MapAddr, MapSize};
+#else
+              // Debug information
+              Value *File = IRB.CreateGlobalStringPtr(FileName);
+              Value *Func = IRB.CreateGlobalStringPtr(F.getName());
+              Value *Line = ConstantInt::get(Int32Ty, LineNr, false);
+              Value *MmapArgs[] = {MapAddr, MapSize, File, Func, Line};
+#endif
+              // Insert a call to the probe function.
+              IRB.CreateCall(ProbeMmap, MmapArgs);
+              Modified = true;
               NVArtMMapOps++;
             } else if (FNameStr == "llvm.x86.sse2.clflush") {
               errs() << "NVArt: _mm_clflush()\n";
@@ -202,8 +231,8 @@ struct NVArtProbes : public FunctionPass {
               IRBuilder<> IRB(SfI);
               IRB.SetInsertPoint(&B, IRB.GetInsertPoint());
 
-              SfenceId++;
-              Value *SfId = ConstantInt::get(Int64Ty, SfenceId, false);
+              SFenceId++;
+              Value *SfId = ConstantInt::get(Int64Ty, SFenceId, false);
 #ifdef NDEBUG
               Value *SfArgs[] = {SfId};
 #else
@@ -216,8 +245,8 @@ struct NVArtProbes : public FunctionPass {
               // Insert a call to the probe function.
               IRB.CreateCall(ProbeSFence, SfArgs);
               Modified = true;
-              errs() << "NVArt: _mm_sfence() #" << SfenceId << "\n";
-              NVArtSFenceOps = SfenceId;
+              errs() << "NVArt: _mm_sfence() #" << SFenceId << "\n";
+              NVArtSFenceOps = SFenceId;
             }
           } else {
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm

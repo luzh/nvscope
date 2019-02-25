@@ -67,6 +67,19 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   }
 }
 
+int __store64_in_pmem(void *ptr) {
+  (void)ptr;
+
+  return 1;
+}
+
+int __record_store64(void *ptr, uint64_t val) {
+  (void)ptr;
+  (void)val;
+
+  return 0;
+}
+
 #ifdef NDEBUG
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
   TESTF("Store64 [%p] <- %zu", (void *)ptr, val);
@@ -76,6 +89,10 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
   TESTF("[%s, %s(), line %d]: Store64 [%p] <- %zu", file, func, line,
         (void *)ptr, val);
 #endif
+  /* PERF: Perhaps using likely/unlikely can improve performance. */
+  if (__store64_in_pmem(ptr)) return;
+
+  __record_store64(ptr, val);
   // srand(time(0));
   // if (rand() & 1) {
   //  *ptr = val;
@@ -83,6 +100,18 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
   //} else {
   //  TESTF("Skipping store %zu to %p", val, (void *)ptr);
   //}
+}
+
+#ifdef NDEBUG
+void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
+  TESTF("Mmap addr %p size %lu", (void *)mapaddr, mapsize);
+#else
+void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
+                        char *func, int line) {
+  TESTF("[%s, %s(), line %d]: Mmap addr %p size %lu", file, func, line,
+        (void *)mapaddr, mapsize);
+#endif
+  /* Implementation */
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
