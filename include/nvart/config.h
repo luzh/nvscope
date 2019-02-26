@@ -1,12 +1,16 @@
 #ifndef _NVART_CONFIG_H
 #define _NVART_CONFIG_H
 
+#define CLSIZE (64)
+
 #define ALIGN_UP(size, align) (((size) + (align)-1) & ~((align)-1))
 #define ALIGN_DOWN(size, align) ((size) & ~((align)-1))
 
 /* Environment variable used to pass SHM ID to the target program. */
 
 #define NVART_SHM_ENV_VAR "__NVART_SHM_ID"
+
+enum nvart_excode { EXIT_NORMAL = 0, EXIT_CRASH, EXIT_RUNQ_FULL };
 
 enum prog_state { STOPPED, DONTCARE, NORMAL, RECOVERY };
 
@@ -15,11 +19,27 @@ struct nvart_info {
   enum prog_state pstate;
 };
 
-#define NVART_SHM_INFO_SIZE ALIGN_UP(sizeof(struct nvart_info), 64)
+#define NVART_SHM_INFO_SIZE ALIGN_UP(sizeof(struct nvart_info), CLSIZE)
 
 struct nvart_runq_entry {
-  uint64_t *ptr;
-  uint64_t val;
+  union {
+    uint8_t *ptr8;
+    uint16_t *ptr16;
+    uint32_t *ptr32;
+    uint64_t *ptr64;
+  };
+  union {
+    uint8_t old8;
+    uint16_t old16;
+    uint32_t old32;
+    uint64_t old64;
+  };
+  union {
+    uint8_t new8;
+    uint16_t new16;
+    uint32_t new32;
+    uint64_t new64;
+  };
 };
 
 struct nvart_runq {
@@ -29,7 +49,7 @@ struct nvart_runq {
 
 #define NVART_SHM_RUNQ_OFF (NVART_SHM_INFO_SIZE)
 #define NVART_SHM_RUNQ_SIZE (4096)
-#define NVART_SHM_RUNQ_META_SIZE (sizeof(struct runq))
+#define NVART_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvart_runq), CLSIZE)
 #define NVART_SHM_RUNQ_MAX_LEN                        \
   ((NVART_SHM_RUNQ_SIZE - NVART_SHM_RUNQ_META_SIZE) / \
    sizeof(struct nvart_runq_entry))

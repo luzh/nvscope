@@ -18,8 +18,19 @@ __thread uint32_t __nvart_prev_loc;
 
 /* NVArt run-time setup */
 int __nvart_testing;
-struct nvart_info *nvai;
+struct nvart_info *info;
+struct nvart_runq *runq;
 enum prog_state *pstate;
+
+/* Debug functions */
+void __nvart_print_runq() {
+  SAYF("--- NVArt run queue data ---\n");
+  struct nvart_runq_entry *e = runq->entries;
+  for (size_t i = 0; i < runq->len; i++, e++) {
+    SAYF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx\n", i, e->ptr64, e->old64,
+         e->new64);
+  }
+}
 
 /* SHM setup */
 static void __nvart_map_shm(void) {
@@ -46,9 +57,13 @@ static void __nvart_map_shm(void) {
     __nvart_area_ptr[0] = 1;
 
     __nvart_testing = 1;
-    nvai = (struct nvart_info *)(__nvart_area_ptr);
-    pstate = &nvai->pstate;
+    info = (struct nvart_info *)(__nvart_area_ptr);
+
+    pstate = &info->pstate;
     *pstate = DONTCARE;
+
+    runq = (struct nvart_runq *)(__nvart_area_ptr + NVART_SHM_RUNQ_OFF);
+    memset(runq, 0, NVART_SHM_RUNQ_SIZE);
 
     OKF("NVArt SHM attached");
   } else {
@@ -80,20 +95,50 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   }
 }
 
-static inline int __store64_in_pmem(void *ptr) {
+static inline int __store64_in_pmem(uint64_t *ptr) {
   (void)ptr;
 
   return 1;
 }
 
-static inline int __runq_push_back_store64(void *ptr, uint64_t val) {
-  (void)ptr;
-  (void)val;
+static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
+  if (runq->len == NVART_SHM_RUNQ_MAX_LEN) {
+    ERRF("Run queue is full (%lu entries)!\n", runq->len);
+    _exit(EXIT_RUNQ_FULL);
+  }
+
+  runq->entries[runq->len].ptr64 = ptr;
+  runq->entries[runq->len].old64 = *ptr;
+  runq->entries[runq->len].new64 = val;
+  runq->len += 1;
+
+  __nvart_print_runq();
 
   return 0;
 }
 
-static inline int __recoverq_push_back_store64(void *ptr, uint64_t val) {
+static inline void __runq_flush() {
+  /*
+   * Todo: Remove flushed (clflushopt, clwb) stores from the runq, since they
+   * should be persistent after the sfence and not be affected by reordering.
+   * Now assume clflush(opt) or clwb is complete, and we simply set the queue
+   * length to zero to flush it.
+   */
+  runq->len = 0;
+}
+
+static inline void __runq_evict() {
+  if (runq->len == 0) return;
+
+  size_t stid = 0;
+  struct nvart_runq_entry *e = &runq->entries[stid];
+
+  *e->ptr64 = e->old64;
+
+  TESTF("Revert store i64 [%p] 0x%lx <- 0x%lx", e->ptr64, e->old64, e->new64);
+}
+
+static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
   (void)ptr;
   (void)val;
 
@@ -102,38 +147,30 @@ static inline int __recoverq_push_back_store64(void *ptr, uint64_t val) {
 
 #ifdef NDEBUG
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
-  TESTF("Store64 [%p] <- %zu", (void *)ptr, val);
+  TESTF("store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
 #else
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
                            int line) {
-  TESTF("[%s, %s(), line %d]: Store64 [%p] <- %zu", file, func, line,
-        (void *)ptr, val);
+  TESTF("[%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file, func, line,
+        (void *)ptr, *ptr, val);
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
   if (!__nvart_testing) return;
 
-  if (__store64_in_pmem(ptr)) return;
+  if (!__store64_in_pmem(ptr)) return;
 
   if (*pstate == NORMAL) __runq_push_back_store64(ptr, val);
 
   if (*pstate == RECOVERY) __recoverq_push_back_store64(ptr, val);
-
-  // srand(time(0));
-  // if (rand() & 1) {
-  //  *ptr = val;
-  //  ACTF("Performing store %zu to %p", val, (void *)ptr);
-  //} else {
-  //  TESTF("Skipping store %zu to %p", val, (void *)ptr);
-  //}
 }
 
 #ifdef NDEBUG
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
-  TESTF("Mmap addr %p size %lu", (void *)mapaddr, mapsize);
+  TESTF("mmap addr %p size %lu", (void *)mapaddr, mapsize);
 #else
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
                         char *func, int line) {
-  TESTF("[%s, %s(), line %d]: Mmap addr %p size %lu", file, func, line,
+  TESTF("[%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
         (void *)mapaddr, mapsize);
 #endif
   if (!__nvart_testing) return;
@@ -143,19 +180,26 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
-  TESTF("Seeing a CLFLUSH on %p", (void *)ptr);
+  TESTF("seeing a CLFLUSH on %p", (void *)ptr);
 
   if (!__nvart_testing) return;
 }
 
 #ifdef NDEBUG
 void __nvart_probe_sfence(uint64_t sfid) {
-  TESTF("SFence #%lu", sfid);
+  TESTF("sfence #%lu", sfid);
 #else
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
-  TESTF("[%s, %s(), line %d]: SFence #%lu", file, func, line, sfid);
+  TESTF("[%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
   if (!__nvart_testing) return;
 
-  /* Implementation */
+  int crash = (sfid == 1);
+
+  if (crash) {
+    __runq_evict();
+    _exit(EXIT_CRASH);
+  } else {
+    __runq_flush();
+  }
 }
