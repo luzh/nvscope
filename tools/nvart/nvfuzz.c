@@ -240,12 +240,13 @@ int main(int argc, char** argv) {
       if (WIFEXITED(status) && !WEXITSTATUS(status)) {
         OKF("Target program finished normally.");
       } else if (WIFEXITED(status) && WEXITSTATUS(status)) {
-        if (WEXITSTATUS(status) == 127)
+        int excode = WIFEXITED(status);
+        if (excode == 127)
           ERRF("execv() failed");
         else
-          WARNF("Target program finished normally with a non-zero status.");
+          WARNF("Target program exits with status %d.", excode);
       } else
-        ERRF("Target program did not finish normally");
+        ERRF("Target program did not exit normally");
     } else
       ERRF("waitpid() failed");
 
