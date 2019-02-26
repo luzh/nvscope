@@ -65,7 +65,7 @@ int push(void *pmem, uint64_t value) {
   uint64_t *top = (uint64_t *)pmem + META_SIZE + nvals - 1;
 
   if (nvals == MAX_VALUES) {
-    WARNF("Stack is full, ignoreing value %lu", value);
+    WARNF("Stack is full, ignoring value %lu", value);
     return EINVAL;
   }
 

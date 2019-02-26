@@ -24,6 +24,10 @@ add_custom_target(
     test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
   COMMAND
     ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} show
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} check
 )
 
 add_custom_target(
@@ -32,6 +36,10 @@ add_custom_target(
     test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
   COMMAND
     ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} pop
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} show
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} check
 )
 
 add_custom_target(
