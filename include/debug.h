@@ -151,12 +151,20 @@
     SAYF(cRST "\n");          \
   } while (0)
 
-/* Show a prefixed testing message. */
+/* Show a prefixed notable message. */
 
-#define TESTF(x...)           \
+#define NOTEF(x...)           \
   do {                        \
-    SAYF(cPIN "[>] " cRST x); \
+    SAYF(cBLU "[i] " cRST x); \
     SAYF(cRST "\n");          \
+  } while (0)
+
+/* Show a prefixed test case message. */
+
+#define TESTC(x...)      \
+  do {                   \
+    SAYF(cBLU "[#] " x); \
+    SAYF(cRST "\n");     \
   } while (0)
 
 /* Show a prefixed "doing something" message. */

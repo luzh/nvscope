@@ -24,13 +24,13 @@ enum prog_state *pstate;
 
 /* Debug functions */
 void __nvart_print_runq() {
-  TESTF("--- NVArt run queue (...) ---");
+  NOTEF("--- NVArt run queue (...) ---");
   struct nvart_runq_entry *e = runq->entries;
   for (size_t i = 0; i < runq->len; i++, e++) {
-    TESTF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
+    NOTEF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
           e->new64);
   }
-  TESTF("--- NVArt run queue (***) ---");
+  NOTEF("--- NVArt run queue (***) ---");
 }
 
 /* SHM setup */
@@ -49,7 +49,7 @@ static void __nvart_map_shm(void) {
 
     /* Whooooops. */
 
-    if (__nvart_area_ptr == (void *)-1) _exit(1);
+    if (__nvart_area_ptr == (void *)-1) _exit(NVART_EXIT_NOSHM);
 
     /*
      * Write something into the bitmap so that even with low NVART_INST_RATIO,
@@ -104,8 +104,8 @@ static inline int __store64_in_pmem(uint64_t *ptr) {
 
 static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
   if (runq->len == NVART_SHM_RUNQ_MAX_LEN) {
-    ERRF("Run queue is full (%lu entries)!\n", runq->len);
-    _exit(NVA_EXIT_RUNQ_FULL);
+    ERRF("NVArt: Run queue is full (%lu entries)!\n", runq->len);
+    _exit(NVART_EXIT_RUNQ_FULL);
   }
 
   runq->entries[runq->len].ptr64 = ptr;
@@ -124,16 +124,14 @@ static inline void __runq_flush(uint64_t sfid) {
    * length to zero to flush it.
    */
   runq->len = 0;
-  TESTF("Pass over sfence #%zu", sfid);
+  TESTC("NVArt: pass over sfence #%zu", sfid);
 }
 
 static int __next_test_case(uint64_t sfid) {
   static size_t caseid = 0;
-  PRINT_VAR64U(caseid);
-  PRINT_VAR64U(runq->len);
 
   if (caseid == 0) {
-    TESTF("NVArt: make test case #%zu: crash after sfence #%zu", caseid, sfid);
+    TESTC("NVArt: make test case #%zu: crash after sfence #%zu", caseid, sfid);
     caseid++;
     return 1;
   }
@@ -141,7 +139,7 @@ static int __next_test_case(uint64_t sfid) {
   if (caseid > 1) {
     struct nvart_runq_entry *e = &runq->entries[caseid - 2];
     *e->ptr64 = e->new64;
-    TESTF("NVArt: annul test case #%zu: apply store i64 [%p] 0x%lx -> 0x%lx",
+    TESTC("NVArt: pass over test case #%zu: redo store i64 [%p] 0x%lx -> 0x%lx",
           caseid - 1, e->ptr64, e->old64, e->new64);
   }
 
@@ -154,7 +152,7 @@ static int __next_test_case(uint64_t sfid) {
 
   *e->ptr64 = e->old64;
 
-  TESTF("NVArt: make test case #%zu: revert store i64 [%p] 0x%lx <- 0x%lx",
+  TESTC("NVArt: make test case #%zu: undo store i64 [%p] 0x%lx <- 0x%lx",
         caseid, e->ptr64, e->old64, e->new64);
   caseid++;
 
@@ -169,26 +167,26 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
 }
 
 static void __emulate_crash(uint64_t sfid) {
-  volatile uint32_t *runcheck = &info->runcheck;
+  volatile uint32_t *reqcheck = &info->reqcheck;
   while (__next_test_case(sfid)) {
-    info->runcheck = 1;
-    while (1) {
-      if (*runcheck == 0) break;
-    }
+    info->reqcheck = 1;
+    while (*reqcheck) {
+      /* wait for recovery+check to finish */
+    };
     if (info->foundbug) {
       ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
-      _exit(NVA_EXIT_FOUNDBUG);
+      _exit(NVART_EXIT_FOUNDBUG);
     }
   }
 }
 
 #ifdef NDEBUG
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
-  TESTF("NVArt: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
+  NOTEF("NVArt: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
 #else
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
                            int line) {
-  TESTF("NVArt: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file, func,
+  NOTEF("NVArt: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file, func,
         line, (void *)ptr, *ptr, val);
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
@@ -203,11 +201,11 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
 
 #ifdef NDEBUG
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
-  TESTF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
+  WARNF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
 #else
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
                         char *func, int line) {
-  TESTF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
+  WARNF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
         (void *)mapaddr, mapsize);
 #endif
   if (!__nvart_testing || !info->probing) return;
@@ -217,17 +215,17 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
-  TESTF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
+  NOTEF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
 
   if (!__nvart_testing || !info->probing) return;
 }
 
 #ifdef NDEBUG
 void __nvart_probe_sfence(uint64_t sfid) {
-  TESTF("NVArt: sfence #%lu", sfid);
+  NOTEF("NVArt: sfence #%lu", sfid);
 #else
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
-  TESTF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
+  NOTEF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
   if (!__nvart_testing || !info->probing) return;
 

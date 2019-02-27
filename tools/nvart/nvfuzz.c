@@ -224,7 +224,6 @@ int main(int argc, char** argv) {
   struct nvart_info* info = (struct nvart_info*)(trace_bits);
   memset(info, 0, NVART_SHM_INFO_SIZE);
 
-  volatile uint32_t* runcheck = &info->runcheck;
   info->probing = 1;
 
   int tstatus, rstatus;
@@ -261,7 +260,8 @@ int main(int argc, char** argv) {
           WARNF("NVFuzz: target died without a normal exit");
         }
       } else {  // target is still running, may request to run recovery
-        if (*runcheck) {
+        volatile uint32_t reqcheck = info->reqcheck;
+        if (reqcheck) {
           ACTF("NVFuzz: target requested to run recovery and checking");
 
           info->probing = 0;
@@ -306,7 +306,7 @@ int main(int argc, char** argv) {
             } while (rpidw == 0);  // recovery program still running
           }
           info->probing = 1;
-          info->runcheck = 0;
+          info->reqcheck = 0;
         }
       }
     } while (tpidw == 0);  // target program still running
