@@ -221,26 +221,71 @@ int main(int argc, char** argv) {
   ACTF("Preparing to test program %s", target_path);
 
   setup_shm();
+  struct nvart_info* info = (struct nvart_info*)(trace_bits);
+  memset(info, 0, NVART_SHM_INFO_SIZE);
 
-  int status;
-  pid_t pid = fork();
-  if (pid == -1) {
+  volatile uint32_t* runcheck = &info->runcheck;
+  info->probing = 1;
+
+  int status1, status2;
+  pid_t pid1 = fork();
+  if (pid1 == -1) {
     PFATAL("fork() failed");
     exit(EXIT_FAILURE);
-  } else if (pid == 0) {
-    OKF("Forked, child process pid %u", getpid());
+  } else if (pid1 == 0) {
+    OKF("Forked, normal process pid %u", getpid());
 
     // Note: target_argv should contain target_path
     execv(target_path, target_argv);
 
     // exit(0);
   } else {
-    OKF("Forked, parent process pid %u child process pid %u", getppid(), pid);
-    if (waitpid(pid, &status, 0) > 0) {
-      if (WIFEXITED(status) && !WEXITSTATUS(status)) {
+    OKF("Forked, fuzzer process pid %u child process pid %u", getppid(), pid1);
+    while (1) {
+      if (*runcheck) {
+        TESTF("--- Running check ---");
+        info->probing = 0;
+        pid_t pid2 = fork();
+        if (pid2 == -1) {
+          PFATAL("Recovery fork() failed");
+          exit(EXIT_FAILURE);
+        } else if (pid2 == 0) {
+          OKF("Forked, recovery process pid %u", getpid());
+
+          // Note: target_argv should contain target_path
+          char* args[] = {target_path, "stackfile", "check", NULL};
+          execv(target_path, args);
+
+          // exit(0);
+        } else {
+          if (waitpid(pid2, &status2, 0) > 0) {
+            if (WIFEXITED(status2) && !WEXITSTATUS(status2)) {
+              OKF("Recovery program finished normally.");
+            } else if (WIFEXITED(status2) && WEXITSTATUS(status2)) {
+              if (WEXITSTATUS(status2) == 127)
+                ERRF("Recovery execv() failed");
+              else {
+                info->foundbug = 1;
+                WARNF("Recovery program exits with non-zero code");
+              }
+            } else {
+              info->foundbug = 1;
+              ERRF("Recovery program did not exit normally");
+            }
+          } else
+            ERRF("waitpid() failed");
+        }
+
+        info->probing = 1;
+        info->runcheck = 0;
+      }
+    }
+
+    if (waitpid(pid1, &status1, 0) > 0) {
+      if (WIFEXITED(status1) && !WEXITSTATUS(status1)) {
         OKF("Target program finished normally.");
-      } else if (WIFEXITED(status) && WEXITSTATUS(status)) {
-        int excode = WIFEXITED(status);
+      } else if (WIFEXITED(status1) && WEXITSTATUS(status1)) {
+        int excode = WIFEXITED(status1);
         if (excode == 127)
           ERRF("execv() failed");
         else
