@@ -212,6 +212,30 @@ static void check_binary(uint8_t* fname) {
   if (munmap(f_data, f_len)) PFATAL("unmap() failed");
 }
 
+int check_status(pid_t pid, int status) {
+  int err = 1;
+
+  if (WIFEXITED(status)) {
+    int exstatus = WEXITSTATUS(status);
+    if (exstatus == 0) {
+      err = 0;
+      OKF("NVFuzz: process %u exited normally", pid);
+    } else if (exstatus == 127) {
+      ERRF("NVFuzz: execv() process %u failed", pid);
+    } else {
+      ERRF("NVFuzz: process %u exited, status %d", pid, exstatus);
+    }
+  } else if (WIFSTOPPED(status)) {
+    ERRF("NVFuzz: process %u has stopped", pid);
+  } else if (WIFSIGNALED(status)) {
+    ERRF("NVFuzz: process %u killed by a signal", pid);
+  } else {
+    ERRF("NVFuzz: process %u died for unknown reasons", pid);
+  }
+
+  return err;
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) FATAL("Usage: %s <target>", argv[0]);
 
@@ -240,28 +264,14 @@ int main(int argc, char** argv) {
 
     // exit(0);
   } else {  // fuzzer (parent)
-    OKF("NVFuzz: fork() succeeds, fuzzer process %u parent %u", getpid(),
-        getppid());
+    OKF("NVFuzz: fork() succeeds, fuzzer process", getpid());
     do {  // wait for the target program to finish
       tpidw = waitpid(tpid, &tstatus, WNOHANG);
       if (tpidw == -1) {
         ERRF("NVFuzz: waitpid() target %u failed", tpid);
-      } else if (tpidw != 0) {
-        if (WIFEXITED(tstatus)) {
-          int exst = WEXITSTATUS(tstatus);
-          if (exst == 0) {
-            OKF("NVFuzz: target %u exited normally", tpid);
-          } else if (exst == 127) {
-            ERRF("NVFuzz: execv() target %u failed", tpid);
-          } else {
-            WARNF("NVFuzz: target %u exited with code %d", tpid, exst);
-          }
-        } else {  // perhaps killed by a signal?
-          WARNF("NVFuzz: target died without a normal exit");
-        }
-      } else {  // target is still running, may request to run recovery
-        volatile uint32_t reqcheck = info->reqcheck;
-        if (reqcheck) {
+      } else if (tpidw == 0) {  // target is running
+        volatile uint32_t* reqcheck = &info->reqcheck;
+        if (*reqcheck) {
           ACTF("NVFuzz: target requested to run recovery and checking");
 
           info->probing = 0;
@@ -279,35 +289,27 @@ int main(int argc, char** argv) {
 
             // exit(0);
           } else {  // fuzzer (parent)
-            OKF("NVFuzz: fork() succeeds, fuzzer process %u parent %u",
-                getpid(), getppid());
+            OKF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
             do {  // wait for the recovery process to finish
               rpidw = waitpid(rpid, &rstatus, WNOHANG);
               if (rpidw == -1) {
                 ERRF("NVFuzz: waitpid() recovery %u failed", rpid);
-              } else if (rpidw != 0) {
-                if (WIFEXITED(rstatus)) {
-                  int exst = WEXITSTATUS(rstatus);
-                  if (exst == 0) {  // pmem data looks good!
-                    OKF("NVFuzz: recovery %u exited normally", rpid);
-                  } else if (exst == 127) {
-                    ERRF("NVFuzz: execv() recovery %u failed", rpid);
-                  } else {  // pmem data caused abnormal recovery exit
-                    info->foundbug = 1;
-                    WARNF("NVFuzz: recovery %u exited, status %d", rpid, exst);
-                  }
-                } else {  // perhaps killed by a signal?
-                  info->foundbug = 1;
-                  WARNF("NVFuzz: recovery %u died without a normal exit", rpid);
-                }
+              } else if (rpidw == 0) {
+                /* recovery is still running; fuzzer can do something else */
+              } else if (rpidw == rpid) {
+                info->foundbug = check_status(rpid, rstatus);
               } else {
-                /* recovery is still running, fuzzer can do something else */
+                ERRF("NVFuzz: unexpected waitpid return value %u", rpidw);
               }
             } while (rpidw == 0);  // recovery program still running
           }
           info->probing = 1;
           info->reqcheck = 0;
         }
+      } else if (tpidw == tpid) {
+        check_status(tpid, tstatus);
+      } else {
+        ERRF("NVFuzz: unexpected waitpid return value %u", tpidw);
       }
     } while (tpidw == 0);  // target program still running
   }
