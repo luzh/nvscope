@@ -10,12 +10,19 @@
 
 #define NVART_SHM_ENV_VAR "__NVART_SHM_ID"
 
-enum nvart_excode { EXIT_NORMAL = 0, EXIT_CRASH, EXIT_RUNQ_FULL };
+enum nvart_excode {
+  NVA_EXIT_SUCCESS = 0,
+  NVA_EXIT_RUNQ_FULL,
+  NVA_EXIT_FOUNDBUG
+};
 
 enum prog_state { STOPPED, DONTCARE, NORMAL, RECOVERY };
 
 struct nvart_info {
   uint8_t reserved[64];
+  uint32_t probing;
+  uint32_t runcheck;
+  uint32_t foundbug;
   enum prog_state pstate;
 };
 

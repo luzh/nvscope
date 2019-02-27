@@ -57,13 +57,13 @@ static void __nvart_map_shm(void) {
     __nvart_area_ptr[0] = 1;
 
     __nvart_testing = 1;
-    info = (struct nvart_info *)(__nvart_area_ptr);
+    info = (struct nvart_info *)(__nvart_area_ptr);  // zeroed from parent
 
     pstate = &info->pstate;
     *pstate = DONTCARE;
 
     runq = (struct nvart_runq *)(__nvart_area_ptr + NVART_SHM_RUNQ_OFF);
-    memset(runq, 0, NVART_SHM_RUNQ_SIZE);
+    if (info->probing) memset(runq, 0, NVART_SHM_RUNQ_SIZE);
 
     OKF("NVArt SHM attached");
   } else {
@@ -104,7 +104,7 @@ static inline int __store64_in_pmem(uint64_t *ptr) {
 static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
   if (runq->len == NVART_SHM_RUNQ_MAX_LEN) {
     ERRF("Run queue is full (%lu entries)!\n", runq->len);
-    _exit(EXIT_RUNQ_FULL);
+    _exit(NVA_EXIT_RUNQ_FULL);
   }
 
   runq->entries[runq->len].ptr64 = ptr;
@@ -112,12 +112,10 @@ static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
   runq->entries[runq->len].new64 = val;
   runq->len += 1;
 
-  __nvart_print_runq();
-
   return 0;
 }
 
-static inline void __runq_flush() {
+static inline void __runq_flush(uint64_t sfid) {
   /*
    * Todo: Remove flushed (clflushopt, clwb) stores from the runq, since they
    * should be persistent after the sfence and not be affected by reordering.
@@ -125,17 +123,39 @@ static inline void __runq_flush() {
    * length to zero to flush it.
    */
   runq->len = 0;
+  TESTF("Pass over sfence #%zu", sfid);
 }
 
-static inline void __runq_evict() {
-  if (runq->len == 0) return;
+static int __next_test_case(uint64_t sfid) {
+  static size_t caseid = 0;
+  PRINT_VAR64U(caseid);
+  PRINT_VAR64U(runq->len);
 
-  size_t stid = 0;
-  struct nvart_runq_entry *e = &runq->entries[stid];
+  if (caseid == 0) {
+    TESTF("Test case #%zu: crash after sfence #%zu", caseid++, sfid);
+    return 1;
+  }
+
+  if (caseid > 1) {
+    struct nvart_runq_entry *e = &runq->entries[caseid - 2];
+    *e->ptr64 = e->new64;
+    TESTF("Pass over test case #%zu: apply store i64 [%p] 0x%lx -> 0x%lx",
+          caseid - 1, e->ptr64, e->old64, e->new64);
+  }
+
+  if (runq->len < caseid) {
+    caseid = 0;
+    return 0;
+  }
+
+  struct nvart_runq_entry *e = &runq->entries[caseid - 1];
 
   *e->ptr64 = e->old64;
 
-  TESTF("Revert store i64 [%p] 0x%lx <- 0x%lx", e->ptr64, e->old64, e->new64);
+  TESTF("Test case #%zu: revert store i64 [%p] 0x%lx <- 0x%lx", caseid++,
+        e->ptr64, e->old64, e->new64);
+
+  return 1;
 }
 
 static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
@@ -143,6 +163,20 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
   (void)val;
 
   return 0;
+}
+
+static void __emulate_crash(uint64_t sfid) {
+  volatile uint32_t *runcheck = &info->runcheck;
+  while (__next_test_case(sfid)) {
+    info->runcheck = 1;
+    while (1) {
+      if (*runcheck == 0) break;
+    }
+    if (info->foundbug) {
+      ERRF("Found bug at sfence #%zu test case #?", sfid);
+      _exit(NVA_EXIT_FOUNDBUG);
+    }
+  }
 }
 
 #ifdef NDEBUG
@@ -155,7 +189,7 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
         (void *)ptr, *ptr, val);
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
-  if (!__nvart_testing) return;
+  if (!__nvart_testing || !info->probing) return;
 
   if (!__store64_in_pmem(ptr)) return;
 
@@ -173,7 +207,7 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
   TESTF("[%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
         (void *)mapaddr, mapsize);
 #endif
-  if (!__nvart_testing) return;
+  if (!__nvart_testing || !info->probing) return;
 
   /* Implementation */
   *pstate = NORMAL;
@@ -182,7 +216,7 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
 void __nvart_probe_clflush(uint64_t *ptr) {
   TESTF("seeing a CLFLUSH on %p", (void *)ptr);
 
-  if (!__nvart_testing) return;
+  if (!__nvart_testing || !info->probing) return;
 }
 
 #ifdef NDEBUG
@@ -192,14 +226,9 @@ void __nvart_probe_sfence(uint64_t sfid) {
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
   TESTF("[%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
-  if (!__nvart_testing) return;
+  if (!__nvart_testing || !info->probing) return;
 
-  int crash = (sfid == 1);
-
-  if (crash) {
-    __runq_evict();
-    _exit(EXIT_CRASH);
-  } else {
-    __runq_flush();
-  }
+  __nvart_print_runq();
+  __emulate_crash(sfid);
+  __runq_flush(sfid);
 }
