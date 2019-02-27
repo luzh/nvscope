@@ -228,52 +228,60 @@ int main(int argc, char** argv) {
   info->probing = 1;
 
   int status1, status2;
-  pid_t pid1 = fork();
-  if (pid1 == -1) {
-    PFATAL("fork() failed");
-    exit(EXIT_FAILURE);
-  } else if (pid1 == 0) {
-    OKF("Forked, normal process pid %u", getpid());
+  pid_t tpid = fork();
 
+  if (tpid == -1) {
+    PFATAL("NVFuzz: fork() to run the target program failed");
+    exit(EXIT_FAILURE);
+  } else if (tpid == 0) {  // target program (1st child)
+    OKF("NVFuzz: fork() succeeds, target process %u parent %u", getpid(),
+        getppid());
     // Note: target_argv should contain target_path
     execv(target_path, target_argv);
 
     // exit(0);
-  } else {
-    OKF("Forked, fuzzer process pid %u child process pid %u", getppid(), pid1);
+  } else {  // fuzzer (parent)
+    OKF("NVFuzz: fork() succeeds, fuzzer process %u parent %u", getpid(),
+        getppid());
     while (1) {
       if (*runcheck) {
-        TESTF("--- Running check ---");
+        ACTF("NVFuzz: received request to run recovery and check consistency");
+
         info->probing = 0;
-        pid_t pid2 = fork();
-        if (pid2 == -1) {
-          PFATAL("Recovery fork() failed");
+        pid_t rpid = fork();
+        if (rpid == -1) {
+          PFATAL("NVFuzz: fork() to run the recovery program failed");
           exit(EXIT_FAILURE);
-        } else if (pid2 == 0) {
-          OKF("Forked, recovery process pid %u", getpid());
+        } else if (rpid == 0) {  // recovery program (2nd child)
+          OKF("NVFuzz: fork() succeeds, recovery process %u parent %u",
+              getpid(), getppid());
 
           // Note: target_argv should contain target_path
           char* args[] = {target_path, "stackfile", "check", NULL};
           execv(target_path, args);
 
           // exit(0);
-        } else {
-          if (waitpid(pid2, &status2, 0) > 0) {
+        } else {  // fuzzer (parent)
+          OKF("NVFuzz: fork() succeeds, fuzzer process %u parent %u", getpid(),
+              getppid());
+          if (waitpid(rpid, &status2, 0) > 0) {
             if (WIFEXITED(status2) && !WEXITSTATUS(status2)) {
-              OKF("Recovery program finished normally.");
+              OKF("NVFuzz: recovery %u exited normally.", rpid);
             } else if (WIFEXITED(status2) && WEXITSTATUS(status2)) {
-              if (WEXITSTATUS(status2) == 127)
-                ERRF("Recovery execv() failed");
+              int excode = WIFEXITED(status2);
+              if (excode == 127)
+                ERRF("NVFuzz: execv() recovery %u failed", rpid);
               else {
                 info->foundbug = 1;
-                WARNF("Recovery program exits with non-zero code");
+                WARNF("NVFuzz: recovery %u exited with code %d", rpid, excode);
               }
-            } else {
+            } else {  // perhaps killed by a signal?
               info->foundbug = 1;
-              ERRF("Recovery program did not exit normally");
+              WARNF("NVFuzz: recovery %u died without a normal exit", rpid);
             }
-          } else
-            ERRF("waitpid() failed");
+          } else {
+            ERRF("NVFuzz: waitpid() recovery %u failed", rpid);
+          }
         }
 
         info->probing = 1;
@@ -281,19 +289,22 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (waitpid(pid1, &status1, 0) > 0) {
+    if (waitpid(tpid, &status1, 0) > 0) {
       if (WIFEXITED(status1) && !WEXITSTATUS(status1)) {
-        OKF("Target program finished normally.");
+        OKF("NVFuzz: target %u exited normally.", tpid);
       } else if (WIFEXITED(status1) && WEXITSTATUS(status1)) {
         int excode = WIFEXITED(status1);
-        if (excode == 127)
-          ERRF("execv() failed");
-        else
-          WARNF("Target program exits with status %d.", excode);
-      } else
-        ERRF("Target program did not exit normally");
-    } else
-      ERRF("waitpid() failed");
+        if (excode == 127) {
+          ERRF("NVFuzz: execv() target %u failed", tpid);
+        } else {
+          WARNF("NVFuzz: target %u exited with code %d", tpid, excode);
+        }
+      } else {  // perhaps killed by a signal?
+        WARNF("NVFuzz: target died without a normal exit");
+      }
+    } else {
+      ERRF("NVFuzz: waitpid() target %u failed", tpid);
+    }
 
     // exit(0);
   }
