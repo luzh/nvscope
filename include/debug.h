@@ -185,10 +185,10 @@
 
 /* Show a prefixed fatal error message. */
 
-#define ERRF(x...)              \
-  do {                          \
-    SAYF(cLRD "\n[-] " cRST x); \
-    SAYF(cRST "\n");            \
+#define ERRF(x...)            \
+  do {                        \
+    SAYF(cLRD "[-] " cRST x); \
+    SAYF(cRST "\n");          \
   } while (0)
 
 /* Die with a verbose non-OS fatal error message. */
