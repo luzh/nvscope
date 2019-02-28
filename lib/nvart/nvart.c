@@ -61,7 +61,7 @@ static void __nvart_map_shm(void) {
     info = (struct nvart_info *)(__nvart_area_ptr);  // zeroed from parent
 
     pstate = &info->pstate;
-    *pstate = DONTCARE;
+    if (*pstate == NONE) *pstate = DONTCARE;
 
     runq = (struct nvart_runq *)(__nvart_area_ptr + NVART_SHM_RUNQ_OFF);
     if (info->probing) memset(runq, 0, NVART_SHM_RUNQ_SIZE);
@@ -104,7 +104,7 @@ static inline int __store64_in_pmem(uint64_t *ptr) {
 
 static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
   if (runq->len == NVART_SHM_RUNQ_MAX_LEN) {
-    ERRF("NVArt: Run queue is full (%lu entries)!\n", runq->len);
+    ERRF("NVArt: Run queue is full (%lu entries)!", runq->len);
     _exit(NVART_EXIT_RUNQ_FULL);
   }
 
@@ -190,6 +190,7 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
         line, (void *)ptr, *ptr, val);
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
+
   if (!__nvart_testing || !info->probing) return;
 
   if (!__store64_in_pmem(ptr)) return;

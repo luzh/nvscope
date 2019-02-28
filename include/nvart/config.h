@@ -17,7 +17,7 @@ enum nvart_excode {
   NVART_EXIT_FOUNDBUG
 };
 
-enum prog_state { STOPPED, DONTCARE, NORMAL, RECOVERY };
+enum prog_state { NONE, DONTCARE, NORMAL, RECOVERY };
 
 struct nvart_info {
   uint8_t reserved[64];
