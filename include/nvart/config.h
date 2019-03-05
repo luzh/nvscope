@@ -10,6 +10,37 @@
 
 #define NVART_SHM_ENV_VAR "__NVART_SHM_ID"
 
+/*
+ * Designated file descriptors for forkserver commands.
+ * The target process writes to TGT_WR_FD and reads TGT_RD_FD.
+ * The recovery process writes to RCY_WR_FD and reads RCY_RD_FD.
+ */
+enum nvart_pipe_fd {
+  TGT_RD_FD = 198,
+  TGT_WR_FD,
+  RCY_RD_FD,
+  RCY_WR_FD,
+
+  NVART_PIPE_FD_MAX
+};
+
+enum nvart_pipe_msg {
+  NVART_PIPE_MSG_NONE = 0,
+
+  /* Control commands */
+  NVART_RUN_TARGET,
+  NVART_CHECK_PASS,
+  NVART_CHECK_FAIL,
+  NVART_EXIT_FORKSRV,
+
+  /* Status */
+  NVART_REQ_CHECK,
+  NVART_FORKSRV_READY,
+  NVART_TARGET_EXITED,
+
+  NVART_PIPE_MSG_MAX
+};
+
 enum nvart_excode {
   NVART_EXIT_SUCCESS = 0,
   NVART_EXIT_NOSHM,
