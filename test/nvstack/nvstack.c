@@ -1,4 +1,3 @@
-#include "debug.h"
 #include "headers.h"
 
 #define MMAP_SIZE 4096
@@ -11,7 +10,7 @@ int checkmeta(void *pmem) {
   uint64_t *nvals = (uint64_t *)pmem;
 
   if (*nvals > MAX_VALUES) {
-    FATAL("Invalid stack value count!");
+    printf("Error: Invalid stack value count!\n");
     return EINVAL;
   }
 
@@ -34,9 +33,9 @@ int check(void *pmem) {
   }
 
   if (err)
-    WARNF("Detected inconsistent stack data!");
+    printf("Error: Detected inconsistent stack data.\n");
   else
-    OKF("Stack data looks good!");
+    printf("Stack data looks good.\n");
 
   return err;
 }
@@ -65,7 +64,7 @@ int push(void *pmem, uint64_t value) {
   uint64_t *top = (uint64_t *)pmem + META_SIZE + nvals - 1;
 
   if (nvals == MAX_VALUES) {
-    WARNF("Stack is full, ignoring value %lu", value);
+    printf("Stack is full, ignoring value %lu\n", value);
     return EINVAL;
   }
 
@@ -77,7 +76,7 @@ int push(void *pmem, uint64_t value) {
   _mm_clflushopt(pnvals);
   _mm_sfence();
 
-  ACTF("Pushed value %lu into the stack!", value);
+  printf("Pushed value %lu into the stack.\n", value);
 
   return 0;
 }
@@ -91,7 +90,7 @@ int pop(void *pmem, uint64_t *retval) {
   uint64_t *top = (uint64_t *)pmem + META_SIZE + nvals - 1;
 
   if (nvals == 0) {
-    WARNF("Stack is empty, no value to pop.");
+    printf("Stack is empty, no value to pop.\n");
     return EINVAL;
   }
 
@@ -102,7 +101,7 @@ int pop(void *pmem, uint64_t *retval) {
   _mm_clflushopt(pnvals);
   _mm_sfence();
 
-  ACTF("Poped value %lu off the stack!", value);
+  printf("Poped value %lu off the stack.\n", value);
 
   return 0;
 }
@@ -115,19 +114,18 @@ int show(void *pmem) {
   uint64_t nvals = *pnvals;
   uint64_t *valptr = (uint64_t *)pmem + META_SIZE;
 
-  if (nvals == 0)
-    SAYF("Stack is empty.");
-  else
-    SAYF("Stack values (total %ld, top on the right):", nvals);
-
-  for (uint64_t i = 0; i < nvals; i++) SAYF(" %lu", valptr[i]);
-  SAYF("\n");
+  printf("Stack values (total %ld, top on the right):", nvals);
+  for (uint64_t i = 0; i < nvals; i++) printf(" %lu", valptr[i]);
+  printf("\n");
 
   return 0;
 }
 
 int main(int argc, char **argv) {
-  if (argc != 3) FATAL("Usage: nvstack <file> <push | pop | show | check>");
+  if (argc != 3) {
+    printf("Usage: nvstack <file> <push | pop | show | check>\n");
+    abort();
+  }
 
   char *nvfile = argv[1];
   enum command cmd = CMD_NONE;
@@ -140,17 +138,23 @@ int main(int argc, char **argv) {
     cmd = CMD_SHOW;
   else if (strcmp(argv[2], "check") == 0)
     cmd = CMD_CHECK;
-  else
-    FATAL("Invalid command %s\n", argv[2]);
+  else {
+    printf("Error: invalid command %s\n", argv[2]);
+    abort();
+  }
 
   int fd = open(nvfile, O_CREAT | O_RDWR | O_SYNC,
                 S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-  if (fd < 0) FATAL("open '%s' failed!\n", argv[1]);
+  if (fd < 0) {
+    printf("Error: open '%s' failed!\n", argv[1]);
+    abort();
+  }
 
   void *pmem = mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (pmem == MAP_FAILED) {
     close(fd);
-    FATAL("mmap failed!");
+    printf("Error: mmap failed!\n");
+    abort();
   }
 
   int err = 0;
