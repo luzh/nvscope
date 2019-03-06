@@ -173,25 +173,28 @@ static void check_binary(uint8_t* fname) {
   if (munmap(f_data, f_len)) PFATAL("unmap() failed");
 }
 
-static int check_status(pid_t pid, int status) {
+static int check_status(int status, pid_t pid, char* pname) {
   int err = 1;
+
+  if (pname == NULL) pname = "(unnamed)";
 
   if (WIFEXITED(status)) {
     int exstatus = WEXITSTATUS(status);
     if (exstatus == 0) {
       err = 0;
-      OKF("NVFuzz: process %u exited normally", pid);
+      OKF("NVFuzz: %s process %u exited normally", pname, pid);
     } else if (exstatus == 127) {
-      ERRF("NVFuzz: execv() process %u failed", pid);
+      ERRF("NVFuzz: execv() for %s process %u failed", pname, pid);
     } else {
-      ERRF("NVFuzz: process %u exited, status %d", pid, exstatus);
+      ERRF("NVFuzz: %s process %u exited, status %d", pname, pid, exstatus);
     }
   } else if (WIFSTOPPED(status)) {
-    ERRF("NVFuzz: process %u has stopped %u", pid, WSTOPSIG(status));
+    ERRF("NVFuzz: %s process %u has stopped %u", pname, pid, WSTOPSIG(status));
   } else if (WIFSIGNALED(status)) {
-    ERRF("NVFuzz: process %u killed by signal %u", pid, WTERMSIG(status));
+    ERRF("NVFuzz: %s process %u killed by signal %u", pname, pid,
+         WTERMSIG(status));
   } else {
-    ERRF("NVFuzz: process %u died for unknown reasons", pid);
+    ERRF("NVFuzz: %s process %u died for unknown reasons", pname, pid);
   }
 
   return err;
@@ -335,7 +338,7 @@ static void init_forkserver(char* target, char** target_argv) {
   if (pidw < 0) {
     ERRF("NVFuzz: waitpid(%u) failed", tgt_forksrv_pid);
   } else if (pidw == tgt_forksrv_pid) {  // target's forkserver reaped
-    check_status(tgt_forksrv_pid, status);
+    check_status(status, tgt_forksrv_pid, "target's forkserver");
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", pidw);
   }
@@ -402,7 +405,7 @@ int main(int argc, char** argv) {
           } else if (rpidw == 0) {
             /* recovery is still running; fuzzer can do something else */
           } else if (rpidw == rpid) {  // recovery process reaped
-            foundbug = check_status(rpid, status);
+            foundbug = check_status(status, rpid, "recovery");
           } else {
             ERRF("NVFuzz: unexpected waitpid() return value %u", rpidw);
           }
@@ -418,7 +421,7 @@ int main(int argc, char** argv) {
       OKF("NVFuzz: target program exited", stat);
       if (read(tgt_stat_fd, &status, sizeof(status)) != sizeof(status))
         PFATAL("NVFuzz: read() from tgt_stat_fd failed");
-      check_status(0, status);
+      check_status(status, 0, NULL);
 
       ctrl = NVART_EXIT_FORKSRV;
       if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
@@ -436,7 +439,7 @@ int main(int argc, char** argv) {
   if (tgt_forksrv_pidw < 0) {
     ERRF("NVFuzz: waitpid(%u) failed", tgt_forksrv_pid);
   } else if (tgt_forksrv_pidw == tgt_forksrv_pid) {
-    check_status(tgt_forksrv_pid, status);
+    check_status(status, tgt_forksrv_pid, "target's forkserver");
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", tgt_forksrv_pidw);
   }
