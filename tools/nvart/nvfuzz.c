@@ -413,7 +413,6 @@ int main(int argc, char** argv) {
       }
 
       info->probing = 1;
-      info->reqcheck = 0;
       ctrl = foundbug ? NVART_CHECK_FAIL : NVART_CHECK_PASS;
       if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
         PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");

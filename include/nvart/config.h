@@ -53,7 +53,6 @@ enum prog_state { NONE, DONTCARE, NORMAL, RECOVERY };
 struct nvart_info {
   uint8_t reserved[64];
   uint32_t probing;
-  uint32_t reqcheck;
   uint32_t foundbug;
   enum prog_state pstate;
 };

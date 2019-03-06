@@ -254,7 +254,6 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
 }
 
 static void __emulate_crash(uint64_t sfid) {
-  // volatile uint32_t *reqcheck = &info->reqcheck;
   enum nvart_pipe_msg req, result;
   while (__next_test_case(sfid)) {
     req = NVART_REQ_CHECK;
@@ -272,15 +271,6 @@ static void __emulate_crash(uint64_t sfid) {
       ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
       _exit(NVART_EXIT_FOUNDBUG);
     }
-
-    // info->reqcheck = 1;
-    // while (*reqcheck) {
-    //  /* wait for recovery+check to finish */
-    //};
-    // if (info->foundbug) {
-    //  ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
-    //  _exit(NVART_EXIT_FOUNDBUG);
-    //}
   }
 }
 
