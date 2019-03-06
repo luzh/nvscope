@@ -374,62 +374,73 @@ int main(int argc, char** argv) {
   if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
     PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
 
-  while (1) {
+  int fatal = 0, alldone = 0;
+  while (!fatal && !alldone) {
     if (read(tgt_stat_fd, &stat, sizeof(stat)) != sizeof(stat))
       PFATAL("NVFuzz: read() from tgt_stat_fd failed");
 
-    if (stat == NVART_REQ_CHECK) {
-      ACTF("NVFuzz: target requested to run recovery and checking");
+    switch (stat) {
+      case NVART_REQ_CHECK:
+        ACTF("NVFuzz: target requested to run recovery and checking");
 
-      info->probing = 0;
+        info->probing = 0;
 
-      if ((rpid = fork()) == -1) {
-        PFATAL("NVFuzz: fork() to run the recovery program failed");
-        // exit(EXIT_FAILURE);
-      } else if (rpid == 0) {  // recovery program (2nd child)
-        OKF("NVFuzz: fork() succeeds, recovery process %u parent %u", getpid(),
-            getppid());
+        if ((rpid = fork()) == -1) {
+          PFATAL("NVFuzz: fork() to run the recovery program failed");
+          // exit(EXIT_FAILURE);
+        } else if (rpid == 0) {  // recovery program (2nd child)
+          OKF("NVFuzz: fork() succeeds, recovery process %u parent %u",
+              getpid(), getppid());
 
-        // Note: target_argv should contain target_path
-        char* args[] = {target_path, "stackfile", "check", NULL};
-        execv(target_path, args);
+          // Note: target_argv should contain target_path
+          char* args[] = {target_path, "stackfile", "check", NULL};
+          execv(target_path, args);
 
-        /* If execv() succeeds, it should not return (getting here). */
-        FATAL("NVFuzz: unable to execute the recovery program");
-      } else {  // fuzzer (parent)
-        OKF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
-        do {  // wait for the recovery process to finish
-          rpidw = waitpid(rpid, &status, WNOHANG);
-          if (rpidw == -1) {
-            ERRF("NVFuzz: waitpid(%u) failed", rpid);
-          } else if (rpidw == 0) {
-            /* recovery is still running; fuzzer can do something else */
-          } else if (rpidw == rpid) {  // recovery process reaped
-            foundbug = check_status(status, rpid, "recovery");
-          } else {
-            ERRF("NVFuzz: unexpected waitpid() return value %u", rpidw);
-          }
-        } while (rpidw == 0);  // recovery program still running
-      }
+          /* If execv() succeeds, it should not return (getting here). */
+          FATAL("NVFuzz: unable to execute the recovery program");
+        } else {  // fuzzer (parent)
+          OKF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
+          do {  // wait for the recovery process to finish
+            rpidw = waitpid(rpid, &status, WNOHANG);
+            if (rpidw == -1) {
+              ERRF("NVFuzz: waitpid(%u) failed", rpid);
+            } else if (rpidw == 0) {
+              /* recovery is still running; fuzzer can do something else */
+            } else if (rpidw == rpid) {  // recovery process reaped
+              foundbug = check_status(status, rpid, "recovery");
+            } else {
+              ERRF("NVFuzz: unexpected waitpid() return value %u", rpidw);
+            }
+          } while (rpidw == 0);  // recovery program still running
+        }
 
-      info->probing = 1;
-      ctrl = foundbug ? NVART_CHECK_FAIL : NVART_CHECK_PASS;
-      if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
-        PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
-    } else if (stat == NVART_TARGET_EXITED) {
-      OKF("NVFuzz: target program exited", stat);
-      if (read(tgt_stat_fd, &status, sizeof(status)) != sizeof(status))
-        PFATAL("NVFuzz: read() from tgt_stat_fd failed");
-      check_status(status, 0, NULL);
+        info->probing = 1;
+        ctrl = foundbug ? NVART_CHECK_FAIL : NVART_CHECK_PASS;
+        if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
+          PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
+        break;
+      case NVART_TARGET_EXITED:
+        OKF("NVFuzz: target program exited", stat);
+        if (read(tgt_stat_fd, &status, sizeof(status)) != sizeof(status))
+          PFATAL("NVFuzz: read() from tgt_stat_fd failed");
+        check_status(status, 0, NULL);
 
-      ctrl = NVART_EXIT_FORKSRV;
-      if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
-        PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
-      break;  // can restart the target process
-    } else {
-      ERRF("NVFuzz: inappropriate pipe message %d", stat);
-      exit(EXIT_FAILURE);
+        ctrl = NVART_EXIT_FORKSRV;
+        if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
+          PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
+
+        alldone = 1;  // can restart the target process
+        break;
+      default:
+        ERRF("NVFuzz: inappropriate pipe message %d", stat);
+        fatal = 1;
+        break;
     }
+  }
+
+  if (fatal) {
+    /* Todo: Should kill forked processes: forkservers, target & recovery. */
+    exit(EXIT_FAILURE);
   }
 
   /* wait for the forkserver to exit */
