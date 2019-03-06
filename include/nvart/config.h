@@ -12,14 +12,15 @@
 
 /*
  * Designated file descriptors for forkserver commands.
- * The target process writes to TGT_WR_FD and reads TGT_RD_FD.
- * The recovery process writes to RCY_WR_FD and reads RCY_RD_FD.
+ * The mainproc process reads MAINPROC_CTRL and writes to MAINPROC_INFO.
+ * The recovery process reads RECOVERY_CTRL and writes to RECOVERY_INFO.
  */
 enum nvart_pipe_fd {
-  TGT_RD_FD = 198,
-  TGT_WR_FD,
-  RCY_RD_FD,
-  RCY_WR_FD,
+  MAINPROC_CTRL = 198,
+  MAINPROC_INFO,
+
+  RECOVERY_CTRL,
+  RECOVERY_INFO,
 
   NVART_PIPE_FD_MAX
 };

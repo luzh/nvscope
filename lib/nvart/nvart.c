@@ -84,22 +84,22 @@ static void __nvart_start_forkserver(void) {
    * assume we're not running in forkserver mode and just execute program.
    */
   stat = NVART_FORKSRV_READY;
-  if (write(TGT_WR_FD, &stat, sizeof(stat)) != sizeof(stat)) {
-    WARNF("NVArt: contact fuzzer failed; target will run without testing");
+  if (write(MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
+    WARNF("NVArt: contact fuzzer failed; mainproc will run without testing");
     return;
   }
 
   while (1) {
     /* Wait for parent by reading from the pipe. Abort if read fails. */
-    if (read(TGT_RD_FD, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
-      ERRF("NVArt: read() from TGT_RD_FD %d failed", TGT_RD_FD);
+    if (read(MAINPROC_CTRL, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
+      ERRF("NVArt: read() from MAINPROC_CTRL %d failed", MAINPROC_CTRL);
       _exit(EXIT_FAILURE);
     }
 
     if (ctrl == NVART_EXIT_FORKSRV) {
       ACTF("NVArt: forkserver received command to exit");
-      close(TGT_RD_FD);
-      close(TGT_WR_FD);
+      close(MAINPROC_CTRL);
+      close(MAINPROC_INFO);
       _exit(EXIT_SUCCESS);
     }
 
@@ -110,18 +110,18 @@ static void __nvart_start_forkserver(void) {
 
     /* Check afl-llvm-rt.o.c for persistent mode and using SIGCONT. */
     if ((tpid = fork()) < 0) {
-      ERRF("NVArt: fork() to run the target program failed");
+      ERRF("NVArt: fork() to run the mainproc program failed");
       _exit(EXIT_FAILURE);
     }
 
     if (tpid == 0) {
       /*
-       * In the child process (target program): start execution, e.g. from
+       * In the child process (mainproc): start execution, e.g. from
        * main(). It inherits pipes from the forkserver to communicate with the
-       * fuzzer. Thus, when the target program runs, there are two writers to
-       * the state pipe: the forkserver and the target program. Linux pipes
+       * fuzzer. Thus, when the mainproc program runs, there are two writers to
+       * the state pipe: the forkserver and the mainproc program. Linux pipes
        * guarantee write atomicity for message sizes no larger than PIPE_BUF.
-       * When the target program exits, its pipe ends automatically close.
+       * When the mainproc program exits, its pipe ends automatically close.
        *
        * In afl-llvm-rt.o.c, AFL closes the pipe fds because they are not used
        * anymore. But we still need them to relay testing requests to the
@@ -130,16 +130,16 @@ static void __nvart_start_forkserver(void) {
       return;
     }
 
-    OKF("NVArt: target program started, pid %d", tpid);
+    OKF("NVArt: mainproc program started, pid %d", tpid);
 
     /*
      * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
-     * because the target is running and it may write to TGT_WR_FD too.
+     * because the mainproc is running and it may write to MAINPROC_INFO too.
      */
 
-    /* In parent (forkserver): write PID to pipe, then wait for target. */
-    // if (write(TGT_WR_FD, &tpid, sizeof(tpid)) != sizeof(tpid)) {
-    //   ERRF("NVArt: write() tpid to TGT_WR_FD %d failed", TGT_WR_FD);
+    /* In parent (forkserver): write PID to pipe, then wait for mainproc. */
+    // if (write(MAINPROC_INFO, &tpid, sizeof(tpid)) != sizeof(tpid)) {
+    //   ERRF("NVArt: write() tpid to MAINPROC_INFO %d failed", MAINPROC_INFO);
     //   _exit(EXIT_FAILURE);
     // }
 
@@ -148,11 +148,12 @@ static void __nvart_start_forkserver(void) {
     if (tpidw < 0) {
       ERRF("NVArt: waitpid() for %u failed", tpid);
       _exit(EXIT_FAILURE);
-    } else if (tpidw == tpid) {  // target process reaped
-      ACTF("NVArt: target process %u finished", tpid);
+    } else if (tpidw == tpid) {  // mainproc process reaped
+      ACTF("NVArt: mainproc process %u finished", tpid);
       stat = NVART_TARGET_EXITED;
-      if (write(TGT_WR_FD, &stat, sizeof(stat)) != sizeof(stat)) {
-        ERRF("NVArt: write() tstatus to TGT_WR_FD %d failed", TGT_WR_FD);
+      if (write(MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
+        ERRF("NVArt: write() tstatus to MAINPROC_INFO %d failed",
+             MAINPROC_INFO);
         _exit(EXIT_FAILURE);
       }
     } else {
@@ -160,15 +161,15 @@ static void __nvart_start_forkserver(void) {
     }
 
     /* Relay waitpid status to pipe, then loop back to restart. */
-    if (write(TGT_WR_FD, &tstatus, sizeof(tstatus)) != sizeof(tstatus)) {
-      ERRF("NVArt: write() tstatus to TGT_WR_FD %d failed", TGT_WR_FD);
+    if (write(MAINPROC_INFO, &tstatus, sizeof(tstatus)) != sizeof(tstatus)) {
+      ERRF("NVArt: write() tstatus to MAINPROC_INFO %d failed", MAINPROC_INFO);
       _exit(EXIT_FAILURE);
     }
   }
 }
 
 /*
- * Initialize NVArt run-time data structures. Runs before target's main() with
+ * Initialize NVArt run-time data structures. Runs before mainproc's main() with
  * the constructor attribute.
  */
 __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
@@ -257,13 +258,13 @@ static void __emulate_crash(uint64_t sfid) {
   enum nvart_pipe_msg req, result;
   while (__next_test_case(sfid)) {
     req = NVART_REQ_CHECK;
-    if (write(TGT_WR_FD, &req, sizeof(req)) != sizeof(req)) {
-      ERRF("NVArt: write() to TGT_WR_FD %d failed", TGT_WR_FD);
+    if (write(MAINPROC_INFO, &req, sizeof(req)) != sizeof(req)) {
+      ERRF("NVArt: write() to MAINPROC_INFO %d failed", MAINPROC_INFO);
       _exit(EXIT_FAILURE);
     }
 
-    if (read(TGT_RD_FD, &result, sizeof(result)) != sizeof(result)) {
-      ERRF("NVArt: read() from TGT_RD_FD %d failed", TGT_RD_FD);
+    if (read(MAINPROC_CTRL, &result, sizeof(result)) != sizeof(result)) {
+      ERRF("NVArt: read() from MAINPROC_CTRL %d failed", MAINPROC_CTRL);
       _exit(EXIT_FAILURE);
     }
 
