@@ -12,15 +12,15 @@
 
 /*
  * Designated file descriptors for forkserver commands.
- * The mainproc process reads MAINPROC_CTRL and writes to MAINPROC_INFO.
- * The recovery process reads RECOVERY_CTRL and writes to RECOVERY_INFO.
+ * The mainproc process reads FD_MAINPROC_CTRL and writes to FD_MAINPROC_INFO.
+ * The recovery process reads FD_RECOVERY_CTRL and writes to FD_RECOVERY_INFO.
  */
 enum nvart_pipe_fd {
-  MAINPROC_CTRL = 198,
-  MAINPROC_INFO,
+  FD_MAINPROC_CTRL = 198,
+  FD_MAINPROC_INFO,
 
-  RECOVERY_CTRL,
-  RECOVERY_INFO,
+  FD_RECOVERY_CTRL,
+  FD_RECOVERY_INFO,
 
   NVART_PIPE_FD_MAX
 };

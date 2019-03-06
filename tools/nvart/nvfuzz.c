@@ -293,10 +293,10 @@ static void init_forkserver(char* target, char** target_argv) {
 
     /* Set up control and status pipes, close the unneeded original fds. */
 
-    if (dup2(mainproc_ctrl_fds[0], MAINPROC_CTRL) < 0)
-      PFATAL("NVFuzz: dup2() for MAINPROC_CTRL failed");
-    if (dup2(mainproc_info_fds[1], MAINPROC_INFO) < 0)
-      PFATAL("NVFuzz: dup2() for MAINPROC_INFO failed");
+    if (dup2(mainproc_ctrl_fds[0], FD_MAINPROC_CTRL) < 0)
+      PFATAL("NVFuzz: dup2() for FD_MAINPROC_CTRL failed");
+    if (dup2(mainproc_info_fds[1], FD_MAINPROC_INFO) < 0)
+      PFATAL("NVFuzz: dup2() for FD_MAINPROC_INFO failed");
 
     close(mainproc_ctrl_fds[0]);
     close(mainproc_ctrl_fds[1]);

@@ -84,22 +84,22 @@ static void __nvart_start_forkserver(void) {
    * assume we're not running in forkserver mode and just execute program.
    */
   stat = MSG_FORKSERVER_READY;
-  if (write(MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
+  if (write(FD_MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
     WARNF("NVArt: contact fuzzer failed; mainproc will run without testing");
     return;
   }
 
   while (1) {
     /* Wait for parent by reading from the pipe. Abort if read fails. */
-    if (read(MAINPROC_CTRL, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
-      ERRF("NVArt: read() from MAINPROC_CTRL %d failed", MAINPROC_CTRL);
+    if (read(FD_MAINPROC_CTRL, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
+      ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
       _exit(EXIT_FAILURE);
     }
 
     if (ctrl == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
-      close(MAINPROC_CTRL);
-      close(MAINPROC_INFO);
+      close(FD_MAINPROC_CTRL);
+      close(FD_MAINPROC_INFO);
       _exit(EXIT_SUCCESS);
     }
 
@@ -134,12 +134,12 @@ static void __nvart_start_forkserver(void) {
 
     /*
      * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
-     * because the mainproc is running and it may write to MAINPROC_INFO too.
+     * because the mainproc is running and it may write to FD_MAINPROC_INFO too.
      */
 
     /* In parent (forkserver): write PID to pipe, then wait for mainproc. */
-    // if (write(MAINPROC_INFO, &tpid, sizeof(tpid)) != sizeof(tpid)) {
-    //   ERRF("NVArt: write() tpid to MAINPROC_INFO %d failed", MAINPROC_INFO);
+    // if (write(FD_MAINPROC_INFO, &tpid, sizeof(tpid)) != sizeof(tpid)) {
+    //   ERRF("NVArt: write() tpid to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
     //   _exit(EXIT_FAILURE);
     // }
 
@@ -151,9 +151,9 @@ static void __nvart_start_forkserver(void) {
     } else if (tpidw == tpid) {  // mainproc process reaped
       ACTF("NVArt: mainproc process %u finished", tpid);
       stat = MSG_MAINPROC_EXITED;
-      if (write(MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
-        ERRF("NVArt: write() tstatus to MAINPROC_INFO %d failed",
-             MAINPROC_INFO);
+      if (write(FD_MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
+        ERRF("NVArt: write() tstatus to FD_MAINPROC_INFO %d failed",
+             FD_MAINPROC_INFO);
         _exit(EXIT_FAILURE);
       }
     } else {
@@ -161,8 +161,8 @@ static void __nvart_start_forkserver(void) {
     }
 
     /* Relay waitpid status to pipe, then loop back to restart. */
-    if (write(MAINPROC_INFO, &tstatus, sizeof(tstatus)) != sizeof(tstatus)) {
-      ERRF("NVArt: write() tstatus to MAINPROC_INFO %d failed", MAINPROC_INFO);
+    if (write(FD_MAINPROC_INFO, &tstatus, sizeof(tstatus)) != sizeof(tstatus)) {
+      ERRF("NVArt: write() tstatus to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
       _exit(EXIT_FAILURE);
     }
   }
@@ -258,13 +258,13 @@ static void __emulate_crash(uint64_t sfid) {
   enum nvart_pipe_msg req, result;
   while (__next_test_case(sfid)) {
     req = MSG_AWAITING_CHECK;
-    if (write(MAINPROC_INFO, &req, sizeof(req)) != sizeof(req)) {
-      ERRF("NVArt: write() to MAINPROC_INFO %d failed", MAINPROC_INFO);
+    if (write(FD_MAINPROC_INFO, &req, sizeof(req)) != sizeof(req)) {
+      ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
       _exit(EXIT_FAILURE);
     }
 
-    if (read(MAINPROC_CTRL, &result, sizeof(result)) != sizeof(result)) {
-      ERRF("NVArt: read() from MAINPROC_CTRL %d failed", MAINPROC_CTRL);
+    if (read(FD_MAINPROC_CTRL, &result, sizeof(result)) != sizeof(result)) {
+      ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
       _exit(EXIT_FAILURE);
     }
 
