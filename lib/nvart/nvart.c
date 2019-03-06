@@ -20,7 +20,7 @@ __thread uint32_t __nvart_prev_loc;
 int __nvart_testing;
 struct nvart_info *info;
 struct nvart_runq *runq;
-enum prog_state *pstate;
+enum target_stage *stage;
 
 /* Debug functions */
 void __nvart_print_runq() {
@@ -60,8 +60,8 @@ static void __nvart_map_shm(void) {
     __nvart_testing = 1;
     info = (struct nvart_info *)(__nvart_area_ptr);  // zeroed from parent
 
-    pstate = &info->pstate;
-    if (*pstate == NONE) *pstate = DONTCARE;
+    stage = &info->stage;
+    if (*stage == NONE) *stage = DONTCARE;
 
     runq = (struct nvart_runq *)(__nvart_area_ptr + NVART_SHM_RUNQ_OFF);
     if (info->probing) memset(runq, 0, NVART_SHM_RUNQ_SIZE);
@@ -83,7 +83,7 @@ static void __nvart_start_forkserver(void) {
    * Phone home and tell the parent that we're OK. If parent isn't there,
    * assume we're not running in forkserver mode and just execute program.
    */
-  stat = NVART_FORKSRV_READY;
+  stat = MSG_FORKSERVER_READY;
   if (write(MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
     WARNF("NVArt: contact fuzzer failed; mainproc will run without testing");
     return;
@@ -96,14 +96,14 @@ static void __nvart_start_forkserver(void) {
       _exit(EXIT_FAILURE);
     }
 
-    if (ctrl == NVART_EXIT_FORKSRV) {
+    if (ctrl == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
       close(MAINPROC_CTRL);
       close(MAINPROC_INFO);
       _exit(EXIT_SUCCESS);
     }
 
-    if (ctrl != NVART_RUN_TARGET) {
+    if (ctrl != MSG_CONTINUE_TO_RUN) {
       ERRF("NVArt: inappropriate pipe message %d", ctrl);
       _exit(EXIT_FAILURE);
     }
@@ -150,7 +150,7 @@ static void __nvart_start_forkserver(void) {
       _exit(EXIT_FAILURE);
     } else if (tpidw == tpid) {  // mainproc process reaped
       ACTF("NVArt: mainproc process %u finished", tpid);
-      stat = NVART_TARGET_EXITED;
+      stat = MSG_MAINPROC_EXITED;
       if (write(MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
         ERRF("NVArt: write() tstatus to MAINPROC_INFO %d failed",
              MAINPROC_INFO);
@@ -257,7 +257,7 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
 static void __emulate_crash(uint64_t sfid) {
   enum nvart_pipe_msg req, result;
   while (__next_test_case(sfid)) {
-    req = NVART_REQ_CHECK;
+    req = MSG_AWAITING_CHECK;
     if (write(MAINPROC_INFO, &req, sizeof(req)) != sizeof(req)) {
       ERRF("NVArt: write() to MAINPROC_INFO %d failed", MAINPROC_INFO);
       _exit(EXIT_FAILURE);
@@ -268,7 +268,7 @@ static void __emulate_crash(uint64_t sfid) {
       _exit(EXIT_FAILURE);
     }
 
-    if (result == NVART_CHECK_FAIL) {
+    if (result == MSG_SHOW_BUG_AND_EXIT) {
       ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
       _exit(NVART_EXIT_FOUNDBUG);
     }
@@ -290,9 +290,9 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
 
   if (!__store64_in_pmem(ptr)) return;
 
-  if (*pstate == NORMAL) __runq_push_back_store64(ptr, val);
+  if (*stage == MAINPROC) __runq_push_back_store64(ptr, val);
 
-  if (*pstate == RECOVERY) __recoverq_push_back_store64(ptr, val);
+  if (*stage == RECOVERY) __recoverq_push_back_store64(ptr, val);
 }
 
 #ifdef NDEBUG
@@ -307,7 +307,7 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
   if (!__nvart_testing || !info->probing) return;
 
   /* Implementation */
-  *pstate = NORMAL;
+  *stage = MAINPROC;
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {

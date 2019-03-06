@@ -6,7 +6,7 @@
 #define ALIGN_UP(size, align) (((size) + (align)-1) & ~((align)-1))
 #define ALIGN_DOWN(size, align) ((size) & ~((align)-1))
 
-/* Environment variable used to pass SHM ID to the target program. */
+/* Environment variable used to pass SHM ID to the target programs. */
 
 #define NVART_SHM_ENV_VAR "__NVART_SHM_ID"
 
@@ -26,18 +26,17 @@ enum nvart_pipe_fd {
 };
 
 enum nvart_pipe_msg {
-  NVART_PIPE_MSG_NONE = 0,
+  MSG_INVALID = 0,
 
-  /* Control commands */
-  NVART_RUN_TARGET,
-  NVART_CHECK_PASS,
-  NVART_CHECK_FAIL,
-  NVART_EXIT_FORKSRV,
+  /* Control commands: fuzzer telling target */
+  MSG_CONTINUE_TO_RUN,
+  MSG_SHOW_BUG_AND_EXIT,
+  MSG_EXIT_FORKSERVER,
 
-  /* Status */
-  NVART_REQ_CHECK,
-  NVART_FORKSRV_READY,
-  NVART_TARGET_EXITED,
+  /* Information: target telling fuzzer */
+  MSG_AWAITING_CHECK,
+  MSG_FORKSERVER_READY,
+  MSG_MAINPROC_EXITED,
 
   NVART_PIPE_MSG_MAX
 };
@@ -49,13 +48,13 @@ enum nvart_excode {
   NVART_EXIT_FOUNDBUG
 };
 
-enum prog_state { NONE, DONTCARE, NORMAL, RECOVERY };
+enum target_stage { NONE, DONTCARE, MAINPROC, RECOVERY };
 
 struct nvart_info {
   uint8_t reserved[64];
   uint32_t probing;
   uint32_t foundbug;
-  enum prog_state pstate;
+  enum target_stage stage;
 };
 
 #define NVART_SHM_INFO_SIZE ALIGN_UP(sizeof(struct nvart_info), CLSIZE)

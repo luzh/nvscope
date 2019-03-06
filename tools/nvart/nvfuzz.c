@@ -23,8 +23,8 @@ static uint8_t
     // *sync_dir,          /* Synchronization directory       */
     // *sync_id,           /* Fuzzer ID                       */
     // *use_banner,        /* Display banner                  */
-    *in_bitmap,   /* Input bitmap                    */
-    *target_path; /* Path to target binary           */
+    *in_bitmap,     /* Input bitmap                    */
+    *mainproc_path; /* Path to the mainproc binary           */
 //  *orig_cmdline;      /* Original command line           */
 
 static uint8_t
@@ -60,7 +60,7 @@ static uint8_t virgin_bits[MAP_SIZE], /* Regions yet untouched by fuzzing */
     virgin_crash[MAP_SIZE];           /* Bits we haven't seen in crashes  */
 
 /*
- * Do a PATH search and find target binary to see that it exists and isn't a
+ * Do a PATH search and find target binaries to see that it exists and isn't a
  * shell script - a common and painful mistake. We also check for a valid ELF
  * header and for evidence of AFL instrumentation.
  */
@@ -75,8 +75,8 @@ static void check_binary(uint8_t* fname) {
   ACTF("Validating target binary...");
 
   if (strchr(fname, '/') || !(env_path = getenv("PATH"))) {
-    target_path = ck_strdup(fname);
-    if (stat(target_path, &st) || !S_ISREG(st.st_mode) ||
+    mainproc_path = ck_strdup(fname);
+    if (stat(mainproc_path, &st) || !S_ISREG(st.st_mode) ||
         !(st.st_mode & 0111) || (f_len = st.st_size) < 4)
       FATAL("Program '%s' not found or not executable", fname);
 
@@ -95,49 +95,49 @@ static void check_binary(uint8_t* fname) {
       env_path = delim;
 
       if (cur_elem[0])
-        target_path = alloc_printf("%s/%s", cur_elem, fname);
+        mainproc_path = alloc_printf("%s/%s", cur_elem, fname);
       else
-        target_path = ck_strdup(fname);
+        mainproc_path = ck_strdup(fname);
 
       ck_free(cur_elem);
 
-      if (!stat(target_path, &st) && S_ISREG(st.st_mode) &&
+      if (!stat(mainproc_path, &st) && S_ISREG(st.st_mode) &&
           (st.st_mode & 0111) && (f_len = st.st_size) >= 4)
         break;
 
-      ck_free(target_path);
-      target_path = 0;
+      ck_free(mainproc_path);
+      mainproc_path = 0;
     }
 
-    if (!target_path) FATAL("Program '%s' not found or not executable", fname);
+    if (!mainproc_path) FATAL("Program '%s' not found or not executable", fname);
   }
 
   if (getenv("AFL_SKIP_BIN_CHECK")) return;
 
   /* Check for blatant user errors. */
 
-  if ((!strncmp(target_path, "/tmp/", 5) && !strchr(target_path + 5, '/')) ||
-      (!strncmp(target_path, "/var/tmp/", 9) && !strchr(target_path + 9, '/')))
+  if ((!strncmp(mainproc_path, "/tmp/", 5) && !strchr(mainproc_path + 5, '/')) ||
+      (!strncmp(mainproc_path, "/var/tmp/", 9) && !strchr(mainproc_path + 9, '/')))
     FATAL("Please don't keep binaries in /tmp or /var/tmp");
 
-  fd = open(target_path, O_RDONLY);
+  fd = open(mainproc_path, O_RDONLY);
 
-  if (fd < 0) PFATAL("Unable to open '%s'", target_path);
+  if (fd < 0) PFATAL("Unable to open '%s'", mainproc_path);
 
   f_data = mmap(0, f_len, PROT_READ, MAP_PRIVATE, fd, 0);
 
-  if (f_data == MAP_FAILED) PFATAL("Unable to mmap file '%s'", target_path);
+  if (f_data == MAP_FAILED) PFATAL("Unable to mmap file '%s'", mainproc_path);
 
   close(fd);
 
   if (f_data[0] == '#' && f_data[1] == '!') {
     SAYF("\n" cLRD "[-] " cRST
          "Oops, the target binary looks like a shell script.\n");
-    FATAL("Program '%s' is a shell script", target_path);
+    FATAL("Program '%s' is a shell script", mainproc_path);
   }
 
   if (f_data[0] != 0x7f || memcmp(f_data + 1, "ELF", 3))
-    FATAL("Program '%s' is not an ELF binary", target_path);
+    FATAL("Program '%s' is not an ELF binary", mainproc_path);
 
   if (!dumb_mode && !memmem(f_data, f_len, NVART_SHM_ENV_VAR,
                             strlen(NVART_SHM_ENV_VAR) + 1)) {
@@ -306,7 +306,7 @@ static void init_forkserver(char* target, char** target_argv) {
     execv(target, target_argv);
 
     /* If execv() succeeds, it should not return (getting here). */
-    FATAL("NVFuzz: unable to execute the target program '%s'", target_path);
+    FATAL("NVFuzz: unable to execute the target program '%s'", mainproc_path);
   }
 
   /* Close the unneeded endpoints. */
@@ -327,7 +327,7 @@ static void init_forkserver(char* target, char** target_argv) {
    * If we have ready message from the forkserver, we're all set. Otherwise,
    * try to figure out what went wrong with waitpid().
    */
-  if (rlen == sizeof(stat) && stat == NVART_FORKSRV_READY) {
+  if (rlen == sizeof(stat) && stat == MSG_FORKSERVER_READY) {
     OKF("NVFuzz: target program's forkserver is up, pid %u", mainproc_frks_pid);
     return;
   }
@@ -349,12 +349,12 @@ static void init_forkserver(char* target, char** target_argv) {
 }
 
 int main(int argc, char** argv) {
-  if (argc < 2) FATAL("Usage: %s <target>", argv[0]);
+  if (argc < 2) FATAL("Usage: %s <mainproc>", argv[0]);
 
-  char** target_argv = argv + 1;  // skip the fuzzer program
+  char** mainproc_argv = argv + 1;  // skip the fuzzer program
 
   check_binary(argv[1]);
-  ACTF("Preparing to test program %s", target_path);
+  ACTF("Preparing to test program %s", mainproc_path);
 
   setup_shm();
   struct nvart_info* info = (struct nvart_info*)(trace_bits);
@@ -365,12 +365,12 @@ int main(int argc, char** argv) {
   pid_t rpid, rpidw;
   int status, foundbug = 0;
 
-  init_forkserver(target_path, target_argv);
+  init_forkserver(mainproc_path, mainproc_argv);
 
   enum nvart_pipe_msg ctrl, stat;
 
-  /* tell the the target program's forkserver to run the target program */
-  ctrl = NVART_RUN_TARGET;
+  /* tell the the mainproc program's forkserver to run the mainproc program */
+  ctrl = MSG_CONTINUE_TO_RUN;
   if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
     PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
 
@@ -380,8 +380,8 @@ int main(int argc, char** argv) {
       PFATAL("NVFuzz: read() from mainproc_info_fd failed");
 
     switch (stat) {
-      case NVART_REQ_CHECK:
-        ACTF("NVFuzz: target requested to run recovery and checking");
+      case MSG_AWAITING_CHECK:
+        ACTF("NVFuzz: mainproc requested to run recovery and checking");
 
         info->probing = 0;
 
@@ -392,9 +392,9 @@ int main(int argc, char** argv) {
           OKF("NVFuzz: fork() succeeds, recovery process %u parent %u",
               getpid(), getppid());
 
-          // Note: target_argv should contain target_path
-          char* args[] = {target_path, "stackfile", "check", NULL};
-          execv(target_path, args);
+          // Note: mainproc_argv should contain mainproc_path
+          char* args[] = {mainproc_path, "stackfile", "check", NULL};
+          execv(mainproc_path, args);
 
           /* If execv() succeeds, it should not return (getting here). */
           FATAL("NVFuzz: unable to execute the recovery program");
@@ -415,21 +415,21 @@ int main(int argc, char** argv) {
         }
 
         info->probing = 1;
-        ctrl = foundbug ? NVART_CHECK_FAIL : NVART_CHECK_PASS;
+        ctrl = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
         if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
           PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
         break;
-      case NVART_TARGET_EXITED:
-        OKF("NVFuzz: target program exited", stat);
+      case MSG_MAINPROC_EXITED:
+        OKF("NVFuzz: mainproc program exited", stat);
         if (read(mainproc_info_fd, &status, sizeof(status)) != sizeof(status))
           PFATAL("NVFuzz: read() from mainproc_info_fd failed");
         check_status(status, 0, NULL);
 
-        ctrl = NVART_EXIT_FORKSRV;
+        ctrl = MSG_EXIT_FORKSERVER;
         if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
           PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
 
-        alldone = 1;  // can restart the target process
+        alldone = 1;  // can restart the mainproc process
         break;
       default:
         ERRF("NVFuzz: inappropriate pipe message %d", stat);
@@ -439,7 +439,7 @@ int main(int argc, char** argv) {
   }
 
   if (fatal) {
-    /* Todo: Should kill forked processes: forkservers, target & recovery. */
+    /* Todo: Should kill forked processes: forkservers, mainproc & recovery. */
     exit(EXIT_FAILURE);
   }
 
@@ -449,7 +449,7 @@ int main(int argc, char** argv) {
   if (mainproc_frks_pidw < 0) {
     ERRF("NVFuzz: waitpid(%u) failed", mainproc_frks_pid);
   } else if (mainproc_frks_pidw == mainproc_frks_pid) {
-    check_status(status, mainproc_frks_pid, "target's forkserver");
+    check_status(status, mainproc_frks_pid, "mainproc's forkserver");
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", mainproc_frks_pidw);
   }
