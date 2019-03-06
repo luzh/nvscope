@@ -66,18 +66,105 @@ static void __nvart_map_shm(void) {
     runq = (struct nvart_runq *)(__nvart_area_ptr + NVART_SHM_RUNQ_OFF);
     if (info->probing) memset(runq, 0, NVART_SHM_RUNQ_SIZE);
 
-    OKF("NVArt SHM attached");
+    OKF("NVArt: attached to shared memory");
   } else {
     __nvart_testing = 0;
 
-    WARNF("NVArt SHM NOT found");
+    WARNF("NVArt: shared memory not found");
   }
 }
 
-/* Fork server logic */
+/* Forkserver logic (see nvfuzz.c for the other part) */
 static void __nvart_start_forkserver(void) {
-  /* setup NVART forkserver */
-  WARNF("NVArt forkserver logic not implemented");
+  pid_t tpid;
+  enum nvart_pipe_msg ctrl, stat;
+
+  /*
+   * Phone home and tell the parent that we're OK. If parent isn't there,
+   * assume we're not running in forkserver mode and just execute program.
+   */
+  stat = NVART_FORKSRV_READY;
+  if (write(TGT_WR_FD, &stat, sizeof(stat)) != sizeof(stat)) {
+    WARNF("NVArt: contact fuzzer failed; target will run without testing");
+    return;
+  }
+
+  while (1) {
+    /* Wait for parent by reading from the pipe. Abort if read fails. */
+    if (read(TGT_RD_FD, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
+      ERRF("NVArt: read() from TGT_RD_FD %d failed", TGT_RD_FD);
+      _exit(EXIT_FAILURE);
+    }
+
+    if (ctrl == NVART_EXIT_FORKSRV) {
+      ACTF("NVArt: forkserver received command to exit");
+      close(TGT_RD_FD);
+      close(TGT_WR_FD);
+      _exit(EXIT_SUCCESS);
+    }
+
+    if (ctrl != NVART_RUN_TARGET) {
+      ERRF("NVArt: inappropriate pipe message %d", ctrl);
+      _exit(EXIT_FAILURE);
+    }
+
+    /* Check afl-llvm-rt.o.c for persistent mode and using SIGCONT. */
+    if ((tpid = fork()) < 0) {
+      ERRF("NVArt: fork() to run the target program failed");
+      _exit(EXIT_FAILURE);
+    }
+
+    if (tpid == 0) {
+      /*
+       * In the child process (target program): start execution, e.g. from
+       * main(). It inherits pipes from the forkserver to communicate with the
+       * fuzzer. Thus, when the target program runs, there are two writers to
+       * the state pipe: the forkserver and the target program. Linux pipes
+       * guarantee write atomicity for message sizes no larger than PIPE_BUF.
+       * When the target program exits, its pipe ends automatically close.
+       *
+       * In afl-llvm-rt.o.c, AFL closes the pipe fds because they are not used
+       * anymore. But we still need them to relay testing requests to the
+       * fuzzer.
+       */
+      return;
+    }
+
+    OKF("NVArt: target program started, pid %d", tpid);
+
+    /*
+     * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
+     * because the target is running and it may write to TGT_WR_FD too.
+     */
+
+    /* In parent (forkserver): write PID to pipe, then wait for target. */
+    // if (write(TGT_WR_FD, &tpid, sizeof(tpid)) != sizeof(tpid)) {
+    //   ERRF("NVArt: write() tpid to TGT_WR_FD %d failed", TGT_WR_FD);
+    //   _exit(EXIT_FAILURE);
+    // }
+
+    int tstatus;
+    pid_t tpidw = waitpid(tpid, &tstatus, 0);
+    if (tpidw < 0) {
+      ERRF("NVArt: waitpid() for %u failed", tpid);
+      _exit(EXIT_FAILURE);
+    } else if (tpidw == tpid) {  // target process reaped
+      ACTF("NVArt: target process %u finished", tpid);
+      stat = NVART_TARGET_EXITED;
+      if (write(TGT_WR_FD, &stat, sizeof(stat)) != sizeof(stat)) {
+        ERRF("NVArt: write() tstatus to TGT_WR_FD %d failed", TGT_WR_FD);
+        _exit(EXIT_FAILURE);
+      }
+    } else {
+      ERRF("NVArt: unexpected waitpid() return value %u", tpidw);
+    }
+
+    /* Relay waitpid status to pipe, then loop back to restart. */
+    if (write(TGT_WR_FD, &tstatus, sizeof(tstatus)) != sizeof(tstatus)) {
+      ERRF("NVArt: write() tstatus to TGT_WR_FD %d failed", TGT_WR_FD);
+      _exit(EXIT_FAILURE);
+    }
+  }
 }
 
 /*
@@ -92,7 +179,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
     __nvart_start_forkserver();
     init_done = 1;
 
-    OKF("NVArt analysis runtime initialized");
+    OKF("NVArt: analysis runtime initialized");
   }
 }
 
@@ -104,7 +191,7 @@ static inline int __store64_in_pmem(uint64_t *ptr) {
 
 static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
   if (runq->len == NVART_SHM_RUNQ_MAX_LEN) {
-    ERRF("NVArt: Run queue is full (%lu entries)!", runq->len);
+    ERRF("NVArt: run queue is full (%lu entries)!", runq->len);
     _exit(NVART_EXIT_RUNQ_FULL);
   }
 
@@ -167,16 +254,33 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
 }
 
 static void __emulate_crash(uint64_t sfid) {
-  volatile uint32_t *reqcheck = &info->reqcheck;
+  // volatile uint32_t *reqcheck = &info->reqcheck;
+  enum nvart_pipe_msg req, result;
   while (__next_test_case(sfid)) {
-    info->reqcheck = 1;
-    while (*reqcheck) {
-      /* wait for recovery+check to finish */
-    };
-    if (info->foundbug) {
+    req = NVART_REQ_CHECK;
+    if (write(TGT_WR_FD, &req, sizeof(req)) != sizeof(req)) {
+      ERRF("NVArt: write() to TGT_WR_FD %d failed", TGT_WR_FD);
+      _exit(EXIT_FAILURE);
+    }
+
+    if (read(TGT_RD_FD, &result, sizeof(result)) != sizeof(result)) {
+      ERRF("NVArt: read() from TGT_RD_FD %d failed", TGT_RD_FD);
+      _exit(EXIT_FAILURE);
+    }
+
+    if (result == NVART_CHECK_FAIL) {
       ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
       _exit(NVART_EXIT_FOUNDBUG);
     }
+
+    // info->reqcheck = 1;
+    // while (*reqcheck) {
+    //  /* wait for recovery+check to finish */
+    //};
+    // if (info->foundbug) {
+    //  ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
+    //  _exit(NVART_EXIT_FOUNDBUG);
+    //}
   }
 }
 

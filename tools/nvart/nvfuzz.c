@@ -8,6 +8,12 @@
 
 #define HAVE_AFFINITY 1
 
+static pid_t tgt_forksrv_pid, /* PID of the target's fork server */
+    rcy_forksrv_pid;          /* PID of the recovery's forkserver */
+
+static int tgt_ctrl_fd, /* Fork server control pipe (write) */
+    tgt_stat_fd;        /* Fork server status pipe (read)   */
+
 static int32_t shm_id; /* ID of the SHM region */
 
 static uint8_t
@@ -52,51 +58,6 @@ static uint8_t* trace_bits; /* SHM with instrumentation bitmap  */
 static uint8_t virgin_bits[MAP_SIZE], /* Regions yet untouched by fuzzing */
     virgin_tmout[MAP_SIZE],           /* Bits we haven't seen in tmouts   */
     virgin_crash[MAP_SIZE];           /* Bits we haven't seen in crashes  */
-
-/*
- * Get rid of shared memory (atexit handler).
- */
-static void remove_shm(void) {
-  shmctl(shm_id, IPC_RMID, NULL);
-  OKF("Shared memory removed");
-}
-
-/*
- * Configure shared memory and virgin_bits. This is called at startup.
- */
-static void setup_shm(void) {
-  u8* shm_str;
-
-  if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
-
-  memset(virgin_tmout, 255, MAP_SIZE);
-  memset(virgin_crash, 255, MAP_SIZE);
-
-  shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
-
-  if (shm_id < 0) PFATAL("shmget() failed");
-
-  OKF("Shared memory created");
-
-  atexit(remove_shm);
-
-  shm_str = alloc_printf("%d", shm_id);
-
-  /*
-   * If somebody is asking us to fuzz instrumented binaries in dumb mode, we
-   * don't want them to detect instrumentation, since we won't be sending fork
-   * server commands. This should be replaced with better auto-detection later
-   * on, perhaps?
-   */
-
-  if (!dumb_mode) setenv(NVART_SHM_ENV_VAR, shm_str, 1);
-
-  ck_free(shm_str);
-
-  trace_bits = shmat(shm_id, NULL, 0);
-
-  if (!trace_bits) PFATAL("shmat() failed");
-}
 
 /*
  * Do a PATH search and find target binary to see that it exists and isn't a
@@ -212,7 +173,7 @@ static void check_binary(uint8_t* fname) {
   if (munmap(f_data, f_len)) PFATAL("unmap() failed");
 }
 
-int check_status(pid_t pid, int status) {
+static int check_status(pid_t pid, int status) {
   int err = 1;
 
   if (WIFEXITED(status)) {
@@ -236,6 +197,154 @@ int check_status(pid_t pid, int status) {
   return err;
 }
 
+/*
+ * Get rid of shared memory (atexit handler).
+ */
+static void remove_shm(void) {
+  shmctl(shm_id, IPC_RMID, NULL);
+  OKF("Shared memory removed");
+}
+
+/*
+ * Configure shared memory and virgin_bits. This is called at startup.
+ */
+static void setup_shm(void) {
+  u8* shm_str;
+
+  if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
+
+  memset(virgin_tmout, 255, MAP_SIZE);
+  memset(virgin_crash, 255, MAP_SIZE);
+
+  shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
+
+  if (shm_id < 0) PFATAL("shmget() failed");
+
+  OKF("Shared memory created");
+
+  atexit(remove_shm);
+
+  shm_str = alloc_printf("%d", shm_id);
+
+  /*
+   * If somebody is asking us to fuzz instrumented binaries in dumb mode, we
+   * don't want them to detect instrumentation, since we won't be sending fork
+   * server commands. This should be replaced with better auto-detection later
+   * on, perhaps?
+   */
+
+  if (!dumb_mode) setenv(NVART_SHM_ENV_VAR, shm_str, 1);
+
+  ck_free(shm_str);
+
+  trace_bits = shmat(shm_id, NULL, 0);
+
+  if (!trace_bits) PFATAL("shmat() failed");
+}
+
+/*
+ * Spin up fork server. The idea is explained here:
+ * http://lcamtuf.blogspot.com/2014/10/fuzzing-binaries-without-execve.html
+ *
+ * In essence, the instrumentation allows us to skip execve(), and just keep
+ * cloning a stopped child. So, we just execute once, and then send commands
+ * through a pipe. The other part of this logic is in lib/nvart/nvart.c.
+ */
+static void init_forkserver(char* target, char** target_argv) {
+  int tgt_stat_fds[2], tgt_ctrl_fds[2];
+
+  ACTF("NVFuzz: spinning up the fork server...");
+
+  if (pipe(tgt_stat_fds) || pipe(tgt_ctrl_fds))
+    PFATAL("NVFuzz: pipe() for the target program's forkserver failed");
+
+  tgt_forksrv_pid = fork();
+
+  if (tgt_forksrv_pid < 0)
+    PFATAL("NVFuzz: fork() to run the target program's forkserver failed");
+
+  if (tgt_forksrv_pid == 0) {  // target program's forkserver process
+    struct rlimit rlim;
+
+    /*
+     * Umpf. On OpenBSD, the default fd limit for root users is set to soft 128.
+     * Let's try to fix that...
+     */
+    if (!getrlimit(RLIMIT_NOFILE, &rlim) && rlim.rlim_cur < NVART_PIPE_FD_MAX) {
+      rlim.rlim_cur = NVART_PIPE_FD_MAX;
+      setrlimit(RLIMIT_NOFILE, &rlim);
+    }
+
+    /*
+     * Dumping cores is slow and can lead to anomalies if SIGKILL is delivered
+     * before the dump is complete.
+     */
+    rlim.rlim_max = rlim.rlim_cur = 0;
+    setrlimit(RLIMIT_CORE, &rlim);
+
+    /*
+     * Isolate the process and configure standard descriptors. If out_file is
+     * specified, stdin is /dev/null; otherwise, out_fd is cloned instead.
+     */
+    setsid();
+
+    /* Set up control and status pipes, close the unneeded original fds. */
+
+    if (dup2(tgt_ctrl_fds[0], TGT_RD_FD) < 0)
+      PFATAL("NVFuzz: dup2() for TGT_RD_FD failed");
+    if (dup2(tgt_stat_fds[1], TGT_WR_FD) < 0)
+      PFATAL("NVFuzz: dup2() for TGT_WR_FD failed");
+
+    close(tgt_ctrl_fds[0]);
+    close(tgt_ctrl_fds[1]);
+    close(tgt_stat_fds[0]);
+    close(tgt_stat_fds[1]);
+
+    execv(target, target_argv);
+
+    /* If execv() succeeds, it should not return (getting here). */
+    FATAL("NVFuzz: unable to execute the target program '%s'", target_path);
+  }
+
+  /* Close the unneeded endpoints. */
+  close(tgt_ctrl_fds[0]);
+  close(tgt_stat_fds[1]);
+
+  tgt_ctrl_fd = tgt_ctrl_fds[1];
+  tgt_stat_fd = tgt_stat_fds[0];
+
+  /* Check afl-fuzz.c for using setitimer() and SIGALARM to kill. */
+  ACTF("NVFuzz: waiting for the forkserver to come up...");
+
+  enum nvart_pipe_msg stat;
+  /* This call blocks if no data comes though the pipe. */
+  ssize_t rlen = read(tgt_stat_fd, &stat, sizeof(stat));
+
+  /*
+   * If we have ready message from the forkserver, we're all set. Otherwise,
+   * try to figure out what went wrong with waitpid().
+   */
+  if (rlen == sizeof(stat) && stat == NVART_FORKSRV_READY) {
+    OKF("NVFuzz: target program's forkserver is up, pid %u", tgt_forksrv_pid);
+    return;
+  }
+
+  int status;
+  pid_t pidw = waitpid(tgt_forksrv_pid, &status, 0);
+
+  if (pidw < 0) {
+    ERRF("NVFuzz: waitpid(%u) failed", tgt_forksrv_pid);
+  } else if (pidw == tgt_forksrv_pid) {  // target's forkserver reaped
+    check_status(tgt_forksrv_pid, status);
+  } else {
+    ERRF("NVFuzz: unexpected waitpid() return value %u", pidw);
+  }
+
+  /* Check afl-fuzz.c for more detailed parsing of failure status. */
+
+  FATAL("Fork server handshake failed");
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) FATAL("Usage: %s <target>", argv[0]);
 
@@ -250,8 +359,91 @@ int main(int argc, char** argv) {
 
   info->probing = 1;
 
+  pid_t rpid, rpidw;
+  int status, foundbug = 0;
+
+  init_forkserver(target_path, target_argv);
+
+  enum nvart_pipe_msg ctrl, stat;
+
+  /* tell the the target program's forkserver to run the target program */
+  ctrl = NVART_RUN_TARGET;
+  if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
+    PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
+
+  while (1) {
+    if (read(tgt_stat_fd, &stat, sizeof(stat)) != sizeof(stat))
+      PFATAL("NVFuzz: read() from tgt_stat_fd failed");
+
+    if (stat == NVART_REQ_CHECK) {
+      ACTF("NVFuzz: target requested to run recovery and checking");
+
+      info->probing = 0;
+
+      if ((rpid = fork()) == -1) {
+        PFATAL("NVFuzz: fork() to run the recovery program failed");
+        // exit(EXIT_FAILURE);
+      } else if (rpid == 0) {  // recovery program (2nd child)
+        OKF("NVFuzz: fork() succeeds, recovery process %u parent %u", getpid(),
+            getppid());
+
+        // Note: target_argv should contain target_path
+        char* args[] = {target_path, "stackfile", "check", NULL};
+        execv(target_path, args);
+
+        /* If execv() succeeds, it should not return (getting here). */
+        FATAL("NVFuzz: unable to execute the recovery program");
+      } else {  // fuzzer (parent)
+        OKF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
+        do {  // wait for the recovery process to finish
+          rpidw = waitpid(rpid, &status, WNOHANG);
+          if (rpidw == -1) {
+            ERRF("NVFuzz: waitpid(%u) failed", rpid);
+          } else if (rpidw == 0) {
+            /* recovery is still running; fuzzer can do something else */
+          } else if (rpidw == rpid) {  // recovery process reaped
+            foundbug = check_status(rpid, status);
+          } else {
+            ERRF("NVFuzz: unexpected waitpid() return value %u", rpidw);
+          }
+        } while (rpidw == 0);  // recovery program still running
+      }
+
+      info->probing = 1;
+      info->reqcheck = 0;
+      ctrl = foundbug ? NVART_CHECK_FAIL : NVART_CHECK_PASS;
+      if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
+        PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
+    } else if (stat == NVART_TARGET_EXITED) {
+      OKF("NVFuzz: target program exited", stat);
+      if (read(tgt_stat_fd, &status, sizeof(status)) != sizeof(status))
+        PFATAL("NVFuzz: read() from tgt_stat_fd failed");
+      check_status(0, status);
+
+      ctrl = NVART_EXIT_FORKSRV;
+      if (write(tgt_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
+        PFATAL("NVFuzz: write() to tgt_ctrl_fd failed");
+      break;  // can restart the target process
+    } else {
+      ERRF("NVFuzz: inappropriate pipe message %d", stat);
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  /* wait for the forkserver to exit */
+  pid_t tgt_forksrv_pidw = waitpid(tgt_forksrv_pid, &status, 0);
+
+  if (tgt_forksrv_pidw < 0) {
+    ERRF("NVFuzz: waitpid(%u) failed", tgt_forksrv_pid);
+  } else if (tgt_forksrv_pidw == tgt_forksrv_pid) {
+    check_status(tgt_forksrv_pid, status);
+  } else {
+    ERRF("NVFuzz: unexpected waitpid() return value %u", tgt_forksrv_pidw);
+  }
+
+#if 0
+  pid_t tpid, tpidw;
   int tstatus, rstatus;
-  pid_t tpid, tpidw, rpid, rpidw;
 
   if ((tpid = fork()) == -1) {
     PFATAL("NVFuzz: fork() to run the target program failed");
@@ -313,6 +505,7 @@ int main(int argc, char** argv) {
       }
     } while (tpidw == 0);  // target program still running
   }
+#endif
 
   return 0;
 }
