@@ -3,24 +3,15 @@
 #include "headers.h"
 #include "nvart/config.h"
 
-#define CONST_PRIO 0  // constructor priority
+#define CONST_PRIO 0  // constructor priority (runs before a target's main)
 
 /*
- * Globals needed by the injected instrumentation. The __nvart_area_initial
- * region is used for instrumentation output before __nvart_map_shm() has a
- * chance to run. It will end up as .comm, so it shouldn't be too wasteful.
+ * Globals needed by the injected instrumentation.
  */
-
-uint8_t __nvart_area_initial[MAP_SIZE];
-uint8_t *__nvart_area_ptr = __nvart_area_initial;
-
-__thread uint32_t __nvart_prev_loc;
-
-/* NVArt run-time setup */
-int __nvart_testing;
-struct nvart_info *info;
+int __nvart_active;
+uint8_t *__nvart_shm;
+struct nvart_config *config;
 struct nvart_runq *runq;
-enum target_stage *stage;
 
 /* Debug functions */
 void __nvart_print_runq() {
@@ -33,44 +24,37 @@ void __nvart_print_runq() {
   NOTEF("--- NVArt run queue (***) ---");
 }
 
-/* SHM setup */
+/* Shared memory setup */
 static void __nvart_map_shm(void) {
-  uint8_t *id_str = getenv(NVART_SHM_ENV_VAR);
+  uint8_t *shmid_str = getenv(NVART_SHM_ENV_VAR);
 
-  /*
-   * If we're running under NVArt, attach to the appropriate region, replacing
-   * the early-stage __nvart_area_initial region that is needed to allow some
-   * really hacky .init code to work correctly in projects such as OpenSSL.
-   */
-  if (id_str) {
-    uint32_t shm_id = atoi(id_str);
+  if (shmid_str) {
+    uint32_t shmid = atoi(shmid_str);
 
-    __nvart_area_ptr = shmat(shm_id, NULL, 0);
+    __nvart_shm = shmat(shmid, NULL, 0);
 
     /* Whooooops. */
 
-    if (__nvart_area_ptr == (void *)-1) _exit(NVART_EXIT_NOSHM);
+    if (__nvart_shm == (void *)-1) _exit(NVART_EXIT_BAD_SHM);
 
-    /*
-     * Write something into the bitmap so that even with low NVART_INST_RATIO,
-     * our parent doesn't give up on us.
-     */
-    __nvart_area_ptr[0] = 1;
+    config = (struct nvart_config *)(__nvart_shm);
 
-    __nvart_testing = 1;
-    info = (struct nvart_info *)(__nvart_area_ptr);  // zeroed from parent
+    /* should be initialized by parent (fuzzer) */
+    if (!config->ready) {
+      ERRF("NVArt: config region not ready");
+      _exit(NVART_EXIT_BAD_SHM);
+    }
+    if (config->stage == NONE) config->stage = DONTCARE;
 
-    stage = &info->stage;
-    if (*stage == NONE) *stage = DONTCARE;
+    runq = (struct nvart_runq *)(__nvart_shm + NVART_SHM_RUNQ_OFF);
 
-    runq = (struct nvart_runq *)(__nvart_area_ptr + NVART_SHM_RUNQ_OFF);
-    if (info->probing) memset(runq, 0, NVART_SHM_RUNQ_SIZE);
+    __nvart_active = 1;
 
-    OKF("NVArt: attached to shared memory");
+    OKF("NVArt: target attached to shared memory");
   } else {
-    __nvart_testing = 0;
+    __nvart_active = 0;
 
-    WARNF("NVArt: shared memory not found");
+    WARNF("NVArt: shared memory not found, target will run without tracing");
   }
 }
 
@@ -78,6 +62,8 @@ static void __nvart_map_shm(void) {
 static void __nvart_start_forkserver(void) {
   pid_t tpid;
   enum nvart_pipe_msg ctrl, stat;
+
+  if (!__nvart_active) return;
 
   /*
    * Phone home and tell the parent that we're OK. If parent isn't there,
@@ -180,7 +166,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
     __nvart_start_forkserver();
     init_done = 1;
 
-    OKF("NVArt: analysis runtime initialized");
+  OKF("NVArt: analysis runtime initialized");
   }
 }
 
@@ -286,34 +272,34 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
-  if (!__nvart_testing || !info->probing) return;
+  if (!__nvart_active || !config->tracing) return;
 
   if (!__store64_in_pmem(ptr)) return;
 
-  if (*stage == MAINPROC) __runq_push_back_store64(ptr, val);
+  if (config->stage == MAINPROC) __runq_push_back_store64(ptr, val);
 
-  if (*stage == RECOVERY) __recoverq_push_back_store64(ptr, val);
+  if (config->stage == RECOVERY) __recoverq_push_back_store64(ptr, val);
 }
 
 #ifdef NDEBUG
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
-  WARNF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
+  NOTEF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
 #else
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
                         char *func, int line) {
-  WARNF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
+  NOTEF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
         (void *)mapaddr, mapsize);
 #endif
-  if (!__nvart_testing || !info->probing) return;
+  if (!__nvart_active || !config->tracing) return;
 
   /* Implementation */
-  *stage = MAINPROC;
+  config->stage = MAINPROC;
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
   NOTEF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
 
-  if (!__nvart_testing || !info->probing) return;
+  if (!__nvart_active || !config->tracing) return;
 }
 
 #ifdef NDEBUG
@@ -323,7 +309,7 @@ void __nvart_probe_sfence(uint64_t sfid) {
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
   NOTEF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
-  if (!__nvart_testing || !info->probing) return;
+  if (!__nvart_active || !config->tracing) return;
 
   __nvart_print_runq();
   __emulate_crash(sfid);

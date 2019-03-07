@@ -212,7 +212,7 @@ static void remove_shm(void) {
  * Configure shared memory and virgin_bits. This is called at startup.
  */
 static void setup_shm(void) {
-  u8* shm_str;
+  uint8_t* shm_str;
 
   if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
 
@@ -220,7 +220,6 @@ static void setup_shm(void) {
   memset(virgin_crash, 255, MAP_SIZE);
 
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
-
   if (shm_id < 0) PFATAL("shmget() failed");
 
   OKF("Shared memory created");
@@ -241,8 +240,15 @@ static void setup_shm(void) {
   ck_free(shm_str);
 
   trace_bits = shmat(shm_id, NULL, 0);
-
   if (!trace_bits) PFATAL("shmat() failed");
+
+  struct nvart_config* config = (struct nvart_config*)(trace_bits);
+  memset(config, 0, NVART_SHM_CONFIG_SIZE);
+
+  struct nvart_runq* runq = (struct nvart_runq*)(trace_bits + NVART_SHM_RUNQ_OFF);
+  memset(runq, 0, NVART_SHM_RUNQ_SIZE);
+
+  config->ready = 1;
 }
 
 /*
@@ -357,10 +363,9 @@ int main(int argc, char** argv) {
   ACTF("Preparing to test program %s", mainproc_path);
 
   setup_shm();
-  struct nvart_info* info = (struct nvart_info*)(trace_bits);
-  memset(info, 0, NVART_SHM_INFO_SIZE);
 
-  info->probing = 1;
+  struct nvart_config* config = (struct nvart_config*)(trace_bits);
+  config->tracing = 1;
 
   pid_t rpid, rpidw;
   int status, foundbug = 0;
@@ -383,7 +388,7 @@ int main(int argc, char** argv) {
       case MSG_AWAITING_CHECK:
         ACTF("NVFuzz: mainproc requested to run recovery and checking");
 
-        info->probing = 0;
+        config->tracing = 0;
 
         if ((rpid = fork()) == -1) {
           PFATAL("NVFuzz: fork() to run the recovery program failed");
@@ -414,7 +419,7 @@ int main(int argc, char** argv) {
           } while (rpidw == 0);  // recovery program still running
         }
 
-        info->probing = 1;
+        config->tracing = 1;
         ctrl = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
         if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
           PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");

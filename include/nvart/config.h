@@ -43,21 +43,21 @@ enum nvart_pipe_msg {
 
 enum nvart_excode {
   NVART_EXIT_SUCCESS = 0,
-  NVART_EXIT_NOSHM,
+  NVART_EXIT_BAD_SHM,
   NVART_EXIT_RUNQ_FULL,
   NVART_EXIT_FOUNDBUG
 };
 
 enum target_stage { NONE, DONTCARE, MAINPROC, RECOVERY };
 
-struct nvart_info {
+struct nvart_config {
   uint8_t reserved[64];
-  uint32_t probing;
-  uint32_t foundbug;
+  uint32_t ready;
+  uint32_t tracing;
   enum target_stage stage;
 };
 
-#define NVART_SHM_INFO_SIZE ALIGN_UP(sizeof(struct nvart_info), CLSIZE)
+#define NVART_SHM_CONFIG_SIZE ALIGN_UP(sizeof(struct nvart_config), CLSIZE)
 
 struct nvart_runq_entry {
   union {
@@ -85,7 +85,7 @@ struct nvart_runq {
   struct nvart_runq_entry entries[];
 };
 
-#define NVART_SHM_RUNQ_OFF (NVART_SHM_INFO_SIZE)
+#define NVART_SHM_RUNQ_OFF (NVART_SHM_CONFIG_SIZE)
 #define NVART_SHM_RUNQ_SIZE (4096)
 #define NVART_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvart_runq), CLSIZE)
 #define NVART_SHM_RUNQ_MAX_LEN                        \
