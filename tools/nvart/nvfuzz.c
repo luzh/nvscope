@@ -8,7 +8,7 @@
 
 #define HAVE_AFFINITY 1
 
-static pid_t mainproc_frks_pid; /* PID of the mainproc's fork server */
+static pid_t main_frks_pid; /* PID of the mainproc's fork server */
 // recovery_forksrv_pid;    /* PID of the recovery's forkserver */
 
 static int mainproc_ctrl_fd, /* Fork server control pipe (write) */
@@ -267,12 +267,12 @@ static void init_forkserver(char* target, char** target_argv) {
   if (pipe(mainproc_info_fds) || pipe(mainproc_ctrl_fds))
     PFATAL("NVFuzz: pipe() for the target program's forkserver failed");
 
-  mainproc_frks_pid = fork();
+  main_frks_pid = fork();
 
-  if (mainproc_frks_pid < 0)
+  if (main_frks_pid < 0)
     PFATAL("NVFuzz: fork() to run the target program's forkserver failed");
 
-  if (mainproc_frks_pid == 0) {  // target program's forkserver process
+  if (main_frks_pid == 0) {  // target program's forkserver process
     struct rlimit rlim;
 
     /*
@@ -325,7 +325,7 @@ static void init_forkserver(char* target, char** target_argv) {
   /* Check afl-fuzz.c for using setitimer() and SIGALARM to kill. */
   ACTF("NVFuzz: waiting for the forkserver to come up...");
 
-  enum nvart_pipe_msg info;
+  enum nvart_message info;
   /* This call blocks if no data comes though the pipe. */
   ssize_t rlen = read(mainproc_info_fd, &info, sizeof(info));
 
@@ -333,18 +333,21 @@ static void init_forkserver(char* target, char** target_argv) {
    * If we have ready message from the forkserver, we're all set. Otherwise,
    * try to figure out what went wrong with waitpid().
    */
-  if (rlen == sizeof(info) && info == MSG_FORKSERVER_READY) {
-    OKF("NVFuzz: target program's forkserver is up, pid %u", mainproc_frks_pid);
+  if (rlen == sizeof(info) && info == MSG_FORKSERVER_HELLO) {
+    OKF("NVFuzz: target program's forkserver is up, pid %u", main_frks_pid);
     return;
+  } else {
+    SHOW_VAR32U(rlen);
+    SHOW_VAR32U(info);
   }
 
   int status;
-  pid_t pidw = waitpid(mainproc_frks_pid, &status, 0);
+  pid_t pidw = waitpid(main_frks_pid, &status, 0);
 
   if (pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", mainproc_frks_pid);
-  } else if (pidw == mainproc_frks_pid) {  // target's forkserver reaped
-    check_status(status, mainproc_frks_pid, "target's forkserver");
+    ERRF("NVFuzz: waitpid(%u) failed", main_frks_pid);
+  } else if (pidw == main_frks_pid) {  // target's forkserver reaped
+    check_status(status, main_frks_pid, "target's forkserver");
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", pidw);
   }
@@ -363,37 +366,33 @@ int main(int argc, char** argv) {
   ACTF("Preparing to test program %s", mainproc_path);
 
   setup_shm();
-
   struct nvart_config* config = (struct nvart_config*)(trace_bits);
-  config->tracing = 1;
-
-  pid_t rpid, rpidw;
-  int status, foundbug = 0;
+  config->tracing = 1;  // must set before init_forkserver()
 
   init_forkserver(mainproc_path, mainproc_argv);
 
-  enum nvart_pipe_msg ctrl, info;
+  int fatal = 0, stop = 0;
+  int status, foundbug = 0;
+  pid_t main_pid, rpid, rpidw;
+  enum nvart_message ctrl, info;
 
-  /* tell the the mainproc program's forkserver to run the mainproc program */
-  ctrl = MSG_FORK_AND_RUN;
-  if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
-    PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
-
-  pid_t main_pid;
-  if (read(mainproc_info_fd, &main_pid, sizeof(main_pid)) != sizeof(main_pid))
-    PFATAL("NVFuzz: read() from mainproc_info_fd failed");
-
-  DBGF("NVFuzz: mainproc started running, pid %d", main_pid);
-
-  int fatal = 0, alldone = 0;
-  while (!fatal && !alldone) {
+  while (!fatal && !stop) {
     /* wait for requests from targets */
     if (read(mainproc_info_fd, &info, sizeof(info)) != sizeof(info))
       PFATAL("NVFuzz: read() from mainproc_info_fd failed");
 
     switch (info) {
+      case MSG_FORKSERVER_READY:
+        ctrl = MSG_FORK_AND_RUN;
+        if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
+          PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
+        break;
+      case MSG_TARGET_STARTED:
+        if (read(mainproc_info_fd, &main_pid, sizeof(main_pid)) != sizeof(main_pid))
+          PFATAL("NVFuzz: read() from mainproc_info_fd failed");
+        break;
       case MSG_AWAITING_CHECK:
-        ACTF("NVFuzz: mainproc requested to run recovery and checking");
+        DBGF("NVFuzz: mainproc requested to run recovery and checking");
 
         config->tracing = 0;
 
@@ -431,7 +430,7 @@ int main(int argc, char** argv) {
         if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
           PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
         break;
-      case MSG_MAINPROC_EXITED:
+      case MSG_TARGET_EXITED:
         if (read(mainproc_info_fd, &status, sizeof(status)) != sizeof(status))
           PFATAL("NVFuzz: read() from mainproc_info_fd failed");
         check_status(status, main_pid, "mainproc");
@@ -440,7 +439,7 @@ int main(int argc, char** argv) {
         if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
           PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
 
-        alldone = 1;  // can restart the mainproc process
+        stop = 1;  // can restart the mainproc process
         break;
       default:
         ERRF("NVFuzz: inappropriate pipe message %d", info);
@@ -455,14 +454,14 @@ int main(int argc, char** argv) {
   }
 
   /* wait for the forkserver to exit */
-  pid_t mainproc_frks_pidw = waitpid(mainproc_frks_pid, &status, 0);
+  pid_t main_frks_pidw = waitpid(main_frks_pid, &status, 0);
 
-  if (mainproc_frks_pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", mainproc_frks_pid);
-  } else if (mainproc_frks_pidw == mainproc_frks_pid) {
-    check_status(status, mainproc_frks_pid, "mainproc's forkserver");
+  if (main_frks_pidw < 0) {
+    ERRF("NVFuzz: waitpid(%u) failed", main_frks_pid);
+  } else if (main_frks_pidw == main_frks_pid) {
+    check_status(status, main_frks_pid, "mainproc's forkserver");
   } else {
-    ERRF("NVFuzz: unexpected waitpid() return value %u", mainproc_frks_pidw);
+    ERRF("NVFuzz: unexpected waitpid() return value %u", main_frks_pidw);
   }
 
   return 0;

@@ -25,7 +25,7 @@ enum nvart_pipe_fd {
   NVART_PIPE_FD_MAX
 };
 
-enum nvart_pipe_msg {
+enum nvart_message {
   MSG_INVALID = 0,
 
   /* Control commands: fuzzer telling target */
@@ -36,10 +36,22 @@ enum nvart_pipe_msg {
 
   /* Information: target telling fuzzer */
   MSG_AWAITING_CHECK,
+  MSG_FORKSERVER_HELLO,
   MSG_FORKSERVER_READY,
-  MSG_MAINPROC_EXITED,
+  MSG_TARGET_STARTED,
+  MSG_TARGET_EXITED,
 
   NVART_PIPE_MSG_MAX
+};
+
+struct message_pid {
+  enum nvart_message msg;
+  pid_t pid;
+};
+
+struct message_status {
+  enum nvart_message msg;
+  int status;
 };
 
 enum nvart_excode {

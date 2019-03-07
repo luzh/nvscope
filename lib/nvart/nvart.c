@@ -61,19 +61,22 @@ static void __nvart_setup_shm(void) {
 /* Forkserver logic (see nvfuzz.c for the other part) */
 static void __nvart_start_forkserver(void) {
   pid_t cpid;
-  enum nvart_pipe_msg ctrl, info;
+  enum nvart_message ctrl, info;
 
-  /*
-   * Phone home and tell the parent that we're OK. If parent isn't there,
-   * assume we're not running in forkserver mode and just execute program.
-   */
-  info = MSG_FORKSERVER_READY;
+  /* initial communication with the fuzzer */
+  info = MSG_FORKSERVER_HELLO;
   if (write(FD_MAINPROC_INFO, &info, sizeof(info)) != sizeof(info)) {
     ERRF("NVArt: contact fuzzer failed");
     _exit(EXIT_FAILURE);
   }
 
   while (1) {
+    info = MSG_FORKSERVER_READY;
+    if (write(FD_MAINPROC_INFO, &info, sizeof(info)) != sizeof(info)) {
+      ERRF("NVArt: send message failed");
+      _exit(EXIT_FAILURE);
+    }
+
     /* Wait for parent by reading from the pipe. Abort if read fails. */
     if (read(FD_MAINPROC_CTRL, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
       ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
@@ -113,15 +116,16 @@ static void __nvart_start_forkserver(void) {
        */
       cpid = getpid();
 
-      if (write(FD_MAINPROC_INFO, &cpid, sizeof(cpid)) != sizeof(cpid)) {
-        ERRF("NVArt: write() cpid to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO); // not a message enum
+      struct message_pid msgpid = {MSG_TARGET_STARTED, cpid};
+      if (write(FD_MAINPROC_INFO, &msgpid, sizeof(msgpid)) != sizeof(msgpid)) {
+        ERRF("NVArt: write() cpid to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
         _exit(EXIT_FAILURE);
       }
 
       return;  // execute the mainproc progrm, e.g. from main().
     }
 
-    OKF("NVArt: mainproc program started, pid %d", cpid);
+    DBGF("NVArt: mainproc process started, pid %d", cpid);
 
     /*
      * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
@@ -139,8 +143,8 @@ static void __nvart_start_forkserver(void) {
       ERRF("NVArt: unexpected waitpid() return value %u", cpidw);
     }
 
-    int info[2] = {MSG_MAINPROC_EXITED, status};
-    if (write(FD_MAINPROC_INFO, info, sizeof(info)) != sizeof(info)) {
+    struct message_status msgst = {MSG_TARGET_EXITED, status};
+    if (write(FD_MAINPROC_INFO, &msgst, sizeof(msgst)) != sizeof(msgst)) {
       ERRF("NVArt: write() status to FD_MAINPROC_INFO %d failed",
            FD_MAINPROC_INFO);
       _exit(EXIT_FAILURE);
@@ -239,10 +243,10 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
 }
 
 static void __emulate_crash(uint64_t sfid) {
-  enum nvart_pipe_msg req, result;
+  enum nvart_message info, result;
   while (__next_test_case(sfid)) {
-    req = MSG_AWAITING_CHECK;
-    if (write(FD_MAINPROC_INFO, &req, sizeof(req)) != sizeof(req)) {
+    info = MSG_AWAITING_CHECK;
+    if (write(FD_MAINPROC_INFO, &info, sizeof(info)) != sizeof(info)) {
       ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
       _exit(EXIT_FAILURE);
     }

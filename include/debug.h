@@ -158,7 +158,7 @@
 
 #define DBGF(x...)            \
   do {                        \
-    SAYF(cBLU "[i] " cRST x); \
+    SAYF(cBLU "[>] " cRST x); \
     SAYF(cRST "\n");          \
   } while (0)
 
@@ -166,7 +166,7 @@
 
 #define TESTC(x...)      \
   do {                   \
-    SAYF(cBLU "[#] " x); \
+    SAYF(cBLU "[$] " x); \
     SAYF(cRST "\n");     \
   } while (0)
 
