@@ -15,13 +15,13 @@ struct nvart_runq *runq;
 
 /* Debug functions */
 void __nvart_print_runq() {
-  DEBUGF("--- NVArt run queue (...) ---");
+  DBGF("--- NVArt run queue (...) ---");
   struct nvart_runq_entry *e = runq->entries;
   for (size_t i = 0; i < runq->len; i++, e++) {
-    DEBUGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
-           e->new64);
+    DBGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
+         e->new64);
   }
-  DEBUGF("--- NVArt run queue (***) ---");
+  DBGF("--- NVArt run queue (***) ---");
 }
 
 /* Shared memory setup */
@@ -89,7 +89,7 @@ static void __nvart_start_forkserver(void) {
       _exit(EXIT_SUCCESS);
     }
 
-    if (ctrl != MSG_CONTINUE_TO_RUN) {
+    if (ctrl != MSG_FORK_AND_RUN) {
       ERRF("NVArt: inappropriate pipe message %d", ctrl);
       _exit(EXIT_FAILURE);
     }
@@ -113,6 +113,13 @@ static void __nvart_start_forkserver(void) {
        * anymore. But we still need them to relay testing requests to the
        * fuzzer.
        */
+      tpid = getpid();
+
+      if (write(FD_MAINPROC_INFO, &tpid, sizeof(tpid)) != sizeof(tpid)) {
+        ERRF("NVArt: write() tpid to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO); // not a message enum
+        _exit(EXIT_FAILURE);
+      }
+
       return;
     }
 
@@ -123,11 +130,6 @@ static void __nvart_start_forkserver(void) {
      * because the mainproc is running and it may write to FD_MAINPROC_INFO too.
      */
 
-    /* In parent (forkserver): write PID to pipe, then wait for mainproc. */
-    // if (write(FD_MAINPROC_INFO, &tpid, sizeof(tpid)) != sizeof(tpid)) {
-    //   ERRF("NVArt: write() tpid to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
-    //   _exit(EXIT_FAILURE);
-    // }
 
     int tstatus;
     pid_t tpidw = waitpid(tpid, &tstatus, 0);
@@ -270,12 +272,12 @@ static void __emulate_crash(uint64_t sfid) {
 
 #ifdef NDEBUG
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
-  DEBUGF("NVArt: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
+  DBGF("NVArt: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
 #else
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
                            int line) {
-  DEBUGF("NVArt: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file,
-         func, line, (void *)ptr, *ptr, val);
+  DBGF("NVArt: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file, func,
+       line, (void *)ptr, *ptr, val);
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
@@ -290,12 +292,12 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
 
 #ifdef NDEBUG
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
-  DEBUGF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
+  DBGF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
 #else
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
                         char *func, int line) {
-  DEBUGF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
-         (void *)mapaddr, mapsize);
+  DBGF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
+       (void *)mapaddr, mapsize);
 #endif
   if (!__nvart_active || !config->tracing) return;
 
@@ -307,7 +309,7 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
-  DEBUGF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
+  DBGF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
 
   (void)ptr;
 
@@ -316,10 +318,10 @@ void __nvart_probe_clflush(uint64_t *ptr) {
 
 #ifdef NDEBUG
 void __nvart_probe_sfence(uint64_t sfid) {
-  DEBUGF("NVArt: sfence #%lu", sfid);
+  DBGF("NVArt: sfence #%lu", sfid);
 #else
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
-  DEBUGF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
+  DBGF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
   if (!__nvart_active || !config->tracing) return;
 
@@ -327,5 +329,5 @@ void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
   __emulate_crash(sfid);
   __runq_flush();
 
-  TESTC("NVArt: pass over sfence #%zu", sfid);
+  TESTC("NVArt: pass over epoch (sfence) #%zu", sfid);
 }

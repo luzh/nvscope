@@ -154,6 +154,14 @@
 #define NVART_DEBUG
 #ifdef NVART_DEBUG
 
+/* Show a prefixed debug message. */
+
+#define DBGF(x...)            \
+  do {                        \
+    SAYF(cBLU "[i] " cRST x); \
+    SAYF(cRST "\n");          \
+  } while (0)
+
 /* Show a prefixed test case message. */
 
 #define TESTC(x...)      \
@@ -162,17 +170,9 @@
     SAYF(cRST "\n");     \
   } while (0)
 
-/* Show a prefixed debug message. */
-
-#define DEBUGF(x...)          \
-  do {                        \
-    SAYF(cBLU "[i] " cRST x); \
-    SAYF(cRST "\n");          \
-  } while (0)
-
 #else
+#define DBGF(x...)
 #define TESTC(x...)
-#define DEBUGF(x...)
 #endif
 
 /* Show a prefixed "doing something" message. */
@@ -270,22 +270,22 @@
     SAYF(cRST "\n");                            \
   } while (0)
 
-#define PRINT_VAR32I(x) VARF("%s = %d", #x, (int32_t)x)
-#define PRINT_VAR32U(x) VARF("%s = %u", #x, (uint32_t)x)
-#define PRINT_VAR32X(x) VARF("%s = 0x%x", #x, (uint32_t)x)
+#define SHOW_VAR32I(x) VARF("%s = %d", #x, (int32_t)x)
+#define SHOW_VAR32U(x) VARF("%s = %u", #x, (uint32_t)x)
+#define SHOW_VAR32X(x) VARF("%s = 0x%x", #x, (uint32_t)x)
 
-#define PRINT_VAR64I(x) VARF("%s = %ld", #x, (int64_t)x)
-#define PRINT_VAR64U(x) VARF("%s = %lu", #x, (uint64_t)x)
-#define PRINT_VAR64X(x) VARF("%s = 0x%lx", #x, (uint64_t)x)
+#define SHOW_VAR64I(x) VARF("%s = %ld", #x, (int64_t)x)
+#define SHOW_VAR64U(x) VARF("%s = %lu", #x, (uint64_t)x)
+#define SHOW_VAR64X(x) VARF("%s = 0x%lx", #x, (uint64_t)x)
 
-#define PRINT_VARSTR(x)                                          \
+#define SHOW_VARSTR(x)                                           \
   do {                                                           \
     SAYF(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x); \
     SAYF(cRST "\n");                                             \
   } while (0)
 
 #define TOSTR(x) #x
-#define PRINT_DEFSTR(x)                                                \
+#define SHOW_DEFSTR(x)                                                 \
   do {                                                                 \
     SAYF(cYEL "[>] " cLCY "Definition: " cRST "%s: %s", #x, TOSTR(x)); \
     SAYF(cRST "\n");                                                   \

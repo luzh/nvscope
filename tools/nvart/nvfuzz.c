@@ -182,7 +182,7 @@ static int check_status(int status, pid_t pid, char* pname) {
     int exstatus = WEXITSTATUS(status);
     if (exstatus == 0) {
       err = 0;
-      OKF("NVFuzz: %s process %u exited normally", pname, pid);
+      DBGF("NVFuzz: %s process %u exited normally", pname, pid);
     } else if (exstatus == 127) {
       ERRF("NVFuzz: execv() for %s process %u failed", pname, pid);
     } else {
@@ -375,12 +375,19 @@ int main(int argc, char** argv) {
   enum nvart_pipe_msg ctrl, stat;
 
   /* tell the the mainproc program's forkserver to run the mainproc program */
-  ctrl = MSG_CONTINUE_TO_RUN;
+  ctrl = MSG_FORK_AND_RUN;
   if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
     PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
 
+  pid_t main_pid;
+  if (read(mainproc_info_fd, &main_pid, sizeof(main_pid)) != sizeof(main_pid))
+    PFATAL("NVFuzz: read() from mainproc_info_fd failed");
+
+  DBGF("NVFuzz: mainproc started running, pid %d", main_pid);
+
   int fatal = 0, alldone = 0;
   while (!fatal && !alldone) {
+    /* wait for requests from targets */
     if (read(mainproc_info_fd, &stat, sizeof(stat)) != sizeof(stat))
       PFATAL("NVFuzz: read() from mainproc_info_fd failed");
 
@@ -425,10 +432,9 @@ int main(int argc, char** argv) {
           PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
         break;
       case MSG_MAINPROC_EXITED:
-        OKF("NVFuzz: mainproc program exited", stat);
         if (read(mainproc_info_fd, &status, sizeof(status)) != sizeof(status))
           PFATAL("NVFuzz: read() from mainproc_info_fd failed");
-        check_status(status, 0, NULL);
+        check_status(status, main_pid, "mainproc");
 
         ctrl = MSG_EXIT_FORKSERVER;
         if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))

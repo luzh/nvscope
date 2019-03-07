@@ -29,6 +29,7 @@ enum nvart_pipe_msg {
   MSG_INVALID = 0,
 
   /* Control commands: fuzzer telling target */
+  MSG_FORK_AND_RUN,
   MSG_CONTINUE_TO_RUN,
   MSG_SHOW_BUG_AND_EXIT,
   MSG_EXIT_FORKSERVER,
