@@ -325,15 +325,15 @@ static void init_forkserver(char* target, char** target_argv) {
   /* Check afl-fuzz.c for using setitimer() and SIGALARM to kill. */
   ACTF("NVFuzz: waiting for the forkserver to come up...");
 
-  enum nvart_pipe_msg stat;
+  enum nvart_pipe_msg info;
   /* This call blocks if no data comes though the pipe. */
-  ssize_t rlen = read(mainproc_info_fd, &stat, sizeof(stat));
+  ssize_t rlen = read(mainproc_info_fd, &info, sizeof(info));
 
   /*
    * If we have ready message from the forkserver, we're all set. Otherwise,
    * try to figure out what went wrong with waitpid().
    */
-  if (rlen == sizeof(stat) && stat == MSG_FORKSERVER_READY) {
+  if (rlen == sizeof(info) && info == MSG_FORKSERVER_READY) {
     OKF("NVFuzz: target program's forkserver is up, pid %u", mainproc_frks_pid);
     return;
   }
@@ -372,7 +372,7 @@ int main(int argc, char** argv) {
 
   init_forkserver(mainproc_path, mainproc_argv);
 
-  enum nvart_pipe_msg ctrl, stat;
+  enum nvart_pipe_msg ctrl, info;
 
   /* tell the the mainproc program's forkserver to run the mainproc program */
   ctrl = MSG_FORK_AND_RUN;
@@ -388,10 +388,10 @@ int main(int argc, char** argv) {
   int fatal = 0, alldone = 0;
   while (!fatal && !alldone) {
     /* wait for requests from targets */
-    if (read(mainproc_info_fd, &stat, sizeof(stat)) != sizeof(stat))
+    if (read(mainproc_info_fd, &info, sizeof(info)) != sizeof(info))
       PFATAL("NVFuzz: read() from mainproc_info_fd failed");
 
-    switch (stat) {
+    switch (info) {
       case MSG_AWAITING_CHECK:
         ACTF("NVFuzz: mainproc requested to run recovery and checking");
 
@@ -443,7 +443,7 @@ int main(int argc, char** argv) {
         alldone = 1;  // can restart the mainproc process
         break;
       default:
-        ERRF("NVFuzz: inappropriate pipe message %d", stat);
+        ERRF("NVFuzz: inappropriate pipe message %d", info);
         fatal = 1;
         break;
     }
