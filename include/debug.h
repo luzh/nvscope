@@ -151,13 +151,8 @@
     SAYF(cRST "\n");          \
   } while (0)
 
-/* Show a prefixed notable message. */
-
-#define NOTEF(x...)           \
-  do {                        \
-    SAYF(cBLU "[i] " cRST x); \
-    SAYF(cRST "\n");          \
-  } while (0)
+#define NVART_DEBUG
+#ifdef NVART_DEBUG
 
 /* Show a prefixed test case message. */
 
@@ -166,6 +161,19 @@
     SAYF(cBLU "[#] " x); \
     SAYF(cRST "\n");     \
   } while (0)
+
+/* Show a prefixed debug message. */
+
+#define DEBUGF(x...)          \
+  do {                        \
+    SAYF(cBLU "[i] " cRST x); \
+    SAYF(cRST "\n");          \
+  } while (0)
+
+#else
+#define TESTC(x...)
+#define DEBUGF(x...)
+#endif
 
 /* Show a prefixed "doing something" message. */
 

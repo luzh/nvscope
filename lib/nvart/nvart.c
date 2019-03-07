@@ -15,13 +15,13 @@ struct nvart_runq *runq;
 
 /* Debug functions */
 void __nvart_print_runq() {
-  NOTEF("--- NVArt run queue (...) ---");
+  DEBUGF("--- NVArt run queue (...) ---");
   struct nvart_runq_entry *e = runq->entries;
   for (size_t i = 0; i < runq->len; i++, e++) {
-    NOTEF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
-          e->new64);
+    DEBUGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
+           e->new64);
   }
-  NOTEF("--- NVArt run queue (***) ---");
+  DEBUGF("--- NVArt run queue (***) ---");
 }
 
 /* Shared memory setup */
@@ -71,7 +71,7 @@ static void __nvart_start_forkserver(void) {
    */
   stat = MSG_FORKSERVER_READY;
   if (write(FD_MAINPROC_INFO, &stat, sizeof(stat)) != sizeof(stat)) {
-    WARNF("NVArt: contact fuzzer failed; mainproc will run without testing");
+    WARNF("NVArt: contact fuzzer failed, mainproc will run without testing");
     return;
   }
 
@@ -163,10 +163,16 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
 
   if (!init_done) {
     __nvart_map_shm();
+
+    if (!__nvart_active) return;
+
     __nvart_start_forkserver();
     init_done = 1;
 
-  OKF("NVArt: analysis runtime initialized");
+    OKF("NVArt: analysis runtime initialized");
+  } else {
+    assert(__nvart_shm != NULL);
+    assert(__nvart_active == 1);
   }
 }
 
@@ -190,7 +196,7 @@ static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
   return 0;
 }
 
-static inline void __runq_flush(uint64_t sfid) {
+static inline void __runq_flush() {
   /*
    * Todo: Remove flushed (clflushopt, clwb) stores from the runq, since they
    * should be persistent after the sfence and not be affected by reordering.
@@ -198,7 +204,6 @@ static inline void __runq_flush(uint64_t sfid) {
    * length to zero to flush it.
    */
   runq->len = 0;
-  TESTC("NVArt: pass over sfence #%zu", sfid);
 }
 
 static int __next_test_case(uint64_t sfid) {
@@ -229,6 +234,8 @@ static int __next_test_case(uint64_t sfid) {
   TESTC("NVArt: make test case #%zu: undo store i64 [%p] 0x%lx <- 0x%lx",
         caseid, e->ptr64, e->old64, e->new64);
   caseid++;
+
+  (void)sfid;
 
   return 1;
 }
@@ -263,12 +270,12 @@ static void __emulate_crash(uint64_t sfid) {
 
 #ifdef NDEBUG
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val) {
-  NOTEF("NVArt: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
+  DEBUGF("NVArt: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
 #else
 void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
                            int line) {
-  NOTEF("NVArt: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file, func,
-        line, (void *)ptr, *ptr, val);
+  DEBUGF("NVArt: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file,
+         func, line, (void *)ptr, *ptr, val);
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
@@ -283,35 +290,42 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
 
 #ifdef NDEBUG
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
-  NOTEF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
+  DEBUGF("NVArt: mmap addr %p size %lu", (void *)mapaddr, mapsize);
 #else
 void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
                         char *func, int line) {
-  NOTEF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
-        (void *)mapaddr, mapsize);
+  DEBUGF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
+         (void *)mapaddr, mapsize);
 #endif
   if (!__nvart_active || !config->tracing) return;
+
+  (void)mapaddr;
+  (void)mapsize;
 
   /* Implementation */
   config->stage = MAINPROC;
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
-  NOTEF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
+  DEBUGF("NVArt: seeing a CLFLUSH on %p", (void *)ptr);
+
+  (void)ptr;
 
   if (!__nvart_active || !config->tracing) return;
 }
 
 #ifdef NDEBUG
 void __nvart_probe_sfence(uint64_t sfid) {
-  NOTEF("NVArt: sfence #%lu", sfid);
+  DEBUGF("NVArt: sfence #%lu", sfid);
 #else
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
-  NOTEF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
+  DEBUGF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
   if (!__nvart_active || !config->tracing) return;
 
   __nvart_print_runq();
   __emulate_crash(sfid);
-  __runq_flush(sfid);
+  __runq_flush();
+
+  TESTC("NVArt: pass over sfence #%zu", sfid);
 }
