@@ -38,6 +38,7 @@ enum nvart_message {
   MSG_AWAITING_CHECK,
   MSG_FORKSERVER_HELLO,
   MSG_FORKSERVER_READY,
+  /* Information with payload */
   MSG_TARGET_STARTED,
   MSG_TARGET_EXITED,
 

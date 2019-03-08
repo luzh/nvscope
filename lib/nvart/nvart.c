@@ -5,7 +5,7 @@
 
 #define CONST_PRIO 0  // constructor priority (runs before a target's main)
 
-/*
+/**
  * Globals needed by the injected instrumentation.
  */
 int __nvart_enabled;  // __nvart_shm != NULL
@@ -13,8 +13,10 @@ uint8_t *__nvart_shm;
 struct nvart_config *config;
 struct nvart_runq *runq;
 
-/* Debug functions */
-void __nvart_print_runq() {
+/**
+ * Debug functions
+ */
+static void __nvart_print_runq() {
   DBGF("--- NVArt run queue (...) ---");
   struct nvart_runq_entry *e = runq->entries;
   for (size_t i = 0; i < runq->len; i++, e++) {
@@ -24,7 +26,39 @@ void __nvart_print_runq() {
   DBGF("--- NVArt run queue (***) ---");
 }
 
-/* Shared memory setup */
+/**
+ * Communication functions
+ *
+ * Now we use pipes. It is possible to change them to use other mechanisms.
+ */
+static inline void __send_message(enum nvart_message msg) {
+  if (write(FD_MAINPROC_INFO, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
+    _exit(EXIT_FAILURE);
+  }
+}
+
+static inline void __send_data(void *data, ssize_t len) {
+  if (write(FD_MAINPROC_INFO, data, len) != len) {
+    ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
+    _exit(EXIT_FAILURE);
+  }
+}
+
+static inline enum nvart_message __read_message() {
+  enum nvart_message msg;
+
+  if (read(FD_MAINPROC_CTRL, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
+    _exit(EXIT_FAILURE);
+  }
+
+  return msg;
+}
+
+/**
+ * Shared memory setup
+ */
 static void __nvart_setup_shm(void) {
   uint8_t *shmid_str = getenv(NVART_SHM_ENV_VAR);
 
@@ -58,51 +92,40 @@ static void __nvart_setup_shm(void) {
   }
 }
 
-/* Forkserver logic (see nvfuzz.c for the other part) */
+/**
+ * Forkserver logic (see nvfuzz.c for the other part)
+ */
 static void __nvart_start_forkserver(void) {
-  pid_t cpid;
-  enum nvart_message ctrl, info;
-
   /* initial communication with the fuzzer */
-  info = MSG_FORKSERVER_HELLO;
-  if (write(FD_MAINPROC_INFO, &info, sizeof(info)) != sizeof(info)) {
-    ERRF("NVArt: contact fuzzer failed");
-    _exit(EXIT_FAILURE);
-  }
+  __send_message(MSG_FORKSERVER_HELLO);
 
   while (1) {
-    info = MSG_FORKSERVER_READY;
-    if (write(FD_MAINPROC_INFO, &info, sizeof(info)) != sizeof(info)) {
-      ERRF("NVArt: send message failed");
-      _exit(EXIT_FAILURE);
-    }
+    __send_message(MSG_FORKSERVER_READY);
 
-    /* Wait for parent by reading from the pipe. Abort if read fails. */
-    if (read(FD_MAINPROC_CTRL, &ctrl, sizeof(ctrl)) != sizeof(ctrl)) {
-      ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
-      _exit(EXIT_FAILURE);
-    }
+    enum nvart_message command = __read_message();
 
-    if (ctrl == MSG_EXIT_FORKSERVER) {
+    if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
       close(FD_MAINPROC_CTRL);
       close(FD_MAINPROC_INFO);
       _exit(EXIT_SUCCESS);
     }
 
-    if (ctrl != MSG_FORK_AND_RUN) {
-      ERRF("NVArt: inappropriate pipe message %d", ctrl);
+    if (command != MSG_FORK_AND_RUN) {
+      ERRF("NVArt: received inappropriate message %d", command);
       _exit(EXIT_FAILURE);
     }
 
+    pid_t cpid = fork();
+
     /* Check afl-llvm-rt.o.c for persistent mode and using SIGCONT. */
-    if ((cpid = fork()) < 0) {
+    if (cpid < 0) {
       ERRF("NVArt: fork() to run the mainproc program failed");
       _exit(EXIT_FAILURE);
     }
 
     if (cpid == 0) {
-      /*
+      /**
        * The child process will execute the mainproc program. It inherits pipes
        * from the forkserver to communicate with the fuzzer. Thus, when the
        * mainproc program runs, there are two writers to the state pipe: the
@@ -117,10 +140,7 @@ static void __nvart_start_forkserver(void) {
       cpid = getpid();
 
       struct message_pid msgpid = {MSG_TARGET_STARTED, cpid};
-      if (write(FD_MAINPROC_INFO, &msgpid, sizeof(msgpid)) != sizeof(msgpid)) {
-        ERRF("NVArt: write() cpid to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
-        _exit(EXIT_FAILURE);
-      }
+      __send_data(&msgpid, sizeof(msgpid));
 
       return;  // execute the mainproc progrm, e.g. from main().
     }
@@ -137,18 +157,14 @@ static void __nvart_start_forkserver(void) {
     if (cpidw < 0) {
       ERRF("NVArt: waitpid() for %u failed", cpid);
       _exit(EXIT_FAILURE);
-    } else if (cpidw == cpid) {  // mainproc process reaped
+    } else if (cpidw == cpid) {  // child process reaped
       ACTF("NVArt: mainproc process %u finished", cpid);
     } else {
       ERRF("NVArt: unexpected waitpid() return value %u", cpidw);
     }
 
     struct message_status msgst = {MSG_TARGET_EXITED, status};
-    if (write(FD_MAINPROC_INFO, &msgst, sizeof(msgst)) != sizeof(msgst)) {
-      ERRF("NVArt: write() status to FD_MAINPROC_INFO %d failed",
-           FD_MAINPROC_INFO);
-      _exit(EXIT_FAILURE);
-    }
+    __send_data(&msgst, sizeof(msgst));
   }
 }
 
@@ -243,22 +259,19 @@ static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
 }
 
 static void __emulate_crash(uint64_t sfid) {
-  enum nvart_message info, result;
   while (__next_test_case(sfid)) {
-    info = MSG_AWAITING_CHECK;
-    if (write(FD_MAINPROC_INFO, &info, sizeof(info)) != sizeof(info)) {
-      ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
-      _exit(EXIT_FAILURE);
-    }
+    __send_message(MSG_AWAITING_CHECK);
 
-    if (read(FD_MAINPROC_CTRL, &result, sizeof(result)) != sizeof(result)) {
-      ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
-      _exit(EXIT_FAILURE);
-    }
+    enum nvart_message command = __read_message();
 
-    if (result == MSG_SHOW_BUG_AND_EXIT) {
+    if (command == MSG_SHOW_BUG_AND_EXIT) {
       ERRF("NVArt: found bug at sfence #%zu test case #?", sfid);
       _exit(NVART_EXIT_FOUNDBUG);
+    }
+
+    if (command != MSG_CONTINUE_TO_RUN) {
+      ERRF("NVArt: received inappropriate message %d", command);
+      _exit(EXIT_FAILURE);
     }
   }
 }
