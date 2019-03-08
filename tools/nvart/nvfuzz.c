@@ -59,7 +59,29 @@ static uint8_t virgin_bits[MAP_SIZE], /* Regions yet untouched by fuzzing */
     virgin_tmout[MAP_SIZE],           /* Bits we haven't seen in tmouts   */
     virgin_crash[MAP_SIZE];           /* Bits we haven't seen in crashes  */
 
-/*
+/**
+ * Communication functions
+ *
+ * Now we use pipes. It is possible to change them to use other mechanisms.
+ */
+static inline void send_message(enum nvart_message msg) {
+  if (write(mainproc_ctrl_fd, &msg, sizeof(msg)) != sizeof(msg))
+    PFATAL("NVFuzz: write() to mainproc_ctrl_fd %d failed", mainproc_ctrl_fd);
+}
+
+static inline enum nvart_message read_message() {
+  enum nvart_message msg;
+  if (read(mainproc_info_fd, &msg, sizeof(msg)) != sizeof(msg))
+    PFATAL("NVFuzz: read() from mainproc_info_fd %d failed", mainproc_info_fd);
+  return msg;
+}
+
+static inline void read_data(void* data, ssize_t len) {
+  if (read(mainproc_info_fd, data, len) != len)
+    PFATAL("NVFuzz: read() from mainproc_info_fd %d failed", mainproc_info_fd);
+}
+
+/**
  * Do a PATH search and find target binaries to see that it exists and isn't a
  * shell script - a common and painful mistake. We also check for a valid ELF
  * header and for evidence of AFL instrumentation.
@@ -374,22 +396,18 @@ int main(int argc, char** argv) {
   int fatal = 0, stop = 0;
   int status, foundbug = 0;
   pid_t main_pid, rpid, rpidw;
-  enum nvart_message ctrl, info;
+  enum nvart_message info, command;
 
   while (!fatal && !stop) {
     /* wait for requests from targets */
-    if (read(mainproc_info_fd, &info, sizeof(info)) != sizeof(info))
-      PFATAL("NVFuzz: read() from mainproc_info_fd failed");
+    info = read_message();
 
     switch (info) {
       case MSG_FORKSERVER_READY:
-        ctrl = MSG_FORK_AND_RUN;
-        if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
-          PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
+        send_message(MSG_FORK_AND_RUN);
         break;
       case MSG_TARGET_STARTED:
-        if (read(mainproc_info_fd, &main_pid, sizeof(main_pid)) != sizeof(main_pid))
-          PFATAL("NVFuzz: read() from mainproc_info_fd failed");
+        read_data(&main_pid, sizeof(main_pid));
         break;
       case MSG_AWAITING_CHECK:
         DBGF("NVFuzz: mainproc requested to run recovery and checking");
@@ -426,23 +444,17 @@ int main(int argc, char** argv) {
         }
 
         config->tracing = 1;
-        ctrl = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
-        if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
-          PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
+        command = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
+        send_message(command);
         break;
       case MSG_TARGET_EXITED:
-        if (read(mainproc_info_fd, &status, sizeof(status)) != sizeof(status))
-          PFATAL("NVFuzz: read() from mainproc_info_fd failed");
+        read_data(&status, sizeof(status));
         check_status(status, main_pid, "mainproc");
-
-        ctrl = MSG_EXIT_FORKSERVER;
-        if (write(mainproc_ctrl_fd, &ctrl, sizeof(ctrl)) != sizeof(ctrl))
-          PFATAL("NVFuzz: write() to mainproc_ctrl_fd failed");
-
+        send_message(MSG_EXIT_FORKSERVER);
         stop = 1;  // can restart the mainproc process
         break;
       default:
-        ERRF("NVFuzz: inappropriate pipe message %d", info);
+        ERRF("NVFuzz: received inappropriate message %d", info);
         fatal = 1;
         break;
     }
