@@ -8,8 +8,8 @@
 /**
  * Globals needed by the injected instrumentation.
  */
-int __nvart_enabled;  // __nvart_shm != NULL
-uint8_t *__nvart_shm;
+int __nvart_enabled;  // __shm_base != NULL
+uint8_t *__shm_base;
 struct nvart_config *config;
 struct nvart_runq *runq;
 
@@ -60,18 +60,18 @@ static inline enum nvart_message __read_message() {
  * Shared memory setup
  */
 static void __nvart_setup_shm(void) {
-  uint8_t *shmid_str = getenv(NVART_SHM_ENV_VAR);
+  uint8_t *shmid_str = getenv(NVART_ENV_SHM);
 
   if (shmid_str) {
     uint32_t shmid = atoi(shmid_str);
 
-    __nvart_shm = shmat(shmid, NULL, 0);
+    __shm_base = shmat(shmid, NULL, 0);
 
     /* Whooooops. */
 
-    if (__nvart_shm == (void *)-1) _exit(NVART_EXIT_BAD_SHM);
+    if (__shm_base == (void *)-1) _exit(NVART_EXIT_BAD_SHM);
 
-    config = (struct nvart_config *)(__nvart_shm);
+    config = (struct nvart_config *)(__shm_base);
 
     /* should be initialized by parent (fuzzer) */
     if (!config->ready) {
@@ -80,7 +80,7 @@ static void __nvart_setup_shm(void) {
     }
     if (config->stage == NONE) config->stage = DONTCARE;
 
-    runq = (struct nvart_runq *)(__nvart_shm + NVART_SHM_RUNQ_OFF);
+    runq = (struct nvart_runq *)(__shm_base + NVART_SHM_RUNQ_OFF);
 
     __nvart_enabled = 1;
 

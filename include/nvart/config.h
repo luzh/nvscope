@@ -10,7 +10,7 @@
 
 /* Environment variable used to pass SHM ID to the target programs. */
 
-#define NVART_SHM_ENV_VAR "__NVART_SHM_ID"
+#define NVART_ENV_SHM "__NVART_SHM_ID"
 
 /*
  * Designated file descriptors for forkserver commands.

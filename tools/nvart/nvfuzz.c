@@ -18,8 +18,7 @@ static int mainproc_ctrl_fd; /* Fork server control pipe (write) */
 static int mainproc_info_fd; /* Fork server status pipe (read)   */
 
 static int32_t shm_id; /* ID of the SHM region */
-
-static char* trace_bits; /* SHM with instrumentation bitmap  */
+static char* shm_base; /* pointer to the SHM region */
 
 /**
  * Communication functions
@@ -142,11 +141,11 @@ static void check_binary(char* fname, char* target) {
   if (f_data[0] != 0x7f || memcmp(f_data + 1, "ELF", 3))
     FATAL("NVFuzz: '%s' is not an ELF binary", target);
 
-  if (!memmem(f_data, f_len, NVART_SHM_ENV_VAR, strlen(NVART_SHM_ENV_VAR) + 1)) {
+  if (!memmem(f_data, f_len, NVART_ENV_SHM, strlen(NVART_ENV_SHM) + 1)) {
     SAYF("\n" cLRD "[-] " cRST
          "Looks like the target binary is not instrumented!\n");
     FATAL("NVFuzz: no instrumentation detected - '%s' not found",
-          NVART_SHM_ENV_VAR);
+          NVART_ENV_SHM);
   }
 
 #if 0
@@ -240,20 +239,14 @@ static void setup_shm(void) {
    * on, perhaps?
    */
 
-  setenv(NVART_SHM_ENV_VAR, shm_str, 1);
+  setenv(NVART_ENV_SHM, shm_str, 1);
 
   ck_free(shm_str);
 
-  trace_bits = shmat(shm_id, NULL, 0);
-  if (!trace_bits) PFATAL("shmat() failed");
+  shm_base = shmat(shm_id, NULL, 0);
+  if (!shm_base) PFATAL("shmat() failed");
 
-  struct nvart_config* config = (struct nvart_config*)(trace_bits);
-  memset(config, 0, NVART_SHM_CONFIG_SIZE);
-
-  struct nvart_runq* runq = (struct nvart_runq*)(trace_bits + NVART_SHM_RUNQ_OFF);
-  memset(runq, 0, NVART_SHM_RUNQ_SIZE);
-
-  config->ready = 1;
+  memset(shm_base, 0, MAP_SIZE);
 }
 
 /*
@@ -368,7 +361,9 @@ int main(int argc, char** argv) {
   ACTF("Preparing to test program %s", mainproc);
 
   setup_shm();
-  struct nvart_config* config = (struct nvart_config*)(trace_bits);
+
+  struct nvart_config* config = (struct nvart_config*)(shm_base);
+  config->ready = 1;
   config->tracing = 1;  // must set before init_forkserver()
 
   init_forkserver(mainproc, mainproc_argv);
