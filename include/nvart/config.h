@@ -6,6 +6,8 @@
 #define ALIGN_UP(size, align) (((size) + (align)-1) & ~((align)-1))
 #define ALIGN_DOWN(size, align) ((size) & ~((align)-1))
 
+#define BINARY_PATH_LEN_MAX (512)  // buffer length to store binary paths
+
 /* Environment variable used to pass SHM ID to the target programs. */
 
 #define NVART_SHM_ENV_VAR "__NVART_SHM_ID"

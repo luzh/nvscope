@@ -8,56 +8,18 @@
 
 #define HAVE_AFFINITY 1
 
-static pid_t main_frks_pid; /* PID of the mainproc's fork server */
-// recovery_forksrv_pid;    /* PID of the recovery's forkserver */
+static char mainproc[BINARY_PATH_LEN_MAX];
+// static char recovery[BINARY_PATH_LEN_MAX];
 
-static int mainproc_ctrl_fd, /* Fork server control pipe (write) */
-    mainproc_info_fd;        /* Fork server status pipe (read)   */
+static pid_t main_frks_pid; /* PID of the mainproc's fork server */
+// static pid_t recovery_forksrv_pid; /* PID of the recovery's forkserver */
+
+static int mainproc_ctrl_fd; /* Fork server control pipe (write) */
+static int mainproc_info_fd; /* Fork server status pipe (read)   */
 
 static int32_t shm_id; /* ID of the SHM region */
 
-static uint8_t
-    // *in_dir, /* Input directory with test cases */
-    // *out_file,          /* File to fuzz, if any            */
-    // *out_dir,           /* Working & output directory      */
-    // *sync_dir,          /* Synchronization directory       */
-    // *sync_id,           /* Fuzzer ID                       */
-    // *use_banner,        /* Display banner                  */
-    *in_bitmap,     /* Input bitmap                    */
-    *mainproc_path; /* Path to the mainproc binary           */
-//  *orig_cmdline;      /* Original command line           */
-
-static uint8_t
-    // skip_deterministic, /* Skip deterministic stages?     */
-    // force_deterministic,           /* Force deterministic stages?    */
-    // use_splicing,                  /* Recombine input files?         */
-    dumb_mode, /* Run in non-instrumented mode?  */
-    // score_changed,                 /* Scoring for favorites changed? */
-    // kill_signal,                   /* Signal that killed the child   */
-    // resuming_fuzz,                 /* Resuming an older fuzzing job? */
-    // timeout_given,                 /* Specific timeout given?        */
-    // not_on_tty,                    /* stdout is not a tty            */
-    // term_too_small,                /* terminal dimensions too small  */
-    uses_asan, /* Target uses ASAN?              */
-    // no_forkserver,                 /* Disable forkserver?            */
-    // crash_mode,                    /* Crash mode! Yeah!              */
-    // in_place_resume,               /* Attempt in-place resume?       */
-    // auto_changed,                  /* Auto-generated tokens changed? */
-    // no_cpu_meter_red,              /* Feng shui on the status screen */
-    // no_arith,                      /* Skip most arithmetic ops       */
-    // shuffle_queue,                 /* Shuffle input queue?           */
-    // bitmap_changed = 1,            /* Time to update bitmap?         */
-    // skip_requested,                /* Skip request, via SIGUSR1      */
-    // run_over10m,                   /* Run time over 10 minutes?      */
-    persistent_mode, /* Running in persistent mode?    */
-    deferred_mode;   /* Deferred forkserver mode?      */
-//  fast_cal;                      /* Try to calibrate faster?       */
-
-static uint8_t* trace_bits; /* SHM with instrumentation bitmap  */
-
-static uint8_t virgin_bits[MAP_SIZE], /* Regions yet untouched by fuzzing */
-    virgin_tmout[MAP_SIZE],           /* Bits we haven't seen in tmouts   */
-    virgin_crash[MAP_SIZE];           /* Bits we haven't seen in crashes  */
+static char* trace_bits; /* SHM with instrumentation bitmap  */
 
 /**
  * Communication functions
@@ -86,88 +48,108 @@ static inline void read_data(void* data, ssize_t len) {
  * shell script - a common and painful mistake. We also check for a valid ELF
  * header and for evidence of AFL instrumentation.
  */
-static void check_binary(uint8_t* fname) {
-  u8* env_path = 0;
+static void check_binary(char* fname, char* target) {
+  char* bin_path = NULL;
+  char* env_path = NULL;
   struct stat st;
 
-  s32 fd;
-  u8* f_data;
-  u32 f_len = 0;
+  int fd;
+  char* f_data;
+  uint32_t f_len = 0;
 
-  ACTF("Validating target binary...");
+  ACTF("Validating target binary '%s'...", fname);
 
   if (strchr(fname, '/') || !(env_path = getenv("PATH"))) {
-    mainproc_path = ck_strdup(fname);
-    if (stat(mainproc_path, &st) || !S_ISREG(st.st_mode) ||
-        !(st.st_mode & 0111) || (f_len = st.st_size) < 4)
-      FATAL("Program '%s' not found or not executable", fname);
+    bin_path = ck_strdup(fname);
+    if (stat(bin_path, &st) || !S_ISREG(st.st_mode) || !(st.st_mode & 0111) ||
+        (f_len = st.st_size) < 4) {
+      ck_free(bin_path);
+      FATAL("NVFuzz: '%s' not found or not executable", fname);
+    }
 
   } else {
     while (env_path) {
-      u8 *cur_elem, *delim = strchr(env_path, ':');
+      char *cur_elem, *delim = strchr(env_path, ':');
 
       if (delim) {
         cur_elem = ck_alloc(delim - env_path + 1);
         memcpy(cur_elem, env_path, delim - env_path);
         delim++;
 
-      } else
+      } else {
         cur_elem = ck_strdup(env_path);
+      }
 
       env_path = delim;
 
       if (cur_elem[0])
-        mainproc_path = alloc_printf("%s/%s", cur_elem, fname);
+        bin_path = alloc_printf("%s/%s", cur_elem, fname);
       else
-        mainproc_path = ck_strdup(fname);
+        bin_path = ck_strdup(fname);
 
       ck_free(cur_elem);
 
-      if (!stat(mainproc_path, &st) && S_ISREG(st.st_mode) &&
-          (st.st_mode & 0111) && (f_len = st.st_size) >= 4)
+      if (!stat(bin_path, &st) && S_ISREG(st.st_mode) && (st.st_mode & 0111) &&
+          (f_len = st.st_size) >= 4)
         break;
 
-      ck_free(mainproc_path);
-      mainproc_path = 0;
+      ck_free(bin_path);
+      bin_path = NULL;
     }
 
-    if (!mainproc_path) FATAL("Program '%s' not found or not executable", fname);
+    if (!bin_path) FATAL("NVFuzz: '%s' not found or not executable", fname);
   }
 
-  if (getenv("AFL_SKIP_BIN_CHECK")) return;
+  if (getenv("NVART_SKIP_BIN_CHECK")) return;
+
+  if (target == NULL) FATAL("NVFuzz: invalid buffer to store target's path");
+  size_t bin_path_len = strlen(bin_path);
+  if (BINARY_PATH_LEN_MAX <= bin_path_len) {
+    ck_free(bin_path);
+    SAYF("\n" cLRD "[-] " cRST
+         "Oops, the target buffer length is not large enough to store the\n"
+         "    target binary's path. Try to increase BINARY_PATH_MLEN_MAX.\n");
+    FATAL("NVFuzz: BINARY_PATH_LEN_LEN %zu <= bin_path_len %zu",
+          BINARY_PATH_LEN_MAX, bin_path_len);
+  }
+
+  memcpy(target, bin_path, bin_path_len);
+  target[bin_path_len] = 0;
+  ck_free(bin_path);
 
   /* Check for blatant user errors. */
 
-  if ((!strncmp(mainproc_path, "/tmp/", 5) && !strchr(mainproc_path + 5, '/')) ||
-      (!strncmp(mainproc_path, "/var/tmp/", 9) && !strchr(mainproc_path + 9, '/')))
-    FATAL("Please don't keep binaries in /tmp or /var/tmp");
+  if ((!strncmp(target, "/tmp/", 5) && !strchr(target + 5, '/')) ||
+      (!strncmp(target, "/var/tmp/", 9) && !strchr(target + 9, '/')))
+    FATAL("NVFuzz: please don't keep binaries in /tmp or /var/tmp");
 
-  fd = open(mainproc_path, O_RDONLY);
+  fd = open(target, O_RDONLY);
 
-  if (fd < 0) PFATAL("Unable to open '%s'", mainproc_path);
+  if (fd < 0) PFATAL("NVFuzz: unable to open '%s'", target);
 
   f_data = mmap(0, f_len, PROT_READ, MAP_PRIVATE, fd, 0);
 
-  if (f_data == MAP_FAILED) PFATAL("Unable to mmap file '%s'", mainproc_path);
+  if (f_data == MAP_FAILED) PFATAL("NVFuzz: unable to mmap file '%s'", target);
 
   close(fd);
 
   if (f_data[0] == '#' && f_data[1] == '!') {
     SAYF("\n" cLRD "[-] " cRST
          "Oops, the target binary looks like a shell script.\n");
-    FATAL("Program '%s' is a shell script", mainproc_path);
+    FATAL("NVFuzz: '%s' is a shell script", target);
   }
 
   if (f_data[0] != 0x7f || memcmp(f_data + 1, "ELF", 3))
-    FATAL("Program '%s' is not an ELF binary", mainproc_path);
+    FATAL("NVFuzz: '%s' is not an ELF binary", target);
 
-  if (!dumb_mode && !memmem(f_data, f_len, NVART_SHM_ENV_VAR,
-                            strlen(NVART_SHM_ENV_VAR) + 1)) {
+  if (!memmem(f_data, f_len, NVART_SHM_ENV_VAR, strlen(NVART_SHM_ENV_VAR) + 1)) {
     SAYF("\n" cLRD "[-] " cRST
          "Looks like the target binary is not instrumented!\n");
-    FATAL("No instrumentation detected - '%s' not found", NVART_SHM_ENV_VAR);
+    FATAL("NVFuzz: no instrumentation detected - '%s' not found",
+          NVART_SHM_ENV_VAR);
   }
 
+#if 0
   if (memmem(f_data, f_len, "libasan.so", 10) ||
       memmem(f_data, f_len, "__msan_init", 11))
     uses_asan = 1;
@@ -178,7 +160,6 @@ static void check_binary(uint8_t* fname) {
     OKF(cPIN "Persistent mode binary detected");
     setenv(PERSIST_ENV_VAR, "1", 1);
     persistent_mode = 1;
-
   } else if (getenv("AFL_PERSISTENT")) {
     WARNF("AFL_PERSISTENT is no longer supported and may misbehave!");
   }
@@ -187,12 +168,12 @@ static void check_binary(uint8_t* fname) {
     OKF(cPIN "Deferred forkserver binary detected");
     setenv(DEFER_ENV_VAR, "1", 1);
     deferred_mode = 1;
-
   } else if (getenv("AFL_DEFER_FORKSRV")) {
     WARNF("AFL_DEFER_FORKSRV is no longer supported and may misbehave!");
   }
+#endif
 
-  if (munmap(f_data, f_len)) PFATAL("unmap() failed");
+  if (munmap(f_data, f_len)) PFATAL("NVFuzz: unmap() failed");
 }
 
 static int check_status(int status, pid_t pid, char* pname) {
@@ -234,12 +215,14 @@ static void remove_shm(void) {
  * Configure shared memory and virgin_bits. This is called at startup.
  */
 static void setup_shm(void) {
-  uint8_t* shm_str;
+  char* shm_str;
 
+#if 0
   if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
 
   memset(virgin_tmout, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
+#endif
 
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
   if (shm_id < 0) PFATAL("shmget() failed");
@@ -257,7 +240,7 @@ static void setup_shm(void) {
    * on, perhaps?
    */
 
-  if (!dumb_mode) setenv(NVART_SHM_ENV_VAR, shm_str, 1);
+  setenv(NVART_SHM_ENV_VAR, shm_str, 1);
 
   ck_free(shm_str);
 
@@ -334,7 +317,7 @@ static void init_forkserver(char* target, char** target_argv) {
     execv(target, target_argv);
 
     /* If execv() succeeds, it should not return (getting here). */
-    FATAL("NVFuzz: unable to execute the target program '%s'", mainproc_path);
+    FATAL("NVFuzz: unable to execute the target program '%s'", target);
   }
 
   /* Close the unneeded endpoints. */
@@ -358,9 +341,6 @@ static void init_forkserver(char* target, char** target_argv) {
   if (rlen == sizeof(info) && info == MSG_FORKSERVER_HELLO) {
     OKF("NVFuzz: target program's forkserver is up, pid %u", main_frks_pid);
     return;
-  } else {
-    SHOW_VAR32U(rlen);
-    SHOW_VAR32U(info);
   }
 
   int status;
@@ -384,14 +364,14 @@ int main(int argc, char** argv) {
 
   char** mainproc_argv = argv + 1;  // skip the fuzzer program
 
-  check_binary(argv[1]);
-  ACTF("Preparing to test program %s", mainproc_path);
+  check_binary(argv[1], mainproc);
+  ACTF("Preparing to test program %s", mainproc);
 
   setup_shm();
   struct nvart_config* config = (struct nvart_config*)(trace_bits);
   config->tracing = 1;  // must set before init_forkserver()
 
-  init_forkserver(mainproc_path, mainproc_argv);
+  init_forkserver(mainproc, mainproc_argv);
 
   int fatal = 0, stop = 0;
   int status, foundbug = 0;
@@ -415,15 +395,15 @@ int main(int argc, char** argv) {
         config->tracing = 0;
 
         if ((rpid = fork()) == -1) {
-          PFATAL("NVFuzz: fork() to run the recovery program failed");
-          // exit(EXIT_FAILURE);
+          FATAL("NVFuzz: fork() to run the recovery program failed");
+          fatal = 1;
         } else if (rpid == 0) {  // recovery program (2nd child)
           OKF("NVFuzz: fork() succeeds, recovery process %u parent %u",
               getpid(), getppid());
 
-          // Note: mainproc_argv should contain mainproc_path
-          char* args[] = {mainproc_path, "stackfile", "check", NULL};
-          execv(mainproc_path, args);
+          // Note: mainproc_argv should contain mainproc
+          char* args[] = {mainproc, "stackfile", "check", NULL};
+          execv(mainproc, args);
 
           /* If execv() succeeds, it should not return (getting here). */
           FATAL("NVFuzz: unable to execute the recovery program");
