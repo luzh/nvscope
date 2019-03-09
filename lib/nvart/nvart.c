@@ -32,27 +32,25 @@ static void __nvart_print_runq() {
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
 static inline void __send_message(enum nvart_message msg) {
-  if (write(FD_MAINPROC_INFO, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
+  if (write(config->target_info_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: write() to target_info_fd %d failed", config->target_info_fd);
     _exit(EXIT_FAILURE);
   }
 }
 
 static inline void __send_data(void *data, ssize_t len) {
-  if (write(FD_MAINPROC_INFO, data, len) != len) {
-    ERRF("NVArt: write() to FD_MAINPROC_INFO %d failed", FD_MAINPROC_INFO);
+  if (write(config->target_info_fd, data, len) != len) {
+    ERRF("NVArt: write() to target_info_fd %d failed", config->target_info_fd);
     _exit(EXIT_FAILURE);
   }
 }
 
 static inline enum nvart_message __read_message() {
   enum nvart_message msg;
-
-  if (read(FD_MAINPROC_CTRL, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVArt: read() from FD_MAINPROC_CTRL %d failed", FD_MAINPROC_CTRL);
+  if (read(config->target_ctrl_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: read() from target_ctrl_fd %d failed", config->target_ctrl_fd);
     _exit(EXIT_FAILURE);
   }
-
   return msg;
 }
 
@@ -95,7 +93,7 @@ static void __nvart_setup_shm(void) {
 /**
  * Forkserver logic (see nvfuzz.c for the other part)
  */
-static void __nvart_start_forkserver(void) {
+static void __start_forkserver(void) {
   /* initial communication with the fuzzer */
   __send_message(MSG_FORKSERVER_HELLO);
 
@@ -106,8 +104,8 @@ static void __nvart_start_forkserver(void) {
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
-      close(FD_MAINPROC_CTRL);
-      close(FD_MAINPROC_INFO);
+      close(config->target_ctrl_fd);  // FIX: determine using SHM 
+      close(config->target_info_fd);
       _exit(EXIT_SUCCESS);
     }
 
@@ -120,18 +118,18 @@ static void __nvart_start_forkserver(void) {
 
     /* Check afl-llvm-rt.o.c for persistent mode and using SIGCONT. */
     if (cpid < 0) {
-      ERRF("NVArt: fork() to run the mainproc program failed");
+      ERRF("NVArt: fork() to run the target program failed");
       _exit(EXIT_FAILURE);
     }
 
     if (cpid == 0) {
       /**
-       * The child process will execute the mainproc program. It inherits pipes
-       * from the forkserver to communicate with the fuzzer. Thus, when the
-       * mainproc program runs, there are two writers to the state pipe: the
-       * forkserver and the mainproc program. Linux pipes guarantee write
-       * atomicity for message sizes no larger than PIPE_BUF. When the mainproc
-       * program exits, its pipe ends automatically close.
+       * The child process will execute the target program (mainproc, recovery,
+       * or checker). It inherits pipes from the forkserver to communicate with
+       * the fuzzer. Thus, when the target program runs, there are two writers
+       * to the state pipe: the forkserver and the target program. Linux pipes
+       * guarantee write atomicity for message sizes no larger than PIPE_BUF.
+       * When the target program exits, its pipe ends automatically close.
        *
        * In afl-llvm-rt.o.c, AFL closes the pipe fds because they are not needed
        * anymore. But NVArt still needs them to communicate with the fuzzer for
@@ -142,14 +140,14 @@ static void __nvart_start_forkserver(void) {
       struct message_pid msgpid = {MSG_TARGET_STARTED, cpid};
       __send_data(&msgpid, sizeof(msgpid));
 
-      return;  // execute the mainproc progrm, e.g. from main().
+      return;  // execute the target progrm, e.g. from main().
     }
 
-    DBGF("NVArt: mainproc process started, pid %d", cpid);
+    DBGF("NVArt: mainproc process started, pid %d", cpid);  // FIX: mainproc 
 
     /*
      * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
-     * because the mainproc is running and it may write to FD_MAINPROC_INFO too.
+     * because the target is running and it may write to FD_MAINPROC_INFO too.
      */
 
     int status;
@@ -158,7 +156,7 @@ static void __nvart_start_forkserver(void) {
       ERRF("NVArt: waitpid() for %u failed", cpid);
       _exit(EXIT_FAILURE);
     } else if (cpidw == cpid) {  // child process reaped
-      ACTF("NVArt: mainproc process %u finished", cpid);
+      ACTF("NVArt: target process %u finished", cpid);
     } else {
       ERRF("NVArt: unexpected waitpid() return value %u", cpidw);
     }
@@ -169,8 +167,8 @@ static void __nvart_start_forkserver(void) {
 }
 
 /*
- * Initialize NVArt run-time data structures. Runs before mainproc's main() with
- * the constructor attribute.
+ * Initialize NVArt run-time data structures. Runs before the target's main()
+ * with the constructor attribute.
  */
 __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   if (__nvart_enabled) {
@@ -182,9 +180,9 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   __nvart_setup_shm();
 
   /* If not testing, return to execute the target program, e.g. from main(). */
-  if (!__nvart_enabled || !config->tracing) return;
+  if (!__nvart_enabled || !config->tracing) return;  // FIX: no !config->tracing) 
 
-  __nvart_start_forkserver();
+  __start_forkserver();
 }
 
 static inline int __store64_in_pmem(uint64_t *ptr) {

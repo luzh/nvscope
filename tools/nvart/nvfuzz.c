@@ -11,9 +11,6 @@
 static char mainproc[BINARY_PATH_LEN_MAX];
 // static char recovery[BINARY_PATH_LEN_MAX];
 
-static int mainproc_ctrl_fd; /* Fork server control pipe (write) */
-static int mainproc_info_fd; /* Fork server status pipe (read)   */
-
 static int32_t shm_id; /* ID of the SHM region */
 static char* shm_base; /* pointer to the SHM region */
 
@@ -22,21 +19,21 @@ static char* shm_base; /* pointer to the SHM region */
  *
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
-static inline void send_message(enum nvart_message msg) {
-  if (write(mainproc_ctrl_fd, &msg, sizeof(msg)) != sizeof(msg))
-    PFATAL("NVFuzz: write() to mainproc_ctrl_fd %d failed", mainproc_ctrl_fd);
+static inline void send_message(int channel, enum nvart_message msg) {
+  if (write(channel, &msg, sizeof(msg)) != sizeof(msg))
+    PFATAL("NVFuzz: write() to channel %d failed", channel);
 }
 
-static inline enum nvart_message read_message() {
+static inline enum nvart_message read_message(int channel) {
   enum nvart_message msg;
-  if (read(mainproc_info_fd, &msg, sizeof(msg)) != sizeof(msg))
-    PFATAL("NVFuzz: read() from mainproc_info_fd %d failed", mainproc_info_fd);
+  if (read(channel, &msg, sizeof(msg)) != sizeof(msg))
+    PFATAL("NVFuzz: read() from channel %d failed", channel);
   return msg;
 }
 
-static inline void read_data(void* data, ssize_t len) {
-  if (read(mainproc_info_fd, data, len) != len)
-    PFATAL("NVFuzz: read() from mainproc_info_fd %d failed", mainproc_info_fd);
+static inline void read_data(int channel, void* data, ssize_t len) {
+  if (read(channel, data, len) != len)
+    PFATAL("NVFuzz: read() from channel %d failed", channel);
 }
 
 /**
@@ -254,9 +251,9 @@ static void setup_shm(void) {
  * cloning a stopped child. So, we just execute once, and then send commands
  * through a pipe. The other part of this logic is in lib/nvart/nvart.c.
  */
-static pid_t init_forkserver(char* target, char** target_argv,
-                             int target_read_fd, int target_write_fd,
-                             int* parent_read_fd, int* parent_write_fd) {
+static pid_t start_forkserver(char* target, char** target_argv,
+                              int target_read_fd, int target_write_fd,
+                              int* parent_read_fd, int* parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
   ACTF("NVFuzz: spinning up the fork server for '%s'...", target);
@@ -366,11 +363,17 @@ int main(int argc, char** argv) {
 
   struct nvart_config* config = (struct nvart_config*)(shm_base);
   config->ready = 1;
-  config->tracing = 1;  // must set before init_forkserver() FIX 
+  config->tracing = 1;  // FIX: must set before start_forkserver() 
 
+  int main_ctrl_fd; /* forkserver control pipe (write) */
+  int main_info_fd; /* forkserver status pipe (read)   */
+
+  /* must set fds in SHM before starting the corresponding forkserver */
+  config->target_ctrl_fd = FD_MAINPROC_CTRL;
+  config->target_info_fd = FD_MAINPROC_INFO;
   pid_t main_frks_pid =
-      init_forkserver(mainproc, mainproc_argv, FD_MAINPROC_CTRL,
-                      FD_MAINPROC_INFO, &mainproc_info_fd, &mainproc_ctrl_fd);
+      start_forkserver(mainproc, mainproc_argv, config->target_ctrl_fd,
+                       config->target_info_fd, &main_info_fd, &main_ctrl_fd);
   if (main_frks_pid < 0)
     FATAL("NVFuzz: initialize the mainproc's forkserver failed");
 
@@ -381,14 +384,14 @@ int main(int argc, char** argv) {
 
   while (!fatal && !stop) {
     /* wait for requests from targets */
-    info = read_message();
+    info = read_message(main_info_fd);
 
     switch (info) {
       case MSG_FORKSERVER_READY:
-        send_message(MSG_FORK_AND_RUN);
+        send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
         break;
       case MSG_TARGET_STARTED:
-        read_data(&main_pid, sizeof(main_pid));
+        read_data(main_info_fd, &main_pid, sizeof(main_pid));
         break;
       case MSG_AWAITING_CHECK:
         DBGF("NVFuzz: mainproc requested to run recovery and checking");
@@ -426,12 +429,12 @@ int main(int argc, char** argv) {
 
         config->tracing = 1;
         command = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
-        send_message(command);
+        send_message(main_ctrl_fd, command);
         break;
       case MSG_TARGET_EXITED:
-        read_data(&status, sizeof(status));
+        read_data(main_info_fd, &status, sizeof(status));
         check_status(status, main_pid, "mainproc");
-        send_message(MSG_EXIT_FORKSERVER);
+        send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
         stop = 1;  // can restart the mainproc process
         break;
       default:

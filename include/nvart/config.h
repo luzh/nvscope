@@ -70,6 +70,8 @@ struct nvart_config {
   uint8_t reserved[64];
   uint32_t ready;
   uint32_t tracing;
+  int target_info_fd;
+  int target_ctrl_fd;
   enum target_stage stage;
 };
 
