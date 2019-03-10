@@ -31,10 +31,12 @@ static inline enum nvart_message read_message(int channel) {
   return msg;
 }
 
+#if 0
 static inline void read_data(int channel, void* data, ssize_t len) {
   if (read(channel, data, len) != len)
     PFATAL("NVFuzz: read() from channel %d failed", channel);
 }
+#endif
 
 /**
  * Do a PATH search and find target binaries to see that it exists and isn't a
@@ -178,7 +180,7 @@ static int check_status(int status, pid_t pid, char* pname) {
     int exstatus = WEXITSTATUS(status);
     if (exstatus == 0) {
       err = 0;
-      DBGF("NVFuzz: %s process %u exited normally", pname, pid);
+      OKF("NVFuzz: %s process %u exited normally", pname, pid);
     } else if (exstatus == 127) {
       ERRF("NVFuzz: execv() for %s process %u failed", pname, pid);
     } else {
@@ -244,7 +246,7 @@ static void setup_shm(void) {
 }
 
 /*
- * Spin up fork server. The idea is explained here:
+ * Spin up a forkserver. The idea is explained here:
  * http://lcamtuf.blogspot.com/2014/10/fuzzing-binaries-without-execve.html
  *
  * In essence, the instrumentation allows us to skip execve(), and just keep
@@ -252,33 +254,24 @@ static void setup_shm(void) {
  * through a pipe. The other part of this logic is in lib/nvart/nvart.c.
  */
 static pid_t start_forkserver(char* target, char** target_argv,
-                              int target_read_fd, int target_write_fd,
+                              struct nvart_target_config *target_conf,
                               int* parent_read_fd, int* parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
   ACTF("NVFuzz: spinning up the fork server for '%s'...", target);
 
-  if (parent_read_fd == NULL || parent_write_fd == NULL)
-    FATAL("NVFuzz: invalid parent_read_fd or parent_write_fd");
+  assert(target_conf != NULL && parent_read_fd != NULL &&
+         parent_write_fd != NULL);
 
   if (pipe(info_fds) || pipe(ctrl_fds))
-    PFATAL("NVFuzz: pipe() for the target program's forkserver failed");
+    PFATAL("NVFuzz: pipe() for the target program failed");
 
-  pid_t frks_pid = fork();
-  if (frks_pid < 0)
+  pid_t fksv_pid = fork();
+  if (fksv_pid < 0)
     PFATAL("NVFuzz: fork() to run the target program's forkserver failed");
 
-  if (frks_pid == 0) {  // target program's forkserver process
+  if (fksv_pid == 0) {  // target program's forkserver process
     struct rlimit rlim;
-
-    /*
-     * Umpf. On OpenBSD, the default fd limit for root users is set to soft 128.
-     * Let's try to fix that...
-     */
-    if (!getrlimit(RLIMIT_NOFILE, &rlim) && rlim.rlim_cur < NVART_PIPE_FD_MAX) {
-      rlim.rlim_cur = NVART_PIPE_FD_MAX;
-      setrlimit(RLIMIT_NOFILE, &rlim);
-    }
 
     /*
      * Dumping cores is slow and can lead to anomalies if SIGKILL is delivered
@@ -294,16 +287,11 @@ static pid_t start_forkserver(char* target, char** target_argv,
     setsid();
 
     /* Set up control and status pipes, close the unneeded original fds. */
+    target_conf->read_fd = ctrl_fds[0];
+    target_conf->write_fd = info_fds[1];
 
-    if (dup2(ctrl_fds[0], target_read_fd) < 0)
-      PFATAL("NVFuzz: dup2() %d -> %d failed", ctrl_fds[0], target_read_fd);
-    if (dup2(info_fds[1], target_write_fd) < 0)
-      PFATAL("NVFuzz: dup2() %d -> %d failed", info_fds[1], target_write_fd);
-
-    close(ctrl_fds[0]);
     close(ctrl_fds[1]);
     close(info_fds[0]);
-    close(info_fds[1]);
 
     execv(target, target_argv);
 
@@ -330,17 +318,18 @@ static pid_t start_forkserver(char* target, char** target_argv,
    * try to figure out what went wrong with waitpid().
    */
   if (rlen == sizeof(info) && info == MSG_FORKSERVER_HELLO) {
-    OKF("NVFuzz: target program's forkserver is up, pid %u", frks_pid);
-    return frks_pid;
+    OKF("NVFuzz: target program's forkserver is up, pid %u", fksv_pid);
+    target_conf->fksv_pid = fksv_pid;
+    return fksv_pid;
   }
 
   int status;
-  pid_t pidw = waitpid(frks_pid, &status, 0);
+  pid_t pidw = waitpid(fksv_pid, &status, 0);
 
   if (pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", frks_pid);
-  } else if (pidw == frks_pid) {  // target's forkserver reaped
-    check_status(status, frks_pid, "target's forkserver");
+    ERRF("NVFuzz: waitpid(%u) failed", fksv_pid);
+  } else if (pidw == fksv_pid) {  // target's forkserver reaped
+    check_status(status, fksv_pid, "target's forkserver");
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", pidw);
   }
@@ -367,7 +356,7 @@ int main(int argc, char** argv) {
   struct nvart_config* config = (struct nvart_config*)(shm_base);
 
   config->initialized = 1;
-  config->tracing = 1; // FIX: remove
+  config->tracing = 1;
   config->target_type = TYPE_MAINPROC;
 
   struct nvart_target_config* tgconf_main = &config->mainproc;
@@ -376,17 +365,15 @@ int main(int argc, char** argv) {
 
   /* must set fds in SHM before starting the corresponding forkserver */
   tgconf_main->tracing = 1;
-  tgconf_main->ctrl_fd = FD_MAINPROC_CTRL;
-  tgconf_main->info_fd = FD_MAINPROC_INFO;
-  pid_t main_frks_pid =
-      start_forkserver(mainproc, mainproc_argv, tgconf_main->ctrl_fd,
-                       tgconf_main->info_fd, &main_info_fd, &main_ctrl_fd);
-  if (main_frks_pid < 0)
+  pid_t main_fksv_pid =
+      start_forkserver(mainproc, mainproc_argv, tgconf_main,
+                       &main_info_fd, &main_ctrl_fd);
+  if (main_fksv_pid < 0)
     FATAL("NVFuzz: initialize the mainproc's forkserver failed");
 
   int fatal = 0, stop = 0;
   int status, foundbug = 0;
-  pid_t main_pid, rpid, rpidw;
+  pid_t rpid, rpidw; // FIX: remove
   enum nvart_message info, command;
 
   while (!fatal && !stop) {
@@ -398,7 +385,7 @@ int main(int argc, char** argv) {
         send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
         break;
       case MSG_TARGET_STARTED:
-        read_data(main_info_fd, &main_pid, sizeof(main_pid));
+        DBGF("NVFuzz: target process started, pid %d", tgconf_main->pid);
         break;
       case MSG_AWAITING_CHECK:
         DBGF("NVFuzz: mainproc requested to run recovery and checking");
@@ -409,8 +396,8 @@ int main(int argc, char** argv) {
           FATAL("NVFuzz: fork() to run the recovery program failed");
           fatal = 1;
         } else if (rpid == 0) {  // recovery program (2nd child)
-          OKF("NVFuzz: fork() succeeds, recovery process %u parent %u",
-              getpid(), getppid());
+          DBGF("NVFuzz: fork() succeeds, recovery process %u parent %u",
+               getpid(), getppid());
 
           // Note: mainproc_argv should contain mainproc
           char* args[] = {mainproc, "stackfile", "check", NULL};
@@ -419,7 +406,7 @@ int main(int argc, char** argv) {
           /* If execv() succeeds, it should not return (getting here). */
           FATAL("NVFuzz: unable to execute the recovery program");
         } else {  // fuzzer (parent)
-          OKF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
+          DBGF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
           do {  // wait for the recovery process to finish
             rpidw = waitpid(rpid, &status, WNOHANG);
             if (rpidw == -1) {
@@ -439,8 +426,7 @@ int main(int argc, char** argv) {
         send_message(main_ctrl_fd, command);
         break;
       case MSG_TARGET_EXITED:
-        read_data(main_info_fd, &status, sizeof(status));
-        check_status(status, main_pid, "mainproc");
+        check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
         send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
         stop = 1;  // can restart the mainproc process
         break;
@@ -457,14 +443,14 @@ int main(int argc, char** argv) {
   }
 
   /* wait for the forkserver to exit */
-  pid_t main_frks_pidw = waitpid(main_frks_pid, &status, 0);
+  pid_t main_fksv_pidw = waitpid(main_fksv_pid, &status, 0);
 
-  if (main_frks_pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", main_frks_pid);
-  } else if (main_frks_pidw == main_frks_pid) {
-    check_status(status, main_frks_pid, "mainproc's forkserver");
+  if (main_fksv_pidw < 0) {
+    ERRF("NVFuzz: waitpid(%u) failed", main_fksv_pid);
+  } else if (main_fksv_pidw == main_fksv_pid) {
+    check_status(status, main_fksv_pid, "mainproc's forkserver");
   } else {
-    ERRF("NVFuzz: unexpected waitpid() return value %u", main_frks_pidw);
+    ERRF("NVFuzz: unexpected waitpid() return value %u", main_fksv_pidw);
   }
 
   return 0;

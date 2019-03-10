@@ -32,34 +32,36 @@ static void __nvart_print_runq() {
  *
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
-static inline void __send_message(enum nvart_message msg) {
-  if (write(tgconf->info_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVArt: write() to tgconf->info_fd %d failed", tgconf->info_fd);
-    _exit(EXIT_FAILURE);
-  }
-}
-
-static inline void __send_data(void *data, ssize_t len) {
-  if (write(tgconf->info_fd, data, len) != len) {
-    ERRF("NVArt: write() to tgconf->info_fd %d failed", tgconf->info_fd);
-    _exit(EXIT_FAILURE);
-  }
-}
-
 static inline enum nvart_message __read_message() {
   enum nvart_message msg;
-  if (read(tgconf->ctrl_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVArt: read() from tgconf->ctrl_fd %d failed", tgconf->ctrl_fd);
+  if (read(tgconf->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: read() from tgconf->read_fd %d failed", tgconf->read_fd);
     _exit(EXIT_FAILURE);
   }
   return msg;
 }
 
+static inline void __send_message(enum nvart_message msg) {
+  if (write(tgconf->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: write() to tgconf->write_fd %d failed", tgconf->write_fd);
+    _exit(EXIT_FAILURE);
+  }
+}
+
+#if 0
+static inline void __send_data(void *data, ssize_t len) {
+  if (write(tgconf->write_fd, data, len) != len) {
+    ERRF("NVArt: write() to tgconf->write_fd %d failed", tgconf->write_fd);
+    _exit(EXIT_FAILURE);
+  }
+}
+#endif
+
 /**
  * Shared memory setup
  */
 static void __nvart_setup_shm(void) {
-  uint8_t *shmid_str = getenv(NVART_ENV_SHM);
+  char *shmid_str = getenv(NVART_ENV_SHM);
 
   if (shmid_str) {
     uint32_t shmid = atoi(shmid_str);
@@ -81,8 +83,10 @@ static void __nvart_setup_shm(void) {
 
     if (config->target_type == TYPE_MAINPROC) {
       tgconf = &config->mainproc;
+      OKF("NVArt: target mainproc attached to shared memory");
     } else if (config->target_type == TYPE_RECOVERY) {
       tgconf = &config->recovery;
+      OKF("NVArt: target recovery attached to shared memory");
     } else {
       ERRF("NVArt: invalid target type");
       _exit(NVART_EXIT_BAD_CONFIG);
@@ -92,7 +96,6 @@ static void __nvart_setup_shm(void) {
 
     __nvart_enabled = 1;
 
-    OKF("NVArt: target attached to shared memory");
   } else {
     __nvart_enabled = 0;
 
@@ -114,8 +117,8 @@ static void __start_forkserver(void) {
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
-      close(tgconf->ctrl_fd);  // FIX: determine using SHM
-      close(tgconf->info_fd);
+      close(tgconf->read_fd);  // FIX: determine using SHM
+      close(tgconf->write_fd);
       _exit(EXIT_SUCCESS);
     }
 
@@ -145,19 +148,18 @@ static void __start_forkserver(void) {
        * anymore. But NVArt still needs them to communicate with the fuzzer for
        * testing requests and results.
        */
-      cpid = getpid();
 
-      struct message_pid msgpid = {MSG_TARGET_STARTED, cpid};
-      __send_data(&msgpid, sizeof(msgpid));
+      tgconf->pid = getpid();
+      __send_message(MSG_TARGET_STARTED);
 
       return;  // execute the target progrm, e.g. from main().
     }
 
-    DBGF("NVArt: mainproc process started, pid %d", cpid);  // FIX: mainproc
+    DBGF("NVArt: target process started, pid %d", cpid);
 
     /*
      * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
-     * because the target is running and it may write to FD_MAINPROC_INFO too.
+     * because the target is running and it may write to the same channel.
      */
 
     int status;
@@ -171,8 +173,8 @@ static void __start_forkserver(void) {
       ERRF("NVArt: unexpected waitpid() return value %u", cpidw);
     }
 
-    struct message_status msgst = {MSG_TARGET_EXITED, status};
-    __send_data(&msgst, sizeof(msgst));
+    tgconf->status = status;
+    __send_message(MSG_TARGET_EXITED);
   }
 }
 
