@@ -291,4 +291,6 @@
     SAYF(cRST "\n");                                                   \
   } while (0)
 
+#define COMPILE_ERROR_ON(cond) ((void)sizeof(char[(cond) ? -1 : 1]))
+
 #endif /* ! _DEBUG_H */
