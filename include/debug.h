@@ -151,7 +151,6 @@
     SAYF(cRST "\n");          \
   } while (0)
 
-#define NVART_DEBUG
 #ifdef NVART_DEBUG
 
 /* Show a prefixed debug message. */
