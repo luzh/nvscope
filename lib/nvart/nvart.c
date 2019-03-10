@@ -18,13 +18,13 @@ struct nvart_runq *runq;
  * Debug functions
  */
 static void __nvart_print_runq() {
-  DBGF("--- NVArt run queue (...) ---");
+  DBGF(cCYA "--- NVArt run queue (...) ---" cRST);
   struct nvart_runq_entry *e = runq->entries;
   for (size_t i = 0; i < runq->len; i++, e++) {
     DBGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
          e->new64);
   }
-  DBGF("--- NVArt run queue (***) ---");
+  DBGF(cCYA "--- NVArt run queue (***) ---" cRST);
 }
 
 /**
@@ -99,7 +99,7 @@ static void __nvart_setup_shm(void) {
   } else {
     __nvart_enabled = 0;
 
-    WARNF("NVArt: shared memory not found, target will run without tracing");
+    WARNF("NVArt: shared memory not found, tracing functions disabled");
   }
 }
 
@@ -192,7 +192,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   __nvart_setup_shm();
 
   /* If not testing, return to execute the target program, e.g. from main(). */
-  if (!__nvart_enabled || !config->tracing) return;  // FIX: no !config->tracing)
+  if (!__nvart_enabled) return;
 
   __start_forkserver();
 }

@@ -9,7 +9,7 @@
 #define HAVE_AFFINITY 1
 
 static char mainproc[BINARY_PATH_LEN_MAX];
-// static char recovery[BINARY_PATH_LEN_MAX];
+static char recovery[BINARY_PATH_LEN_MAX];
 
 static int32_t shm_id; /* ID of the SHM region */
 static char* shm_base; /* pointer to the SHM region */
@@ -180,7 +180,7 @@ static int check_status(int status, pid_t pid, char* pname) {
     int exstatus = WEXITSTATUS(status);
     if (exstatus == 0) {
       err = 0;
-      OKF("NVFuzz: %s process %u exited normally", pname, pid);
+      DBGF("NVFuzz: %s process %u exited normally", pname, pid);
     } else if (exstatus == 127) {
       ERRF("NVFuzz: execv() for %s process %u failed", pname, pid);
     } else {
@@ -258,8 +258,6 @@ static pid_t start_forkserver(char* target, char** target_argv,
                               int* parent_read_fd, int* parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
-  ACTF("NVFuzz: spinning up the fork server for '%s'...", target);
-
   assert(target_conf != NULL && parent_read_fd != NULL &&
          parent_write_fd != NULL);
 
@@ -309,15 +307,11 @@ static pid_t start_forkserver(char* target, char** target_argv,
   /* Check afl-fuzz.c for using setitimer() and SIGALARM to kill. */
   ACTF("NVFuzz: waiting for the forkserver to come up...");
 
-  enum nvart_message info;
-  /* This call blocks if no data comes though the pipe. */
-  ssize_t rlen = read(*parent_read_fd, &info, sizeof(info));
-
   /*
    * If we have ready message from the forkserver, we're all set. Otherwise,
    * try to figure out what went wrong with waitpid().
    */
-  if (rlen == sizeof(info) && info == MSG_FORKSERVER_HELLO) {
+  if (read_message(*parent_read_fd) == MSG_FORKSERVER_HELLO) {
     OKF("NVFuzz: target program's forkserver is up, pid %u", fksv_pid);
     target_conf->fksv_pid = fksv_pid;
     return fksv_pid;
@@ -335,7 +329,7 @@ static pid_t start_forkserver(char* target, char** target_argv,
   }
 
   /* Check afl-fuzz.c for more detailed parsing of failure status. */
-  ERRF("Fork server handshake failed");
+  ERRF("NVFuzz: forkserver handshake failed");
 
   return -1;
 }
@@ -354,32 +348,43 @@ int main(int argc, char** argv) {
   setup_shm();
 
   struct nvart_config* config = (struct nvart_config*)(shm_base);
-
   config->initialized = 1;
-  config->tracing = 1;
-  config->target_type = TYPE_MAINPROC;
 
   struct nvart_target_config* tgconf_main = &config->mainproc;
+  struct nvart_target_config* tgconf_reco = &config->recovery;
 
-  int main_ctrl_fd, main_info_fd; /* forkserver control pipes */
+  int main_ctrl_fd, main_info_fd;  // mainproc control pipes
+  int reco_ctrl_fd, reco_info_fd;  // recovery control pipes
 
-  /* must set fds in SHM before starting the corresponding forkserver */
-  tgconf_main->tracing = 1;
+  ACTF("NVFuzz: spinning up the forkserver for mainproc...");
+  config->target_type = TYPE_MAINPROC;  // must set before start_forkserver()
   pid_t main_fksv_pid = start_forkserver(mainproc, mainproc_argv, tgconf_main,
                                          &main_info_fd, &main_ctrl_fd);
-  if (main_fksv_pid < 0)
-    FATAL("NVFuzz: initialize the mainproc's forkserver failed");
+  if (main_fksv_pid < 0) FATAL("NVFuzz: mainproc's forkserver failed to start");
+
+  // Todo: Get recovery process from command line options.
+  memcpy(recovery, mainproc, BINARY_PATH_LEN_MAX);
+  char* recovery_argv[] = {recovery, "stackfile", "check", NULL};
+
+  ACTF("NVFuzz: spinning up the forkserver for recovery...");
+  config->target_type = TYPE_RECOVERY;  // must set before start_forkserver()
+  pid_t reco_fksv_pid = start_forkserver(recovery, recovery_argv, tgconf_reco,
+                                         &reco_info_fd, &reco_ctrl_fd);
+  if (reco_fksv_pid < 0) FATAL("NVFuzz: recovery's forkserver failed to start");
 
   int fatal = 0, stop = 0;
-  int status, foundbug = 0;
-  pid_t rpid, rpidw; // FIX: remove
-  enum nvart_message info, command;
+  int status, bug = 0;
+  enum nvart_message main_info, main_ctrl, reco_info;
+
+  /* testing mainproc but not recovery */
+  tgconf_main->tracing = 1;
+  tgconf_reco->tracing = 0;
 
   while (!fatal && !stop) {
     /* wait for requests from targets */
-    info = read_message(main_info_fd);
+    main_info = read_message(main_info_fd);
 
-    switch (info) {
+    switch (main_info) {
       case MSG_FORKSERVER_READY:
         send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
         break;
@@ -389,48 +394,42 @@ int main(int argc, char** argv) {
       case MSG_AWAITING_CHECK:
         DBGF("NVFuzz: mainproc requested to run recovery and checking");
 
-        config->tracing = 0;
-
-        if ((rpid = fork()) == -1) {
-          FATAL("NVFuzz: fork() to run the recovery program failed");
+        reco_info = read_message(reco_info_fd);
+        if (reco_info != MSG_FORKSERVER_READY) {
+          ERRF("NVFuzz: received inappropriate message %d", reco_info);
           fatal = 1;
-        } else if (rpid == 0) {  // recovery program (2nd child)
-          DBGF("NVFuzz: fork() succeeds, recovery process %u parent %u",
-               getpid(), getppid());
-
-          // Note: mainproc_argv should contain mainproc
-          char* args[] = {mainproc, "stackfile", "check", NULL};
-          execv(mainproc, args);
-
-          /* If execv() succeeds, it should not return (getting here). */
-          FATAL("NVFuzz: unable to execute the recovery program");
-        } else {  // fuzzer (parent)
-          DBGF("NVFuzz: fork() succeeds, fuzzer process %u", getpid());
-          do {  // wait for the recovery process to finish
-            rpidw = waitpid(rpid, &status, WNOHANG);
-            if (rpidw == -1) {
-              ERRF("NVFuzz: waitpid(%u) failed", rpid);
-            } else if (rpidw == 0) {
-              /* recovery is still running; fuzzer can do something else */
-            } else if (rpidw == rpid) {  // recovery process reaped
-              foundbug = check_status(status, rpid, "recovery");
-            } else {
-              ERRF("NVFuzz: unexpected waitpid() return value %u", rpidw);
-            }
-          } while (rpidw == 0);  // recovery program still running
+          break;
         }
 
-        config->tracing = 1; // FIX: remove
-        command = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
-        send_message(main_ctrl_fd, command);
+        send_message(reco_ctrl_fd, MSG_FORK_AND_RUN);
+
+        reco_info = read_message(reco_info_fd);
+        if (reco_info != MSG_TARGET_STARTED) {
+          ERRF("NVFuzz: received inappropriate message %d", reco_info);
+          fatal = 1;
+          break;
+        }
+        DBGF("NVFuzz: recovery process started, pid %d", tgconf_reco->pid);
+
+        reco_info = read_message(reco_info_fd);
+        if (reco_info != MSG_TARGET_EXITED) {
+          ERRF("NVFuzz: received inappropriate message %d", reco_info);
+          fatal = 1;
+          break;
+        }
+
+        bug = check_status(tgconf_reco->status, tgconf_reco->pid, "recovery");
+        main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
+        send_message(main_ctrl_fd, main_ctrl);
         break;
       case MSG_TARGET_EXITED:
         check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
         send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
+        send_message(reco_ctrl_fd, MSG_EXIT_FORKSERVER);
         stop = 1;  // can restart the mainproc process
         break;
       default:
-        ERRF("NVFuzz: received inappropriate message %d", info);
+        ERRF("NVFuzz: received inappropriate message %d", main_info);
         fatal = 1;
         break;
     }
@@ -441,7 +440,7 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   }
 
-  /* wait for the forkserver to exit */
+  /* wait for forkservers to exit */
   pid_t main_fksv_pidw = waitpid(main_fksv_pid, &status, 0);
 
   if (main_fksv_pidw < 0) {
@@ -450,6 +449,16 @@ int main(int argc, char** argv) {
     check_status(status, main_fksv_pid, "mainproc's forkserver");
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", main_fksv_pidw);
+  }
+
+  pid_t reco_fksv_pidw = waitpid(reco_fksv_pid, &status, 0);
+
+  if (reco_fksv_pidw < 0) {
+    ERRF("NVFuzz: waitpid(%u) failed", reco_fksv_pid);
+  } else if (reco_fksv_pidw == reco_fksv_pid) {
+    check_status(status, reco_fksv_pid, "recovery's forkserver");
+  } else {
+    ERRF("NVFuzz: unexpected waitpid() return value %u", reco_fksv_pidw);
   }
 
   return 0;

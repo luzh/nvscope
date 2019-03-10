@@ -34,9 +34,9 @@ enum nvart_message {
   MSG_EXIT_FORKSERVER,
 
   /* Information: target telling fuzzer */
-  MSG_AWAITING_CHECK,
   MSG_FORKSERVER_HELLO,
   MSG_FORKSERVER_READY,
+  MSG_AWAITING_CHECK,
   /* Information with payload */
   MSG_TARGET_STARTED,
   MSG_TARGET_EXITED,
@@ -54,7 +54,7 @@ enum nvart_excode {
 
 enum target_stage { NONE, DONTCARE, MAINPROC, RECOVERY };
 
-enum nvart_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY }; // FIX: remove TYPE_
+enum nvart_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
 
 struct nvart_target_config {
   pid_t pid;                // target process pid
@@ -69,9 +69,8 @@ struct nvart_target_config {
 
 struct nvart_config {
   int initialized;
-  int tracing; // FIX: remove
   enum nvart_target_type target_type;
-  int reserved[13];  // pack to whole cache lines
+  int reserved[14];  // pack to whole cache lines
   struct nvart_target_config mainproc;
   struct nvart_target_config recovery;
 } __attribute__((packed));
