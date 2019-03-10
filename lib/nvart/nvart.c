@@ -11,6 +11,7 @@
 int __nvart_enabled;  // __shm_base != NULL
 uint8_t *__shm_base;
 struct nvart_config *config;
+struct nvart_target_config *tgconf;
 struct nvart_runq *runq;
 
 /**
@@ -32,23 +33,23 @@ static void __nvart_print_runq() {
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
 static inline void __send_message(enum nvart_message msg) {
-  if (write(config->target_info_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVArt: write() to target_info_fd %d failed", config->target_info_fd);
+  if (write(tgconf->info_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: write() to tgconf->info_fd %d failed", tgconf->info_fd);
     _exit(EXIT_FAILURE);
   }
 }
 
 static inline void __send_data(void *data, ssize_t len) {
-  if (write(config->target_info_fd, data, len) != len) {
-    ERRF("NVArt: write() to target_info_fd %d failed", config->target_info_fd);
+  if (write(tgconf->info_fd, data, len) != len) {
+    ERRF("NVArt: write() to tgconf->info_fd %d failed", tgconf->info_fd);
     _exit(EXIT_FAILURE);
   }
 }
 
 static inline enum nvart_message __read_message() {
   enum nvart_message msg;
-  if (read(config->target_ctrl_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVArt: read() from target_ctrl_fd %d failed", config->target_ctrl_fd);
+  if (read(tgconf->ctrl_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVArt: read() from tgconf->ctrl_fd %d failed", tgconf->ctrl_fd);
     _exit(EXIT_FAILURE);
   }
   return msg;
@@ -72,11 +73,20 @@ static void __nvart_setup_shm(void) {
     config = (struct nvart_config *)(__shm_base);
 
     /* should be initialized by parent (fuzzer) */
-    if (!config->ready) {
-      ERRF("NVArt: config region not ready");
+    if (!config->initialized) {
+      ERRF("NVArt: config region not initialized");
       _exit(NVART_EXIT_BAD_SHM);
     }
-    if (config->stage == NONE) config->stage = DONTCARE;
+    // if (config->stage == NONE) config->stage = DONTCARE;
+
+    if (config->target_type == TYPE_MAINPROC) {
+      tgconf = &config->mainproc;
+    } else if (config->target_type == TYPE_RECOVERY) {
+      tgconf = &config->recovery;
+    } else {
+      ERRF("NVArt: invalid target type");
+      _exit(NVART_EXIT_BAD_CONFIG);
+    }
 
     runq = (struct nvart_runq *)(__shm_base + NVART_SHM_RUNQ_OFF);
 
@@ -104,8 +114,8 @@ static void __start_forkserver(void) {
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
-      close(config->target_ctrl_fd);  // FIX: determine using SHM 
-      close(config->target_info_fd);
+      close(tgconf->ctrl_fd);  // FIX: determine using SHM
+      close(tgconf->info_fd);
       _exit(EXIT_SUCCESS);
     }
 
@@ -143,7 +153,7 @@ static void __start_forkserver(void) {
       return;  // execute the target progrm, e.g. from main().
     }
 
-    DBGF("NVArt: mainproc process started, pid %d", cpid);  // FIX: mainproc 
+    DBGF("NVArt: mainproc process started, pid %d", cpid);  // FIX: mainproc
 
     /*
      * DO NOT write to pipe before waitpid() returns. Otherwise races can occur
@@ -180,7 +190,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvart_init(void) {
   __nvart_setup_shm();
 
   /* If not testing, return to execute the target program, e.g. from main(). */
-  if (!__nvart_enabled || !config->tracing) return;  // FIX: no !config->tracing) 
+  if (!__nvart_enabled || !config->tracing) return;  // FIX: no !config->tracing)
 
   __start_forkserver();
 }
@@ -285,13 +295,13 @@ void __nvart_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
 #endif
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
-  if (!__nvart_enabled || !config->tracing) return;
+  if (!__nvart_enabled || !tgconf->tracing) return;
 
   if (!__store64_in_pmem(ptr)) return;
 
-  if (config->stage == MAINPROC) __runq_push_back_store64(ptr, val);
+  if (tgconf->stage == MAINPROC) __runq_push_back_store64(ptr, val);
 
-  if (config->stage == RECOVERY) __recoverq_push_back_store64(ptr, val);
+  if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr, val);
 }
 
 #ifdef NDEBUG
@@ -303,13 +313,13 @@ void __nvart_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
   DBGF("NVArt: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
        (void *)mapaddr, mapsize);
 #endif
-  if (!__nvart_enabled || !config->tracing) return;
+  if (!__nvart_enabled || !tgconf->tracing) return;
 
   (void)mapaddr;
   (void)mapsize;
 
   /* Implementation */
-  config->stage = MAINPROC;
+  tgconf->stage = MAINPROC;
 }
 
 void __nvart_probe_clflush(uint64_t *ptr) {
@@ -317,7 +327,7 @@ void __nvart_probe_clflush(uint64_t *ptr) {
 
   (void)ptr;
 
-  if (!__nvart_enabled || !config->tracing) return;
+  if (!__nvart_enabled || !tgconf->tracing) return;
 }
 
 #ifdef NDEBUG
@@ -327,7 +337,7 @@ void __nvart_probe_sfence(uint64_t sfid) {
 void __nvart_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
   DBGF("NVArt: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
 #endif
-  if (!__nvart_enabled || !config->tracing) return;
+  if (!__nvart_enabled || !tgconf->tracing) return;
 
   __nvart_print_runq();
   __emulate_crash(sfid);

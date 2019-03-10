@@ -352,6 +352,9 @@ static pid_t start_forkserver(char* target, char** target_argv,
 }
 
 int main(int argc, char** argv) {
+  COMPILE_ERROR_ON(sizeof(struct nvart_target_config) != CLSIZE);
+  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvart_config, mainproc)));
+
   if (argc < 2) FATAL("Usage: %s <mainproc>", argv[0]);
 
   char** mainproc_argv = argv + 1;  // skip the fuzzer program
@@ -362,18 +365,22 @@ int main(int argc, char** argv) {
   setup_shm();
 
   struct nvart_config* config = (struct nvart_config*)(shm_base);
-  config->ready = 1;
-  config->tracing = 1;  // FIX: must set before start_forkserver() 
 
-  int main_ctrl_fd; /* forkserver control pipe (write) */
-  int main_info_fd; /* forkserver status pipe (read)   */
+  config->initialized = 1;
+  config->tracing = 1; // FIX: remove
+  config->target_type = TYPE_MAINPROC;
+
+  struct nvart_target_config* tgconf_main = &config->mainproc;
+
+  int main_ctrl_fd, main_info_fd; /* forkserver control pipes */
 
   /* must set fds in SHM before starting the corresponding forkserver */
-  config->target_ctrl_fd = FD_MAINPROC_CTRL;
-  config->target_info_fd = FD_MAINPROC_INFO;
+  tgconf_main->tracing = 1;
+  tgconf_main->ctrl_fd = FD_MAINPROC_CTRL;
+  tgconf_main->info_fd = FD_MAINPROC_INFO;
   pid_t main_frks_pid =
-      start_forkserver(mainproc, mainproc_argv, config->target_ctrl_fd,
-                       config->target_info_fd, &main_info_fd, &main_ctrl_fd);
+      start_forkserver(mainproc, mainproc_argv, tgconf_main->ctrl_fd,
+                       tgconf_main->info_fd, &main_info_fd, &main_ctrl_fd);
   if (main_frks_pid < 0)
     FATAL("NVFuzz: initialize the mainproc's forkserver failed");
 
@@ -427,7 +434,7 @@ int main(int argc, char** argv) {
           } while (rpidw == 0);  // recovery program still running
         }
 
-        config->tracing = 1;
+        config->tracing = 1; // FIX: remove
         command = foundbug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
         send_message(main_ctrl_fd, command);
         break;

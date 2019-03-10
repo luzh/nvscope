@@ -1,10 +1,22 @@
 #ifndef _NVART_CONFIG_H
 #define _NVART_CONFIG_H
 
-#define CLSIZE (64)
+#define CACHELINE_SIZE (64)
+#define CLSIZE (CACHELINE_SIZE)
+#define CLMASK (CACHELINE_SIZE - 1)
+#define CLSHIFT (6)
+
+#define PAGESHIFT (12)
+#define PAGESIZE (1 << PAGESHIFT)
 
 #define ALIGN_UP(size, align) (((size) + (align)-1) & ~((align)-1))
 #define ALIGN_DOWN(size, align) ((size) & ~((align)-1))
+
+#define ALIGNED_16(x) (((uint64_t)(x) & (16 - 1)) == 0)
+#define ALIGNED_32(x) (((uint64_t)(x) & (32 - 1)) == 0)
+#define ALIGNED_64(x) (((uint64_t)(x) & (64 - 1)) == 0)
+#define ALIGNED_CL(x) ALIGNED_64(x)
+#define ALIGNED_4K(x) (((uint64_t)(x) & (4096 - 1)) == 0)
 
 #define BINARY_PATH_LEN_MAX (512)  // buffer length to store binary paths
 
@@ -60,20 +72,33 @@ struct message_status {
 enum nvart_excode {
   NVART_EXIT_SUCCESS = 0,
   NVART_EXIT_BAD_SHM,
+  NVART_EXIT_BAD_CONFIG,
   NVART_EXIT_RUNQ_FULL,
   NVART_EXIT_FOUNDBUG
 };
 
 enum target_stage { NONE, DONTCARE, MAINPROC, RECOVERY };
 
+enum nvart_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY }; // FIX: remove TYPE_
+
+struct nvart_target_config {
+  // pid_t fksv_pid;
+  // pid_t proc_pid;
+  int tracing;
+  int info_fd;
+  int ctrl_fd;
+  enum target_stage stage; // FIX: remove
+  int reserved[12];  // pack to whole cache lines
+} __attribute__((packed));
+
 struct nvart_config {
-  uint8_t reserved[64];
-  uint32_t ready;
-  uint32_t tracing;
-  int target_info_fd;
-  int target_ctrl_fd;
-  enum target_stage stage;
-};
+  int initialized;
+  int tracing; // FIX: remove
+  enum nvart_target_type target_type;
+  int reserved[13];  // pack to whole cache lines
+  struct nvart_target_config mainproc;
+  struct nvart_target_config recovery;
+} __attribute__((packed));
 
 #define NVART_SHM_CONFIG_SIZE ALIGN_UP(sizeof(struct nvart_config), CLSIZE)
 
