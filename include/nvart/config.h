@@ -57,14 +57,14 @@ enum target_stage { NONE, DONTCARE, MAINPROC, RECOVERY };
 enum nvart_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY }; // FIX: remove TYPE_
 
 struct nvart_target_config {
-  pid_t pid;  // target process pid
-  int status;  // target process status
-  pid_t fksv_pid;  // target forkserver pid
-  int tracing;  // if activate all tracing functions
-  int read_fd;  // pipe endpoint to read from fuzzer
-  int write_fd;  // pipe endpoint to write to fuzzer
-  enum target_stage stage; // FIX: remove
-  int reserved[9];  // pack to whole cache lines
+  pid_t pid;                // target process pid
+  int status;               // target process status
+  pid_t fksv_pid;           // target forkserver pid
+  int tracing;              // if activate all tracing functions
+  int read_fd;              // pipe endpoint to read from fuzzer
+  int write_fd;             // pipe endpoint to write to fuzzer
+  enum target_stage stage;  // FIX: remove
+  int reserved[9];          // pack to whole cache lines
 } __attribute__((packed));
 
 struct nvart_config {

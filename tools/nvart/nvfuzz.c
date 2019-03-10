@@ -254,7 +254,7 @@ static void setup_shm(void) {
  * through a pipe. The other part of this logic is in lib/nvart/nvart.c.
  */
 static pid_t start_forkserver(char* target, char** target_argv,
-                              struct nvart_target_config *target_conf,
+                              struct nvart_target_config* target_conf,
                               int* parent_read_fd, int* parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
@@ -365,9 +365,8 @@ int main(int argc, char** argv) {
 
   /* must set fds in SHM before starting the corresponding forkserver */
   tgconf_main->tracing = 1;
-  pid_t main_fksv_pid =
-      start_forkserver(mainproc, mainproc_argv, tgconf_main,
-                       &main_info_fd, &main_ctrl_fd);
+  pid_t main_fksv_pid = start_forkserver(mainproc, mainproc_argv, tgconf_main,
+                                         &main_info_fd, &main_ctrl_fd);
   if (main_fksv_pid < 0)
     FATAL("NVFuzz: initialize the mainproc's forkserver failed");
 
