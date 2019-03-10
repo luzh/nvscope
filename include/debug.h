@@ -291,6 +291,7 @@
     SAYF(cRST "\n");                                                   \
   } while (0)
 
+#define OFFSETOF(type, member) ((size_t) & (((type *)0)->member))
 #define COMPILE_ERROR_ON(cond) ((void)sizeof(char[(cond) ? -1 : 1]))
 
 #endif /* ! _DEBUG_H */
