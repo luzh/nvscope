@@ -10,7 +10,7 @@ target_compile_options(
   ${TOOL} PUBLIC -Wall -funroll-loops -Wno-pointer-sign -masm=intel
 )
 target_compile_definitions(
-  ${TOOL} PUBLIC _GNU_SOURCE PRINT_COLOR _FORTIFY_SOURCE=2
+  ${TOOL} PUBLIC COLORFUL _GNU_SOURCE _FORTIFY_SOURCE=2
 )
 target_include_directories(${TOOL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
 target_link_options(${TOOL} PUBLIC -ldl)

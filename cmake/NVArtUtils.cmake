@@ -68,8 +68,8 @@ function(nvart_set_sources_properties PROFILE)
     SOURCE
       ${SRCS}
     PROPERTY COMPILE_DEFINITIONS
+      COLORFUL
       _GNU_SOURCE
-      PRINT_COLOR
       MESSAGES_TO_STDOUT
   )
 
