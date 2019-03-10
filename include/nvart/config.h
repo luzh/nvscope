@@ -24,21 +24,6 @@
 
 #define NVART_ENV_SHM "__NVART_SHM_ID"
 
-/*
- * Designated file descriptors for forkserver commands.
- * The mainproc process reads FD_MAINPROC_CTRL and writes to FD_MAINPROC_INFO.
- * The recovery process reads FD_RECOVERY_CTRL and writes to FD_RECOVERY_INFO.
- */
-enum nvart_pipe_fd {
-  FD_MAINPROC_CTRL = 198,
-  FD_MAINPROC_INFO,
-
-  FD_RECOVERY_CTRL,
-  FD_RECOVERY_INFO,
-
-  NVART_PIPE_FD_MAX
-};
-
 enum nvart_message {
   MSG_INVALID = 0,
 
@@ -57,16 +42,6 @@ enum nvart_message {
   MSG_TARGET_EXITED,
 
   NVART_PIPE_MSG_MAX
-};
-
-struct message_pid {
-  enum nvart_message msg;
-  pid_t pid;
-};
-
-struct message_status {
-  enum nvart_message msg;
-  int status;
 };
 
 enum nvart_excode {
