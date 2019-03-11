@@ -117,7 +117,7 @@ static void __start_forkserver(void) {
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVArt: forkserver received command to exit");
-      close(tgconf->read_fd);  // FIX: determine using SHM
+      close(tgconf->read_fd);
       close(tgconf->write_fd);
       _exit(EXIT_SUCCESS);
     }
