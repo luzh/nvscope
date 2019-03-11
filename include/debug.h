@@ -1,5 +1,5 @@
-#ifndef _DEBUG_H
-#define _DEBUG_H
+#ifndef _NVART_DEBUG_H
+#define _NVART_DEBUG_H
 
 /*
  * definitions and handy macros for debugging
