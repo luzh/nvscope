@@ -13,6 +13,7 @@ target_compile_definitions(
   ${TOOL} PUBLIC COLORFUL _GNU_SOURCE _FORTIFY_SOURCE=2
 )
 target_include_directories(${TOOL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
+target_link_libraries(${TOOL} utils)
 target_link_options(${TOOL} PUBLIC -ldl)
 
 add_custom_target(

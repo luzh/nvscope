@@ -5,6 +5,7 @@
 #include "afl/alloc-inl.h"
 #include "headers.h"
 #include "nvart/config.h"
+#include "utils.h"
 
 #define HAVE_AFFINITY 1
 
@@ -374,11 +375,15 @@ int main(int argc, char** argv) {
 
   int fatal = 0, stop = 0;
   int status, bug = 0;
+  uint64_t testcases = 0;
   enum nvart_message main_info, main_ctrl, reco_info;
 
   /* testing mainproc but not recovery */
   tgconf_main->tracing = 1;
   tgconf_reco->tracing = 0;
+
+  benchmark_time_t start, end;
+  benchmark_time_get(&start);
 
   while (!fatal && !stop) {
     /* wait for requests from targets */
@@ -393,6 +398,8 @@ int main(int argc, char** argv) {
         break;
       case MSG_AWAITING_CHECK:
         DBGF("NVFuzz: mainproc requested to run recovery and checking");
+
+        ++testcases;
 
         reco_info = read_message(reco_info_fd);
         if (reco_info != MSG_FORKSERVER_READY) {
@@ -460,6 +467,16 @@ int main(int argc, char** argv) {
   } else {
     ERRF("NVFuzz: unexpected waitpid() return value %u", reco_fksv_pidw);
   }
+
+  benchmark_time_t runtime;
+  benchmark_time_get(&end);
+  benchmark_time_diff(&runtime, &start, &end);
+  unsigned long long runns = benchmark_time_get_nsecs(&runtime);
+  unsigned long long avgns = runns / testcases;
+
+  OKF("NVFuzz: total elapsed time to run %zu test cases is %lld ns, per test "
+      "case time is %lld ns",
+      testcases, runns, avgns);
 
   return 0;
 }
