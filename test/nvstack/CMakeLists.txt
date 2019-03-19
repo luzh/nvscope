@@ -59,7 +59,7 @@ add_custom_target(
 )
 
 add_custom_target(
-  test-push-${PROG} DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
+  scope-push-${PROG} DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
   DEPENDS nvscope
   COMMAND
     test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
