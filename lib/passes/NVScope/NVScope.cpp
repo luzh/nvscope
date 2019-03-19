@@ -1,5 +1,5 @@
-//===- NVScope.cpp ----------------------------------------------------------===//
-// Performs code instrumentation.
+//===- NVScope.cpp --------------------------------------------------------===//
+// NVScope instrumentation pass
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/Statistic.h"
@@ -83,7 +83,8 @@ struct NVScopeHello : public FunctionPass {
 }  // namespace
 
 char NVScopeHello::ID = 0;
-static RegisterPass<NVScopeHello> NVScopeHelloPass("hello", "NVScope Hello Pass");
+static RegisterPass<NVScopeHello> NVScopeHelloPass("hello",
+                                                   "NVScope Hello Pass");
 
 /* --- */
 
