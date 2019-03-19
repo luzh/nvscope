@@ -1,18 +1,18 @@
 cmake_minimum_required(VERSION 3.13)
 
-project(NVArt
+project(NVScope
   DESCRIPTION "Automated recovery testing tools for NVMM applications"
 )
 
-# Add CMake modules for NVArt.
+# Add CMake modules for NVScope.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
-include(NVArtUtils)
+include(nvscope)
 
 if(NOT LLVM_INSTALL_DIR)
   set(LLVM_INSTALL_DIR "${CMAKE_SOURCE_DIR}/llvm/lib/cmake/llvm")
 endif()
 if(NOT EXISTS ${LLVM_INSTALL_DIR})
-  nvart_fatal("LLVM_INSTALL_DIR '${LLVM_INSTALL_DIR}' does not exist!")
+  nvs_fatal("LLVM_INSTALL_DIR '${LLVM_INSTALL_DIR}' does not exist!")
 endif()
 list(APPEND CMAKE_PREFIX_PATH ${LLVM_INSTALL_DIR})
 
@@ -20,18 +20,18 @@ list(APPEND CMAKE_PREFIX_PATH ${LLVM_INSTALL_DIR})
 find_package(LLVM REQUIRED CONFIG 7.0.1)
 
 # Print LLVM information.
-nvart_print("Found LLVM ${LLVM_PACKAGE_VERSION}")
-nvart_print("LLVM build type: ${LLVM_BUILD_TYPE}")
-nvart_print("Using LLVMConfig.cmake in: ${LLVM_CMAKE_DIR}")
-nvart_print("LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")
-nvart_print("LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
-nvart_print("LLVM_TOOLS_BINARY_DIR: ${LLVM_TOOLS_BINARY_DIR}")
+nvs_print("Found LLVM ${LLVM_PACKAGE_VERSION}")
+nvs_print("LLVM build type: ${LLVM_BUILD_TYPE}")
+nvs_print("Using LLVMConfig.cmake in: ${LLVM_CMAKE_DIR}")
+nvs_print("LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")
+nvs_print("LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
+nvs_print("LLVM_TOOLS_BINARY_DIR: ${LLVM_TOOLS_BINARY_DIR}")
 
 # Update C and C++ compilers.
 set(CMAKE_C_COMPILER ${LLVM_TOOLS_BINARY_DIR}/clang)
-nvart_print("Using C compiler: ${CMAKE_C_COMPILER}")
+nvs_print("Using C compiler: ${CMAKE_C_COMPILER}")
 set(CMAKE_CXX_COMPILER ${LLVM_TOOLS_BINARY_DIR}/clang++)
-nvart_print("Using C++ compiler: ${CMAKE_CXX_COMPILER}")
+nvs_print("Using C++ compiler: ${CMAKE_CXX_COMPILER}")
 
 # Import LLVM's CMake modules.
 list(APPEND CMAKE_MODULE_PATH ${LLVM_CMAKE_DIR})
@@ -41,18 +41,18 @@ include(AddLLVM)
 if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
-nvart_print("Project build type: ${CMAKE_BUILD_TYPE}")
+nvs_print("Project build type: ${CMAKE_BUILD_TYPE}")
 
 # Show details of the make flow. Or use make VERBOSE=1 for the same purpose.
 # set(CMAKE_VERBOSE_MAKEFILE ON)
 
 # Set install prefix.
-set(CMAKE_INSTALL_PREFIX /tmp/nvart)
-nvart_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
+set(CMAKE_INSTALL_PREFIX /tmp/nvscope)
+nvs_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
-# This is for test and tools to find the latest build of NVArt passes.
-set(NVART_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
-set(NVART_TOOLS_DIR ${CMAKE_BINARY_DIR}/tools/nvart)
+# This is for test and tools to find the latest build of NVScope passes.
+set(NVS_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
+set(NVS_TOOLS_DIR ${CMAKE_BINARY_DIR}/tools/nvscope)
 
 # Add directories.
 add_subdirectory(lib)

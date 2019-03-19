@@ -1,5 +1,5 @@
-#ifndef _NVART_CONFIG_H
-#define _NVART_CONFIG_H
+#ifndef _NVS_CONFIG_H
+#define _NVS_CONFIG_H
 
 #define CACHELINE_SIZE (64)
 #define CLSIZE (CACHELINE_SIZE)
@@ -22,18 +22,18 @@
 
 /* Environment variable used to pass SHM ID to the target programs. */
 
-#define NVART_ENV_SHM "__NVART_SHM_ID"
+#define NVS_ENV_SHM "__NVS_SHM_ID"
 
-enum nvart_message {
+enum nvs_message {
   MSG_INVALID = 0,
 
-  /* Control commands: fuzzer telling target */
+  /* Control commands: nvscope telling target */
   MSG_FORK_AND_RUN,
   MSG_CONTINUE_TO_RUN,
   MSG_SHOW_BUG_AND_EXIT,
   MSG_EXIT_FORKSERVER,
 
-  /* Information: target telling fuzzer */
+  /* Information: target telling nvscope */
   MSG_FORKSERVER_HELLO,
   MSG_FORKSERVER_READY,
   MSG_AWAITING_CHECK,
@@ -41,43 +41,43 @@ enum nvart_message {
   MSG_TARGET_STARTED,
   MSG_TARGET_EXITED,
 
-  NVART_PIPE_MSG_MAX
+  NVS_PIPE_MSG_MAX
 };
 
-enum nvart_excode {
-  NVART_EXIT_SUCCESS = 0,
-  NVART_EXIT_BAD_SHM,
-  NVART_EXIT_BAD_CONFIG,
-  NVART_EXIT_RUNQ_FULL,
-  NVART_EXIT_FOUNDBUG
+enum nvs_excode {
+  NVS_EXIT_SUCCESS = 0,
+  NVS_EXIT_BAD_SHM,
+  NVS_EXIT_BAD_CONFIG,
+  NVS_EXIT_RUNQ_FULL,
+  NVS_EXIT_FOUNDBUG
 };
 
 enum target_stage { NONE, DONTCARE, MAINPROC, RECOVERY };
 
-enum nvart_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
+enum nvs_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
 
-struct nvart_target_config {
+struct nvs_target_config {
   pid_t pid;                // target process pid
   int status;               // target process status
   pid_t fksv_pid;           // target forkserver pid
   int tracing;              // if activate all tracing functions
-  int read_fd;              // pipe endpoint to read from fuzzer
-  int write_fd;             // pipe endpoint to write to fuzzer
+  int read_fd;              // pipe endpoint to read from nvscope
+  int write_fd;             // pipe endpoint to write to nvscope
   enum target_stage stage;  // FIX: remove
   int reserved[9];          // pack to whole cache lines
 } __attribute__((packed));
 
-struct nvart_config {
+struct nvs_config {
   int initialized;
-  enum nvart_target_type target_type;
+  enum nvs_target_type target_type;
   int reserved[14];  // pack to whole cache lines
-  struct nvart_target_config mainproc;
-  struct nvart_target_config recovery;
+  struct nvs_target_config mainproc;
+  struct nvs_target_config recovery;
 } __attribute__((packed));
 
-#define NVART_SHM_CONFIG_SIZE ALIGN_UP(sizeof(struct nvart_config), CLSIZE)
+#define NVS_SHM_CONFIG_SIZE ALIGN_UP(sizeof(struct nvs_config), CLSIZE)
 
-struct nvart_runq_entry {
+struct nvs_runq_entry {
   union {
     uint8_t *ptr8;
     uint16_t *ptr16;
@@ -98,16 +98,15 @@ struct nvart_runq_entry {
   };
 };
 
-struct nvart_runq {
+struct nvs_runq {
   size_t len;
-  struct nvart_runq_entry entries[];
+  struct nvs_runq_entry entries[];
 };
 
-#define NVART_SHM_RUNQ_OFF (NVART_SHM_CONFIG_SIZE)
-#define NVART_SHM_RUNQ_SIZE (4096)
-#define NVART_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvart_runq), CLSIZE)
-#define NVART_SHM_RUNQ_MAX_LEN                        \
-  ((NVART_SHM_RUNQ_SIZE - NVART_SHM_RUNQ_META_SIZE) / \
-   sizeof(struct nvart_runq_entry))
+#define NVS_SHM_RUNQ_OFF (NVS_SHM_CONFIG_SIZE)
+#define NVS_SHM_RUNQ_SIZE (4096)
+#define NVS_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvs_runq), CLSIZE)
+#define NVS_SHM_RUNQ_MAX_LEN \
+  ((NVS_SHM_RUNQ_SIZE - NVS_SHM_RUNQ_META_SIZE) / sizeof(struct nvs_runq_entry))
 
 #endif

@@ -1,20 +1,20 @@
 set(SRCS aflhello.c)
 set(PROG aflhello)
 
-nvart_set_sources_properties(C_Default ${SRCS})
+nvs_set_sources_properties(C_Default ${SRCS})
 
 set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVART_PASSES_DIR}/AFL/LLVMAFL.so -aflcov"
+    "-load ${NVS_PASSES_DIR}/AFL/LLVMAFL.so -aflcov"
 )
 
-nvart_add_executable(${PROG} ${SRCS})
+nvs_add_executable(${PROG} ${SRCS})
 
 add_dependencies(${PROG} LLVMAFL)
 
-target_link_libraries(${PROG} afl)
+target_link_libraries(${PROG} aflrt)
 
 add_custom_target(
   run-${PROG}

@@ -1,5 +1,5 @@
-set(TOOL nvfuzz)
-set(SRCS nvfuzz.c)
+set(TOOL nvscope)
+set(SRCS nvscope.c)
 
 add_executable(${TOOL} ${SRCS})
 
