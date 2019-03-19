@@ -27,13 +27,13 @@
 enum nvs_message {
   MSG_INVALID = 0,
 
-  /* Control commands: fuzzer telling target */
+  /* Control commands: nvscope telling target */
   MSG_FORK_AND_RUN,
   MSG_CONTINUE_TO_RUN,
   MSG_SHOW_BUG_AND_EXIT,
   MSG_EXIT_FORKSERVER,
 
-  /* Information: target telling fuzzer */
+  /* Information: target telling nvscope */
   MSG_FORKSERVER_HELLO,
   MSG_FORKSERVER_READY,
   MSG_AWAITING_CHECK,
@@ -61,8 +61,8 @@ struct nvs_target_config {
   int status;               // target process status
   pid_t fksv_pid;           // target forkserver pid
   int tracing;              // if activate all tracing functions
-  int read_fd;              // pipe endpoint to read from fuzzer
-  int write_fd;             // pipe endpoint to write to fuzzer
+  int read_fd;              // pipe endpoint to read from nvscope
+  int write_fd;             // pipe endpoint to write to nvscope
   enum target_stage stage;  // FIX: remove
   int reserved[9];          // pack to whole cache lines
 } __attribute__((packed));
