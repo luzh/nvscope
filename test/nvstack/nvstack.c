@@ -69,7 +69,7 @@ int push(void *pmem, uint64_t value) {
   }
 
   *(top + 1) = value;
-  _mm_clflushopt(top);
+  _mm_clflushopt(top + 1);
   _mm_sfence();
 
   *pnvals = nvals + 1;
