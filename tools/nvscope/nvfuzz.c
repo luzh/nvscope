@@ -4,7 +4,7 @@
 
 #include "afl/alloc-inl.h"
 #include "headers.h"
-#include "nvart/config.h"
+#include "nvscope/config.h"
 #include "utils.h"
 
 #define HAVE_AFFINITY 1
@@ -20,13 +20,13 @@ static char* shm_base; /* pointer to the SHM region */
  *
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
-static inline void send_message(int channel, enum nvart_message msg) {
+static inline void send_message(int channel, enum nvs_message msg) {
   if (write(channel, &msg, sizeof(msg)) != sizeof(msg))
     PFATAL("NVFuzz: write() to channel %d failed", channel);
 }
 
-static inline enum nvart_message read_message(int channel) {
-  enum nvart_message msg;
+static inline enum nvs_message read_message(int channel) {
+  enum nvs_message msg;
   if (read(channel, &msg, sizeof(msg)) != sizeof(msg))
     PFATAL("NVFuzz: read() from channel %d failed", channel);
   return msg;
@@ -96,7 +96,7 @@ static void check_binary(char* fname, char* target) {
     if (!bin_path) FATAL("NVFuzz: '%s' not found or not executable", fname);
   }
 
-  if (getenv("NVART_SKIP_BIN_CHECK")) return;
+  if (getenv("NVS_SKIP_BIN_CHECK")) return;
 
   if (target == NULL) FATAL("NVFuzz: invalid buffer to store target's path");
   size_t bin_path_len = strlen(bin_path);
@@ -138,11 +138,10 @@ static void check_binary(char* fname, char* target) {
   if (f_data[0] != 0x7f || memcmp(f_data + 1, "ELF", 3))
     FATAL("NVFuzz: '%s' is not an ELF binary", target);
 
-  if (!memmem(f_data, f_len, NVART_ENV_SHM, strlen(NVART_ENV_SHM) + 1)) {
+  if (!memmem(f_data, f_len, NVS_ENV_SHM, strlen(NVS_ENV_SHM) + 1)) {
     SAYF("\n" cLRD "[-] " cRST
          "Looks like the target binary is not instrumented!\n");
-    FATAL("NVFuzz: no instrumentation detected - '%s' not found",
-          NVART_ENV_SHM);
+    FATAL("NVFuzz: no instrumentation detected - '%s' not found", NVS_ENV_SHM);
   }
 
 #if 0
@@ -236,7 +235,7 @@ static void setup_shm(void) {
    * on, perhaps?
    */
 
-  setenv(NVART_ENV_SHM, shm_str, 1);
+  setenv(NVS_ENV_SHM, shm_str, 1);
 
   ck_free(shm_str);
 
@@ -252,10 +251,10 @@ static void setup_shm(void) {
  *
  * In essence, the instrumentation allows us to skip execve(), and just keep
  * cloning a stopped child. So, we just execute once, and then send commands
- * through a pipe. The other part of this logic is in lib/nvart/nvart.c.
+ * through a pipe. The other part of this logic is in lib/nvsrt/nvsrt.c.
  */
 static pid_t start_forkserver(char* target, char** target_argv,
-                              struct nvart_target_config* target_conf,
+                              struct nvs_target_config* target_conf,
                               int* parent_read_fd, int* parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
@@ -336,9 +335,9 @@ static pid_t start_forkserver(char* target, char** target_argv,
 }
 
 int main(int argc, char** argv) {
-  COMPILE_ERROR_ON(MAP_SIZE < NVART_SHM_RUNQ_OFF + NVART_SHM_RUNQ_SIZE);
-  COMPILE_ERROR_ON(sizeof(struct nvart_target_config) != CLSIZE);
-  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvart_config, mainproc)));
+  COMPILE_ERROR_ON(MAP_SIZE < NVS_SHM_RUNQ_OFF + NVS_SHM_RUNQ_SIZE);
+  COMPILE_ERROR_ON(sizeof(struct nvs_target_config) != CLSIZE);
+  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvs_config, mainproc)));
 
   if (argc < 2) FATAL("Usage: %s <mainproc>", argv[0]);
 
@@ -349,11 +348,11 @@ int main(int argc, char** argv) {
 
   setup_shm();
 
-  struct nvart_config* config = (struct nvart_config*)(shm_base);
+  struct nvs_config* config = (struct nvs_config*)(shm_base);
   config->initialized = 1;
 
-  struct nvart_target_config* tgconf_main = &config->mainproc;
-  struct nvart_target_config* tgconf_reco = &config->recovery;
+  struct nvs_target_config* tgconf_main = &config->mainproc;
+  struct nvs_target_config* tgconf_reco = &config->recovery;
 
   int main_ctrl_fd, main_info_fd;  // mainproc control pipes
   int reco_ctrl_fd, reco_info_fd;  // recovery control pipes
@@ -377,7 +376,7 @@ int main(int argc, char** argv) {
   int fatal = 0, stop = 0;
   int status, bug = 0;
   uint64_t testcases = 0;
-  enum nvart_message main_info, main_ctrl, reco_info;
+  enum nvs_message main_info, main_ctrl, reco_info;
 
   /* testing mainproc but not recovery */
   tgconf_main->tracing = 1;
