@@ -1,4 +1,4 @@
-//===- NVArt.cpp ----------------------------------------------------------===//
+//===- NVScope.cpp ----------------------------------------------------------===//
 // Performs code instrumentation.
 //===----------------------------------------------------------------------===//
 
@@ -29,28 +29,28 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "[NVArt Pass]"
+#define DEBUG_TYPE "[NVScope Pass]"
 
-STATISTIC(NVArtFunctions, "Scanned functions");
-STATISTIC(NVArtCallInsts, "CallInst instructions");
-STATISTIC(NVArtMMapOps, "mmap() calls");
-STATISTIC(NVArtStoreInsts, "StoreInst instructions");
-STATISTIC(NVArtCLFlushOps, "CLFLUSH operations");
-STATISTIC(NVArtCLFOptOps, "CLFLUSHOPT operations");
-STATISTIC(NVArtCLWBOps, "CLWB operations");
-STATISTIC(NVArtSFenceOps, "SFENCE operations");
+STATISTIC(NVScopeFunctions, "Scanned functions");
+STATISTIC(NVScopeCallInsts, "CallInst instructions");
+STATISTIC(NVScopeMMapOps, "mmap() calls");
+STATISTIC(NVScopeStoreInsts, "StoreInst instructions");
+STATISTIC(NVScopeCLFlushOps, "CLFLUSH operations");
+STATISTIC(NVScopeCLFOptOps, "CLFLUSHOPT operations");
+STATISTIC(NVScopeCLWBOps, "CLWB operations");
+STATISTIC(NVScopeSFenceOps, "SFENCE operations");
 
 namespace {
-// NVArtHello - Replace the first binary operator (+, -, etc.) in every
+// NVScopeHello - Replace the first binary operator (+, -, etc.) in every
 // function with a multiply.
 // Source: www.cs.cornell.edu/~asampson/blog/llvm.html
-struct NVArtHello : public FunctionPass {
+struct NVScopeHello : public FunctionPass {
   static char ID;  // Pass identification, replacement for typeid
-  NVArtHello() : FunctionPass(ID) {}
+  NVScopeHello() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
-    NVArtFunctions++;
-    errs() << "NVArt: transforming function ";
+    NVScopeFunctions++;
+    errs() << "NVScope: transforming function ";
     errs().write_escaped(F.getName()) << "()\n";
 
     for (auto &B : F) {
@@ -82,22 +82,22 @@ struct NVArtHello : public FunctionPass {
 };
 }  // namespace
 
-char NVArtHello::ID = 0;
-static RegisterPass<NVArtHello> NVArtHelloPass("hello", "NVArt Hello Pass");
+char NVScopeHello::ID = 0;
+static RegisterPass<NVScopeHello> NVScopeHelloPass("hello", "NVScope Hello Pass");
 
 /* --- */
 
 uint64_t SFenceId = 0;
 
 namespace {
-// NVArtProbes
-struct NVArtProbes : public FunctionPass {
+// NVScopeProbes
+struct NVScopeProbes : public FunctionPass {
   static char ID;  // Pass identification, replacement for typeid
-  NVArtProbes() : FunctionPass(ID) {}
+  NVScopeProbes() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
-    NVArtFunctions++;
-    errs() << "NVArt: probing function ";
+    NVScopeFunctions++;
+    errs() << "NVScope: probing function ";
     errs().write_escaped(F.getName()) << "()\n";
 
     // Get the function to call from our runtime library.
@@ -124,17 +124,17 @@ struct NVArtProbes : public FunctionPass {
     FunctionType *ProbeMmapType =
         FunctionType::get(VoidTy, ProbeMmapParams, false);
     Constant *ProbeMmap =
-        F.getParent()->getOrInsertFunction("__nvart_probe_mmap", ProbeMmapType);
+        F.getParent()->getOrInsertFunction("__nvs_probe_mmap", ProbeMmapType);
 
     FunctionType *ProbeStore64Type =
         FunctionType::get(VoidTy, ProbeStore64Params, false);
     Constant *ProbeStore64 = F.getParent()->getOrInsertFunction(
-        "__nvart_probe_store64", ProbeStore64Type);
+        "__nvs_probe_store64", ProbeStore64Type);
 
     FunctionType *ProbeSFenceType =
         FunctionType::get(VoidTy, ProbeSFenceParams, false);
     Constant *ProbeSFence = F.getParent()->getOrInsertFunction(
-        "__nvart_probe_sfence", ProbeSFenceType);
+        "__nvs_probe_sfence", ProbeSFenceType);
 
     // std::vector<StoreInst *> StoreInsts;
 
@@ -180,7 +180,7 @@ struct NVArtProbes : public FunctionPass {
           // StoreInsts.push_back(StI);
 
           Modified = true;
-          NVArtStoreInsts++;
+          NVScopeStoreInsts++;
 
           continue;
         }
@@ -193,7 +193,7 @@ struct NVArtProbes : public FunctionPass {
             StringRef FNameStr = CIF->getName();
 
             if (FNameStr == "mmap") {
-              errs() << "NVArt: mmap()\n";
+              errs() << "NVScope: mmap()\n";
 
               CallInst *MmapI = dyn_cast<CallInst>(&I);
               IRBuilder<> IRB(MmapI);
@@ -215,16 +215,16 @@ struct NVArtProbes : public FunctionPass {
               // Insert a call to the probe function.
               IRB.CreateCall(ProbeMmap, MmapArgs);
               Modified = true;
-              NVArtMMapOps++;
+              NVScopeMMapOps++;
             } else if (FNameStr == "llvm.x86.sse2.clflush") {
-              errs() << "NVArt: _mm_clflush()\n";
-              NVArtCLFlushOps++;
+              errs() << "NVScope: _mm_clflush()\n";
+              NVScopeCLFlushOps++;
             } else if (FNameStr == "llvm.x86.clflushopt") {
-              errs() << "NVArt: _mm_clflushopt()\n";
-              NVArtCLFOptOps++;
+              errs() << "NVScope: _mm_clflushopt()\n";
+              NVScopeCLFOptOps++;
             } else if (FNameStr == "llvm.x86.clwb") {
-              errs() << "NVArt: _mm_clwb()\n";
-              NVArtCLWBOps++;
+              errs() << "NVScope: _mm_clwb()\n";
+              NVScopeCLWBOps++;
             } else if (FNameStr == "llvm.x86.sse.sfence") {
               CallInst *SfI = dyn_cast<CallInst>(&I);
               // Insert before the sfence instruction.
@@ -245,15 +245,15 @@ struct NVArtProbes : public FunctionPass {
               // Insert a call to the probe function.
               IRB.CreateCall(ProbeSFence, SfArgs);
               Modified = true;
-              errs() << "NVArt: _mm_sfence() #" << SFenceId << "\n";
-              NVArtSFenceOps = SFenceId;
+              errs() << "NVScope: _mm_sfence() #" << SFenceId << "\n";
+              NVScopeSFenceOps = SFenceId;
             }
           } else {
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
-            errs() << "NVArt: Indirect call\n";
+            errs() << "NVScope: Indirect call\n";
           }
 
-          NVArtCallInsts++;
+          NVScopeCallInsts++;
 
           continue;
         }
@@ -270,6 +270,6 @@ struct NVArtProbes : public FunctionPass {
 };
 }  // namespace
 
-char NVArtProbes::ID = 0;
-static RegisterPass<NVArtProbes> NVArtInsertProbesPass(
-    "probes", "NVArt Probes Insertion Pass");
+char NVScopeProbes::ID = 0;
+static RegisterPass<NVScopeProbes> NVScopeInsertProbesPass(
+    "probes", "NVScope Probes Insertion Pass");
