@@ -168,7 +168,7 @@ static void __start_forkserver(void) {
       ERRF("NVArt: waitpid() for %u failed", cpid);
       _exit(EXIT_FAILURE);
     } else if (cpidw == cpid) {  // child process reaped
-      ACTF("NVArt: target process %u finished", cpid);
+      DBGF("NVArt: target process %u finished", cpid);
     } else {
       ERRF("NVArt: unexpected waitpid() return value %u", cpidw);
     }
