@@ -14,7 +14,7 @@ nvs_add_executable(${PROG} ${SRCS})
 
 add_dependencies(${PROG} LLVMAFL)
 
-target_link_libraries(${PROG} afl)
+target_link_libraries(${PROG} aflrt)
 
 add_custom_target(
   run-${PROG}
