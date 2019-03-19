@@ -227,14 +227,6 @@ static void setup_shm(void) {
   atexit(remove_shm);
 
   shm_str = alloc_printf("%d", shm_id);
-
-  /*
-   * If somebody is asking us to fuzz instrumented binaries in dumb mode, we
-   * don't want them to detect instrumentation, since we won't be sending fork
-   * server commands. This should be replaced with better auto-detection later
-   * on, perhaps?
-   */
-
   setenv(NVS_ENV_SHM, shm_str, 1);
 
   ck_free(shm_str);
@@ -341,7 +333,7 @@ int main(int argc, char** argv) {
 
   if (argc < 2) FATAL("Usage: %s <mainproc>", argv[0]);
 
-  char** mainproc_argv = argv + 1;  // skip the fuzzer program
+  char** mainproc_argv = argv + 1;  // skip the nvscope program
 
   check_binary(argv[1], mainproc);
   ACTF("Preparing to test program %s", mainproc);
