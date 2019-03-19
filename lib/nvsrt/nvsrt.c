@@ -104,7 +104,7 @@ static void __nvs_setup_shm(void) {
 }
 
 /**
- * Forkserver logic (see nvfuzz.c for the other part)
+ * Forkserver logic (see nvscope.c for the other part)
  */
 static void __start_forkserver(void) {
   /* initial communication with the fuzzer */

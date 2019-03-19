@@ -59,10 +59,10 @@ add_custom_target(
 )
 
 add_custom_target(
-  fuzz-push-${PROG} DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
-  DEPENDS nvfuzz
+  test-push-${PROG} DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
+  DEPENDS nvscope
   COMMAND
     test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
   COMMAND
-    ${NVS_TOOLS_DIR}/nvfuzz ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
+    ${NVS_TOOLS_DIR}/nvscope ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
 )
