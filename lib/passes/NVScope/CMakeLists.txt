@@ -1,5 +1,5 @@
-add_llvm_loadable_module(LLVMNVArt NVArt.cpp)
+add_llvm_loadable_module(NVScope NVScope.cpp)
 
-nvart_set_pass_properties(LLVMNVArt)
+nvs_set_pass_properties(NVScope)
 
-install(TARGETS LLVMNVArt DESTINATION lib)
+install(TARGETS NVScope DESTINATION lib)

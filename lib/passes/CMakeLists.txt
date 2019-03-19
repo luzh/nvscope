@@ -1,3 +1,3 @@
 add_subdirectory(AFL)
 add_subdirectory(Hola)
-add_subdirectory(NVArt)
+add_subdirectory(NVScope)

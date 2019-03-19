@@ -7,12 +7,12 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVART_PASSES_DIR}/NVArt/LLVMNVArt.so -probes"
+    "-load ${NVART_PASSES_DIR}/NVScope/NVScope.so -probes"
 )
 
 nvart_add_executable(${PROG} ${SRCS})
 
-add_dependencies(${PROG} LLVMNVArt)
+add_dependencies(${PROG} LLVMNVScope)
 
 target_link_libraries(${PROG} nvart)
 
