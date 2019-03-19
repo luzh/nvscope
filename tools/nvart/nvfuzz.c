@@ -336,6 +336,7 @@ static pid_t start_forkserver(char* target, char** target_argv,
 }
 
 int main(int argc, char** argv) {
+  COMPILE_ERROR_ON(MAP_SIZE < NVART_SHM_RUNQ_OFF + NVART_SHM_RUNQ_SIZE);
   COMPILE_ERROR_ON(sizeof(struct nvart_target_config) != CLSIZE);
   COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvart_config, mainproc)));
 
