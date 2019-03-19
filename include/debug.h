@@ -1,5 +1,5 @@
-#ifndef _NVART_DEBUG_H
-#define _NVART_DEBUG_H
+#ifndef _NVS_DEBUG_H
+#define _NVS_DEBUG_H
 
 /*
  * definitions and handy macros for debugging
@@ -151,7 +151,7 @@
     SAYF(cRST "\n");          \
   } while (0)
 
-#ifdef NVART_DEBUG
+#ifdef NVS_DEBUG
 
 /* Show a prefixed debug message. */
 

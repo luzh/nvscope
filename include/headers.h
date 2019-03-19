@@ -1,5 +1,5 @@
-#ifndef _NVART_HEADERS_H_
-#define _NVART_HEADERS_H_
+#ifndef _NVS_HEADERS_H_
+#define _NVS_HEADERS_H_
 
 /* a list of headers to resolve most dependencies in this repository */
 
