@@ -104,7 +104,7 @@ struct nvart_runq {
 };
 
 #define NVART_SHM_RUNQ_OFF (NVART_SHM_CONFIG_SIZE)
-#define NVART_SHM_RUNQ_SIZE (4096)
+#define NVART_SHM_RUNQ_SIZE (500000)
 #define NVART_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvart_runq), CLSIZE)
 #define NVART_SHM_RUNQ_MAX_LEN                        \
   ((NVART_SHM_RUNQ_SIZE - NVART_SHM_RUNQ_META_SIZE) / \

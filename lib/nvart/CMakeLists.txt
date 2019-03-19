@@ -10,6 +10,6 @@ target_compile_options(
 
 # Todo: Define NVART_DEBUG according to build types
 target_compile_definitions(nvart
-  PUBLIC COLORFUL _GNU_SOURCE _FORTIFY_SOURCE=2 NVART_DEBUG
+  PUBLIC COLORFUL _GNU_SOURCE _FORTIFY_SOURCE=2
 )
 target_include_directories(nvart PUBLIC ${CMAKE_HOME_DIRECTORY}/include)

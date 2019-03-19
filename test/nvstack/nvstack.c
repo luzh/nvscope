@@ -1,8 +1,8 @@
 #include "headers.h"
 
-#define MMAP_SIZE 4096
+#define MMAP_SIZE (512 * 1024)
 #define META_SIZE 1
-#define MAX_VALUES 12
+#define MAX_VALUES (10 * 1000 * 1000)
 
 enum command { CMD_NONE, CMD_PUSH, CMD_POP, CMD_SHOW, CMD_CHECK };
 
@@ -32,10 +32,10 @@ int check(void *pmem) {
     }
   }
 
-  if (err)
-    printf("Error: Detected inconsistent stack data.\n");
-  else
-    printf("Stack data looks good.\n");
+  // if (err)
+  //   printf("Error: Detected inconsistent stack data.\n");
+  // else
+  //   printf("Stack data looks good.\n");
 
   return err;
 }
@@ -76,7 +76,7 @@ int push(void *pmem, uint64_t value) {
   _mm_clflushopt(pnvals);
   _mm_sfence();
 
-  printf("Pushed value %lu into the stack.\n", value);
+  // printf("Pushed value %lu into the stack.\n", value);
 
   return 0;
 }
@@ -161,7 +161,10 @@ int main(int argc, char **argv) {
   uint64_t topval;
   switch (cmd) {
     case CMD_PUSH:
-      if ((err = peek(pmem, &topval)) == 0) push(pmem, topval + 1);
+      if ((err = peek(pmem, &topval)) == 0) {
+        for (int i = 0; i < 10000; i++) push(pmem, topval + 1 + i);
+        // for (int i = 0; i < 1; i++) push(pmem, topval + 1 + i);
+      }
       break;
     case CMD_POP:
       pop(pmem, NULL);
