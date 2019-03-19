@@ -12,7 +12,7 @@ set_property(
 
 nvs_add_executable(${PROG} ${SRCS})
 
-add_dependencies(${PROG} LLVMNVScope)
+add_dependencies(${PROG} NVScope)
 
 target_link_libraries(${PROG} nvsrt)
 
