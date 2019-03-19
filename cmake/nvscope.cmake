@@ -20,19 +20,19 @@ if(NOT WIN32)
   set(BoldWhite   "${Esc}[1;37m")
 endif()
 
-function(nvart_print MSGSTR)
-  message(STATUS "${Blue}[NVArt-INFO]:${ColorReset} ${MSGSTR}")
+function(nvs_print MSGSTR)
+  message(STATUS "${Blue}[NVS-INFO]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvart_debug MSGSTR)
-  message(STATUS "${Yellow}[NVArt-Debug]:${ColorReset} ${MSGSTR}")
+function(nvs_debug MSGSTR)
+  message(STATUS "${Yellow}[NVS-Debug]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvart_fatal MSGSTR)
-  message(FATAL_ERROR "${BoldRed}[NVArt-Fatal]:${ColorReset} ${MSGSTR}")
+function(nvs_fatal MSGSTR)
+  message(FATAL_ERROR "${BoldRed}[NVS-Fatal]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvart_set_pass_properties PASS_TARGET)
+function(nvs_set_pass_properties PASS_TARGET)
 # if(NOT ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
 #   # On non-Debug builds cmake automatically defines NDEBUG. Explicitly
 #   # undefine it to enable opt's -stats and -debug output. See more details
@@ -43,20 +43,20 @@ function(nvart_set_pass_properties PASS_TARGET)
   target_include_directories(${PASS_TARGET} PRIVATE ${LLVM_INCLUDE_DIRS})
 endfunction()
 
-function(nvart_set_sources_properties PROFILE)
+function(nvs_set_sources_properties PROFILE)
 # set(options)
 # set(oneValueArgs PROFILE)
 # set(multiValueArgs FILES)
 # cmake_parse_arguments(
-#   NVART_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+#   NVS_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
   set(VALID_PROFILES "C_Default")
   if(NOT PROFILE IN_LIST VALID_PROFILES)
-    nvart_fatal("Invalid source profile: ${PROFILE}")
+    nvs_fatal("Invalid source profile: ${PROFILE}")
   endif()
 
   set(SRCS ${ARGN})
 
-  nvart_print("Using ${PROFILE} properties for ${SRCS}")
+  nvs_print("Using ${PROFILE} properties for ${SRCS}")
   set_property(
     SOURCE
       ${SRCS}
@@ -93,17 +93,17 @@ function(nvart_set_sources_properties PROFILE)
   )
 endfunction()
 
-function(nvart_add_executable)
+function(nvs_add_executable)
   list(LENGTH ARGV ARGS_LEN)
   if(ARGS_LEN LESS "2")
-    nvart_fatal("Required arguments: <target> <source1> [source2...]")
+    nvs_fatal("Required arguments: <target> <source1> [source2...]")
   endif()
 
   list(GET ARGV 0 EXE_TARGET)
   math(EXPR SRCS_LEN "${ARGS_LEN} - 1")
   list(SUBLIST ARGV 1 ${SRCS_LEN} SRC_NAMES)
 
-  nvart_print("Sources for target ${EXE_TARGET}: ${SRC_NAMES}")
+  nvs_print("Sources for target ${EXE_TARGET}: ${SRC_NAMES}")
 
   set(C_SRC_EXTS "H;C")
   set(CXX_SRC_EXTS "HPP;CC;CPP")
@@ -122,7 +122,7 @@ function(nvart_add_executable)
         set(LINKER_LANG "C")
       endif()
     else()
-      nvart_fatal("Unsupported source type: ${SRC_NAME}")
+      nvs_fatal("Unsupported source type: ${SRC_NAME}")
     endif()
 
     if(SRC_NAME_EXT IN_LIST SRC_HEADER_EXTS)
@@ -215,7 +215,7 @@ function(nvart_add_executable)
 
       # Convert string to list to remove quotes.
       separate_arguments(PASS_ARGS UNIX_COMMAND ${LLVM_OPT_PASS})
-      nvart_print("Will apply LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}")
+      nvs_print("Will apply LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}")
 
       # Extract dependent pass modules from the arguments.
       set(LLVM_OPT_DEPS "")
@@ -282,7 +282,7 @@ function(nvart_add_executable)
 
   add_executable(${EXE_TARGET} ${LLVM_BC_FILES})
 
-  nvart_print("Linker language for executable '${EXE_TARGET}': ${LINKER_LANG}")
+  nvs_print("Linker language for executable '${EXE_TARGET}': ${LINKER_LANG}")
   set_target_properties(
     ${EXE_TARGET}
     PROPERTIES
