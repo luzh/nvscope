@@ -22,20 +22,20 @@ static char* shm_base; /* pointer to the SHM region */
  */
 static inline void send_message(int channel, enum nvs_message msg) {
   if (write(channel, &msg, sizeof(msg)) != sizeof(msg))
-    PFATAL("NVFuzz: write() to channel %d failed", channel);
+    PFATAL("NVScope: write() to channel %d failed", channel);
 }
 
 static inline enum nvs_message read_message(int channel) {
   enum nvs_message msg;
   if (read(channel, &msg, sizeof(msg)) != sizeof(msg))
-    PFATAL("NVFuzz: read() from channel %d failed", channel);
+    PFATAL("NVScope: read() from channel %d failed", channel);
   return msg;
 }
 
 #if 0
 static inline void read_data(int channel, void* data, ssize_t len) {
   if (read(channel, data, len) != len)
-    PFATAL("NVFuzz: read() from channel %d failed", channel);
+    PFATAL("NVScope: read() from channel %d failed", channel);
 }
 #endif
 
@@ -60,7 +60,7 @@ static void check_binary(char* fname, char* target) {
     if (stat(bin_path, &st) || !S_ISREG(st.st_mode) || !(st.st_mode & 0111) ||
         (f_len = st.st_size) < 4) {
       ck_free(bin_path);
-      FATAL("NVFuzz: '%s' not found or not executable", fname);
+      FATAL("NVScope: '%s' not found or not executable", fname);
     }
 
   } else {
@@ -93,19 +93,19 @@ static void check_binary(char* fname, char* target) {
       bin_path = NULL;
     }
 
-    if (!bin_path) FATAL("NVFuzz: '%s' not found or not executable", fname);
+    if (!bin_path) FATAL("NVScope: '%s' not found or not executable", fname);
   }
 
   if (getenv("NVS_SKIP_BIN_CHECK")) return;
 
-  if (target == NULL) FATAL("NVFuzz: invalid buffer to store target's path");
+  if (target == NULL) FATAL("NVScope: invalid buffer to store target's path");
   size_t bin_path_len = strlen(bin_path);
   if (BINARY_PATH_LEN_MAX <= bin_path_len) {
     ck_free(bin_path);
     SAYF("\n" cLRD "[-] " cRST
          "Oops, the target buffer length is not large enough to store the\n"
          "    target binary's path. Try to increase BINARY_PATH_MLEN_MAX.\n");
-    FATAL("NVFuzz: BINARY_PATH_LEN_LEN %zu <= bin_path_len %zu",
+    FATAL("NVScope: BINARY_PATH_LEN_LEN %zu <= bin_path_len %zu",
           BINARY_PATH_LEN_MAX, bin_path_len);
   }
 
@@ -117,31 +117,31 @@ static void check_binary(char* fname, char* target) {
 
   if ((!strncmp(target, "/tmp/", 5) && !strchr(target + 5, '/')) ||
       (!strncmp(target, "/var/tmp/", 9) && !strchr(target + 9, '/')))
-    FATAL("NVFuzz: please don't keep binaries in /tmp or /var/tmp");
+    FATAL("NVScope: please don't keep binaries in /tmp or /var/tmp");
 
   fd = open(target, O_RDONLY);
 
-  if (fd < 0) PFATAL("NVFuzz: unable to open '%s'", target);
+  if (fd < 0) PFATAL("NVScope: unable to open '%s'", target);
 
   f_data = mmap(0, f_len, PROT_READ, MAP_PRIVATE, fd, 0);
 
-  if (f_data == MAP_FAILED) PFATAL("NVFuzz: unable to mmap file '%s'", target);
+  if (f_data == MAP_FAILED) PFATAL("NVScope: unable to mmap file '%s'", target);
 
   close(fd);
 
   if (f_data[0] == '#' && f_data[1] == '!') {
     SAYF("\n" cLRD "[-] " cRST
          "Oops, the target binary looks like a shell script.\n");
-    FATAL("NVFuzz: '%s' is a shell script", target);
+    FATAL("NVScope: '%s' is a shell script", target);
   }
 
   if (f_data[0] != 0x7f || memcmp(f_data + 1, "ELF", 3))
-    FATAL("NVFuzz: '%s' is not an ELF binary", target);
+    FATAL("NVScope: '%s' is not an ELF binary", target);
 
   if (!memmem(f_data, f_len, NVS_ENV_SHM, strlen(NVS_ENV_SHM) + 1)) {
     SAYF("\n" cLRD "[-] " cRST
          "Looks like the target binary is not instrumented!\n");
-    FATAL("NVFuzz: no instrumentation detected - '%s' not found", NVS_ENV_SHM);
+    FATAL("NVScope: no instrumentation detected - '%s' not found", NVS_ENV_SHM);
   }
 
 #if 0
@@ -168,7 +168,7 @@ static void check_binary(char* fname, char* target) {
   }
 #endif
 
-  if (munmap(f_data, f_len)) PFATAL("NVFuzz: unmap() failed");
+  if (munmap(f_data, f_len)) PFATAL("NVScope: unmap() failed");
 }
 
 static int check_status(int status, pid_t pid, char* pname) {
@@ -180,19 +180,19 @@ static int check_status(int status, pid_t pid, char* pname) {
     int exstatus = WEXITSTATUS(status);
     if (exstatus == 0) {
       err = 0;
-      DBGF("NVFuzz: %s process %u exited normally", pname, pid);
+      DBGF("NVScope: %s process %u exited normally", pname, pid);
     } else if (exstatus == 127) {
-      ERRF("NVFuzz: execv() for %s process %u failed", pname, pid);
+      ERRF("NVScope: execv() for %s process %u failed", pname, pid);
     } else {
-      ERRF("NVFuzz: %s process %u exited, status %d", pname, pid, exstatus);
+      ERRF("NVScope: %s process %u exited, status %d", pname, pid, exstatus);
     }
   } else if (WIFSTOPPED(status)) {
-    ERRF("NVFuzz: %s process %u has stopped %u", pname, pid, WSTOPSIG(status));
+    ERRF("NVScope: %s process %u has stopped %u", pname, pid, WSTOPSIG(status));
   } else if (WIFSIGNALED(status)) {
-    ERRF("NVFuzz: %s process %u killed by signal %u", pname, pid,
+    ERRF("NVScope: %s process %u killed by signal %u", pname, pid,
          WTERMSIG(status));
   } else {
-    ERRF("NVFuzz: %s process %u died for unknown reasons", pname, pid);
+    ERRF("NVScope: %s process %u died for unknown reasons", pname, pid);
   }
 
   return err;
@@ -262,11 +262,11 @@ static pid_t start_forkserver(char* target, char** target_argv,
          parent_write_fd != NULL);
 
   if (pipe(info_fds) || pipe(ctrl_fds))
-    PFATAL("NVFuzz: pipe() for the target program failed");
+    PFATAL("NVScope: pipe() for the target program failed");
 
   pid_t fksv_pid = fork();
   if (fksv_pid < 0)
-    PFATAL("NVFuzz: fork() to run the target program's forkserver failed");
+    PFATAL("NVScope: fork() to run the target program's forkserver failed");
 
   if (fksv_pid == 0) {  // target program's forkserver process
     struct rlimit rlim;
@@ -294,7 +294,7 @@ static pid_t start_forkserver(char* target, char** target_argv,
     execv(target, target_argv);
 
     /* If execv() succeeds, it should not return (getting here). */
-    FATAL("NVFuzz: unable to execute the target program '%s'", target);
+    FATAL("NVScope: unable to execute the target program '%s'", target);
   }
 
   /* Close the unneeded endpoints. */
@@ -305,14 +305,14 @@ static pid_t start_forkserver(char* target, char** target_argv,
   *parent_write_fd = ctrl_fds[1];
 
   /* Check afl-fuzz.c for using setitimer() and SIGALARM to kill. */
-  ACTF("NVFuzz: waiting for the forkserver to come up...");
+  ACTF("NVScope: waiting for the forkserver to come up...");
 
   /*
    * If we have ready message from the forkserver, we're all set. Otherwise,
    * try to figure out what went wrong with waitpid().
    */
   if (read_message(*parent_read_fd) == MSG_FORKSERVER_HELLO) {
-    OKF("NVFuzz: target program's forkserver is up, pid %u", fksv_pid);
+    OKF("NVScope: target program's forkserver is up, pid %u", fksv_pid);
     target_conf->fksv_pid = fksv_pid;
     return fksv_pid;
   }
@@ -321,15 +321,15 @@ static pid_t start_forkserver(char* target, char** target_argv,
   pid_t pidw = waitpid(fksv_pid, &status, 0);
 
   if (pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", fksv_pid);
+    ERRF("NVScope: waitpid(%u) failed", fksv_pid);
   } else if (pidw == fksv_pid) {  // target's forkserver reaped
     check_status(status, fksv_pid, "target's forkserver");
   } else {
-    ERRF("NVFuzz: unexpected waitpid() return value %u", pidw);
+    ERRF("NVScope: unexpected waitpid() return value %u", pidw);
   }
 
   /* Check afl-fuzz.c for more detailed parsing of failure status. */
-  ERRF("NVFuzz: forkserver handshake failed");
+  ERRF("NVScope: forkserver handshake failed");
 
   return -1;
 }
@@ -357,21 +357,23 @@ int main(int argc, char** argv) {
   int main_ctrl_fd, main_info_fd;  // mainproc control pipes
   int reco_ctrl_fd, reco_info_fd;  // recovery control pipes
 
-  ACTF("NVFuzz: spinning up the forkserver for mainproc...");
+  ACTF("NVScope: spinning up the forkserver for mainproc...");
   config->target_type = TYPE_MAINPROC;  // must set before start_forkserver()
   pid_t main_fksv_pid = start_forkserver(mainproc, mainproc_argv, tgconf_main,
                                          &main_info_fd, &main_ctrl_fd);
-  if (main_fksv_pid < 0) FATAL("NVFuzz: mainproc's forkserver failed to start");
+  if (main_fksv_pid < 0)
+    FATAL("NVScope: mainproc's forkserver failed to start");
 
   // Todo: Get recovery process from command line options.
   memcpy(recovery, mainproc, BINARY_PATH_LEN_MAX);
   char* recovery_argv[] = {recovery, "stackfile", "check", NULL};
 
-  ACTF("NVFuzz: spinning up the forkserver for recovery...");
+  ACTF("NVScope: spinning up the forkserver for recovery...");
   config->target_type = TYPE_RECOVERY;  // must set before start_forkserver()
   pid_t reco_fksv_pid = start_forkserver(recovery, recovery_argv, tgconf_reco,
                                          &reco_info_fd, &reco_ctrl_fd);
-  if (reco_fksv_pid < 0) FATAL("NVFuzz: recovery's forkserver failed to start");
+  if (reco_fksv_pid < 0)
+    FATAL("NVScope: recovery's forkserver failed to start");
 
   int fatal = 0, stop = 0;
   int status, bug = 0;
@@ -394,16 +396,16 @@ int main(int argc, char** argv) {
         send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
         break;
       case MSG_TARGET_STARTED:
-        DBGF("NVFuzz: target process started, pid %d", tgconf_main->pid);
+        DBGF("NVScope: target process started, pid %d", tgconf_main->pid);
         break;
       case MSG_AWAITING_CHECK:
-        DBGF("NVFuzz: mainproc requested to run recovery and checking");
+        DBGF("NVScope: mainproc requested to run recovery and checking");
 
         ++testcases;
 
         reco_info = read_message(reco_info_fd);
         if (reco_info != MSG_FORKSERVER_READY) {
-          ERRF("NVFuzz: received inappropriate message %d", reco_info);
+          ERRF("NVScope: received inappropriate message %d", reco_info);
           fatal = 1;
           break;
         }
@@ -412,15 +414,15 @@ int main(int argc, char** argv) {
 
         reco_info = read_message(reco_info_fd);
         if (reco_info != MSG_TARGET_STARTED) {
-          ERRF("NVFuzz: received inappropriate message %d", reco_info);
+          ERRF("NVScope: received inappropriate message %d", reco_info);
           fatal = 1;
           break;
         }
-        DBGF("NVFuzz: recovery process started, pid %d", tgconf_reco->pid);
+        DBGF("NVScope: recovery process started, pid %d", tgconf_reco->pid);
 
         reco_info = read_message(reco_info_fd);
         if (reco_info != MSG_TARGET_EXITED) {
-          ERRF("NVFuzz: received inappropriate message %d", reco_info);
+          ERRF("NVScope: received inappropriate message %d", reco_info);
           fatal = 1;
           break;
         }
@@ -436,7 +438,7 @@ int main(int argc, char** argv) {
         stop = 1;  // can restart the mainproc process
         break;
       default:
-        ERRF("NVFuzz: received inappropriate message %d", main_info);
+        ERRF("NVScope: received inappropriate message %d", main_info);
         fatal = 1;
         break;
     }
@@ -451,21 +453,21 @@ int main(int argc, char** argv) {
   pid_t main_fksv_pidw = waitpid(main_fksv_pid, &status, 0);
 
   if (main_fksv_pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", main_fksv_pid);
+    ERRF("NVScope: waitpid(%u) failed", main_fksv_pid);
   } else if (main_fksv_pidw == main_fksv_pid) {
     check_status(status, main_fksv_pid, "mainproc's forkserver");
   } else {
-    ERRF("NVFuzz: unexpected waitpid() return value %u", main_fksv_pidw);
+    ERRF("NVScope: unexpected waitpid() return value %u", main_fksv_pidw);
   }
 
   pid_t reco_fksv_pidw = waitpid(reco_fksv_pid, &status, 0);
 
   if (reco_fksv_pidw < 0) {
-    ERRF("NVFuzz: waitpid(%u) failed", reco_fksv_pid);
+    ERRF("NVScope: waitpid(%u) failed", reco_fksv_pid);
   } else if (reco_fksv_pidw == reco_fksv_pid) {
     check_status(status, reco_fksv_pid, "recovery's forkserver");
   } else {
-    ERRF("NVFuzz: unexpected waitpid() return value %u", reco_fksv_pidw);
+    ERRF("NVScope: unexpected waitpid() return value %u", reco_fksv_pidw);
   }
 
   benchmark_time_t runtime;
@@ -474,7 +476,7 @@ int main(int argc, char** argv) {
   unsigned long long runns = benchmark_time_get_nsecs(&runtime);
   unsigned long long avgns = runns / testcases;
 
-  OKF("NVFuzz: total elapsed time to run %zu test cases is %lld ns, per test "
+  OKF("NVScope: total elapsed time to run %zu test cases is %lld ns, per test "
       "case time is %lld ns",
       testcases, runns, avgns);
 
