@@ -1,20 +1,20 @@
 set(PROG nvstack)
 set(SRCS nvstack.c)
 
-nvart_set_sources_properties(C_Default ${SRCS})
+nvs_set_sources_properties(C_Default ${SRCS})
 
 set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVART_PASSES_DIR}/NVScope/NVScope.so -probes"
+    "-load ${NVS_PASSES_DIR}/NVScope/NVScope.so -probes"
 )
 
-nvart_add_executable(${PROG} ${SRCS})
+nvs_add_executable(${PROG} ${SRCS})
 
 add_dependencies(${PROG} LLVMNVScope)
 
-target_link_libraries(${PROG} nvart)
+target_link_libraries(${PROG} nvsrt)
 
 set(STACKFILE "./stackfile")
 
@@ -64,5 +64,5 @@ add_custom_target(
   COMMAND
     test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
   COMMAND
-    ${NVART_TOOLS_DIR}/nvfuzz ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
+    ${NVS_TOOLS_DIR}/nvfuzz ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
 )
