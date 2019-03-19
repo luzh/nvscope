@@ -74,7 +74,7 @@ static void __nvs_setup_shm(void) {
 
     config = (struct nvs_config *)(__shm_base);
 
-    /* should be initialized by parent (fuzzer) */
+    /* should be initialized by parent (nvscope) */
     if (!config->initialized) {
       ERRF("NVS-RT: config region not initialized");
       _exit(NVS_EXIT_BAD_SHM);
@@ -107,7 +107,7 @@ static void __nvs_setup_shm(void) {
  * Forkserver logic (see nvscope.c for the other part)
  */
 static void __start_forkserver(void) {
-  /* initial communication with the fuzzer */
+  /* initial communication with nvscope */
   __send_message(MSG_FORKSERVER_HELLO);
 
   while (1) {
@@ -139,13 +139,13 @@ static void __start_forkserver(void) {
       /**
        * The child process will execute the target program (mainproc, recovery,
        * or checker). It inherits pipes from the forkserver to communicate with
-       * the fuzzer. Thus, when the target program runs, there are two writers
-       * to the state pipe: the forkserver and the target program. Linux pipes
+       * nvscope, when the target program runs, there are two writers to the
+       * state pipe: the forkserver and the target program. Linux pipes
        * guarantee write atomicity for message sizes no larger than PIPE_BUF.
        * When the target program exits, its pipe ends automatically close.
        *
        * In afl-llvm-rt.o.c, AFL closes the pipe fds because they are not needed
-       * anymore. But NVS-RT still needs them to communicate with the fuzzer for
+       * anymore. But nvsrt still needs them to communicate with nvscope for
        * testing requests and results.
        */
 
