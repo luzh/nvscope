@@ -14,6 +14,7 @@
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
@@ -63,3 +64,48 @@ namespace {
 char Hello2::ID = 0;
 static RegisterPass<Hello2>
 Y("hello2", "Hello World Pass (with getAnalysisUsage implemented)");
+
+namespace {
+// Bin2Mul - Replace the first binary operator (+, -, etc.) in every function
+// with a multiply.
+// Source: www.cs.cornell.edu/~asampson/blog/llvm.html
+struct Bin2Mul : public FunctionPass {
+  static char ID;  // Pass identification, replacement for typeid
+  Bin2Mul() : FunctionPass(ID) {}
+
+  bool runOnFunction(Function &F) override {
+    ++HelloCounter;
+    errs() << "Hello: transforming function ";
+    errs().write_escaped(F.getName()) << "()\n";
+
+    for (auto &B : F) {
+      for (auto &I : B) {
+        if (auto *op = dyn_cast<BinaryOperator>(&I)) {
+          // Insert at the point where the instruction `op` appears.
+          IRBuilder<> builder(op);
+
+          // Make a multiply with the same operands as `op`.
+          Value *lhs = op->getOperand(0);
+          Value *rhs = op->getOperand(1);
+          Value *mul = builder.CreateMul(lhs, rhs);
+
+          // Everywhere the old instruction was used as an operand, use our
+          // new multiply instruction instead.
+          for (auto &U : op->uses()) {
+            User *user = U.getUser();  // A User is anything with operands.
+            user->setOperand(U.getOperandNo(), mul);
+          }
+
+          // We modified the code.
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+};
+}  // namespace
+
+char Bin2Mul::ID = 0;
+static RegisterPass<Bin2Mul> Bin2MulPass("bin2mul", "Binary Operator to Multiplication Pass");

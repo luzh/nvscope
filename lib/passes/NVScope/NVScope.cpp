@@ -40,52 +40,6 @@ STATISTIC(NVScopeCLFOptOps, "CLFLUSHOPT operations");
 STATISTIC(NVScopeCLWBOps, "CLWB operations");
 STATISTIC(NVScopeSFenceOps, "SFENCE operations");
 
-namespace {
-// NVScopeHello - Replace the first binary operator (+, -, etc.) in every
-// function with a multiply.
-// Source: www.cs.cornell.edu/~asampson/blog/llvm.html
-struct NVScopeHello : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
-  NVScopeHello() : FunctionPass(ID) {}
-
-  bool runOnFunction(Function &F) override {
-    NVScopeFunctions++;
-    errs() << "NVScope: transforming function ";
-    errs().write_escaped(F.getName()) << "()\n";
-
-    for (auto &B : F) {
-      for (auto &I : B) {
-        if (auto *op = dyn_cast<BinaryOperator>(&I)) {
-          // Insert at the point where the instruction `op` appears.
-          IRBuilder<> builder(op);
-
-          // Make a multiply with the same operands as `op`.
-          Value *lhs = op->getOperand(0);
-          Value *rhs = op->getOperand(1);
-          Value *mul = builder.CreateMul(lhs, rhs);
-
-          // Everywhere the old instruction was used as an operand, use our
-          // new multiply instruction instead.
-          for (auto &U : op->uses()) {
-            User *user = U.getUser();  // A User is anything with operands.
-            user->setOperand(U.getOperandNo(), mul);
-          }
-
-          // We modified the code.
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-};
-}  // namespace
-
-char NVScopeHello::ID = 0;
-static RegisterPass<NVScopeHello> NVScopeHelloPass("hello",
-                                                   "NVScope Hello Pass");
-
 /* --- */
 
 uint64_t SFenceId = 0;
@@ -98,7 +52,7 @@ struct NVScopeProbes : public FunctionPass {
 
   bool runOnFunction(Function &F) override {
     NVScopeFunctions++;
-    errs() << "NVScope: probing function ";
+    errs() << "NVS-Pass: probing function ";
     errs().write_escaped(F.getName()) << "()\n";
 
     // Get the function to call from our runtime library.
@@ -194,7 +148,7 @@ struct NVScopeProbes : public FunctionPass {
             StringRef FNameStr = CIF->getName();
 
             if (FNameStr == "mmap") {
-              errs() << "NVScope: mmap()\n";
+              errs() << "NVS-Pass: mmap()\n";
 
               CallInst *MmapI = dyn_cast<CallInst>(&I);
               IRBuilder<> IRB(MmapI);
@@ -218,13 +172,13 @@ struct NVScopeProbes : public FunctionPass {
               Modified = true;
               NVScopeMMapOps++;
             } else if (FNameStr == "llvm.x86.sse2.clflush") {
-              errs() << "NVScope: _mm_clflush()\n";
+              errs() << "NVS-Pass: _mm_clflush()\n";
               NVScopeCLFlushOps++;
             } else if (FNameStr == "llvm.x86.clflushopt") {
-              errs() << "NVScope: _mm_clflushopt()\n";
+              errs() << "NVS-Pass: _mm_clflushopt()\n";
               NVScopeCLFOptOps++;
             } else if (FNameStr == "llvm.x86.clwb") {
-              errs() << "NVScope: _mm_clwb()\n";
+              errs() << "NVS-Pass: _mm_clwb()\n";
               NVScopeCLWBOps++;
             } else if (FNameStr == "llvm.x86.sse.sfence") {
               CallInst *SfI = dyn_cast<CallInst>(&I);
@@ -246,12 +200,12 @@ struct NVScopeProbes : public FunctionPass {
               // Insert a call to the probe function.
               IRB.CreateCall(ProbeSFence, SfArgs);
               Modified = true;
-              errs() << "NVScope: _mm_sfence() #" << SFenceId << "\n";
+              errs() << "NVS-Pass: _mm_sfence() #" << SFenceId << "\n";
               NVScopeSFenceOps = SFenceId;
             }
           } else {
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
-            errs() << "NVScope: Indirect call\n";
+            errs() << "NVS-Pass: Indirect call\n";
           }
 
           NVScopeCallInsts++;
