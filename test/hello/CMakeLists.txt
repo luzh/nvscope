@@ -4,10 +4,10 @@ set_property(
   SOURCE
     hello.c
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVS_PASSES_DIR}/Hola/LLVMHola.so -hola"
-    "-load ${NVS_PASSES_DIR}/Hola/LLVMHola.so -hola2"
+    "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -hello"
+    "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -hello2"
 )
 
 nvs_add_executable(hello hello.c)
 
-add_dependencies(hello LLVMHola)
+add_dependencies(hello HelloPass)
