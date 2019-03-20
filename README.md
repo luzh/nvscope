@@ -18,7 +18,7 @@ rm llvm.tar.xz
 ## Build
 
 ```
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake -B build -S .
 cmake --build build
 ```
 

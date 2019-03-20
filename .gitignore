@@ -26,6 +26,7 @@ build
 
 # Other temporaty files
 llvm
+google
 vimtabs
 
 # Other Generated Files
