@@ -1,4 +1,4 @@
-//===- Hola.cpp - Example code from "Writing an LLVM Pass" ---------------===//
+//===- Hello.cpp - Example code from "Writing an LLVM Pass" ---------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,8 +8,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implements two versions of the LLVM "Hello World" pass described
-// in docs/WritingAnLLVMPass.html, but renamed them to "Hola Mundo" to avoid
-// conflict with LLVM's Hello passes.
+// in docs/WritingAnLLVMPass.html
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,51 +16,50 @@
 #include "llvm/IR/Function.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
-
 using namespace llvm;
 
-#define DEBUG_TYPE "hola"
+#define DEBUG_TYPE "hello"
 
-STATISTIC(HolaCounter, "Counts number of functions greeted");
-
-namespace {
-// Hola - The first implementation, without getAnalysisUsage.
-struct Hola : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
-  Hola() : FunctionPass(ID) {}
-
-  bool runOnFunction(Function &F) override {
-    ++HolaCounter;
-    errs() << "Hola: ";
-    errs().write_escaped(F.getName()) << '\n';
-    return false;
-  }
-};
-}  // namespace
-
-char Hola::ID = 0;
-static RegisterPass<Hola> X("hola", "Hola Mundo Pass");
+STATISTIC(HelloCounter, "Counts number of functions greeted");
 
 namespace {
-// Hola2 - The second implementation with getAnalysisUsage implemented.
-struct Hola2 : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
-  Hola2() : FunctionPass(ID) {}
+  // Hello - The first implementation, without getAnalysisUsage.
+  struct Hello : public FunctionPass {
+    static char ID; // Pass identification, replacement for typeid
+    Hello() : FunctionPass(ID) {}
 
-  bool runOnFunction(Function &F) override {
-    ++HolaCounter;
-    errs() << "Hola: ";
-    errs().write_escaped(F.getName()) << '\n';
-    return false;
-  }
+    bool runOnFunction(Function &F) override {
+      ++HelloCounter;
+      errs() << "Hello: ";
+      errs().write_escaped(F.getName()) << '\n';
+      return false;
+    }
+  };
+}
 
-  // We don't modify the program, so we preserve all analyses.
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.setPreservesAll();
-  }
-};
-}  // namespace
+char Hello::ID = 0;
+static RegisterPass<Hello> X("hello", "Hello World Pass");
 
-char Hola2::ID = 0;
-static RegisterPass<Hola2> Y(
-    "hola2", "Hola Mundo Pass (with getAnalysisUsage implemented)");
+namespace {
+  // Hello2 - The second implementation with getAnalysisUsage implemented.
+  struct Hello2 : public FunctionPass {
+    static char ID; // Pass identification, replacement for typeid
+    Hello2() : FunctionPass(ID) {}
+
+    bool runOnFunction(Function &F) override {
+      ++HelloCounter;
+      errs() << "Hello: ";
+      errs().write_escaped(F.getName()) << '\n';
+      return false;
+    }
+
+    // We don't modify the program, so we preserve all analyses.
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
+      AU.setPreservesAll();
+    }
+  };
+}
+
+char Hello2::ID = 0;
+static RegisterPass<Hello2>
+Y("hello2", "Hello World Pass (with getAnalysisUsage implemented)");

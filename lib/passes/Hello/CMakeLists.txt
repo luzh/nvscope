@@ -1,5 +1,5 @@
-add_llvm_loadable_module(LLVMHola Hola.cpp)
+add_llvm_loadable_module(HelloPass Hello.cpp)
 
-nvs_set_pass_properties(LLVMHola)
+nvs_set_pass_properties(HelloPass)
 
-install(TARGETS LLVMHola DESTINATION lib)
+install(TARGETS HelloPass DESTINATION lib)
