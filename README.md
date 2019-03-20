@@ -1,4 +1,4 @@
-# Automated Recovery Testing Tools for NVMM Applications
+# Analytics and Recovery Testing Tools for NVMM Applications
 
 Description.
 
