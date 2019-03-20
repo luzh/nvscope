@@ -17,6 +17,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "hello"
@@ -80,21 +81,23 @@ struct Bin2Mul : public FunctionPass {
 
     for (auto &B : F) {
       for (auto &I : B) {
-        if (auto *op = dyn_cast<BinaryOperator>(&I)) {
-          // Insert at the point where the instruction `op` appears.
-          IRBuilder<> builder(op);
+        if (auto *Op = dyn_cast<BinaryOperator>(&I)) {
+          // Insert at the point where the instruction `Op` appears.
+          IRBuilder<> IRB(Op);
 
-          // Make a multiply with the same operands as `op`.
-          Value *lhs = op->getOperand(0);
-          Value *rhs = op->getOperand(1);
-          Value *mul = builder.CreateMul(lhs, rhs);
+          // Make a multiply with the same operands as `Op`.
+          Value *Lhs = Op->getOperand(0);
+          Value *Rhs = Op->getOperand(1);
+          Value *Mul = IRB.CreateMul(Lhs, Rhs);
 
           // Everywhere the old instruction was used as an operand, use our
           // new multiply instruction instead.
-          for (auto &U : op->uses()) {
+          for (auto &U : Op->uses()) {
             User *user = U.getUser();  // A User is anything with operands.
-            user->setOperand(U.getOperandNo(), mul);
+            user->setOperand(U.getOperandNo(), Mul);
           }
+
+          ReplaceInstWithInst(Op, dyn_cast<Instruction>(Mul));
 
           // We modified the code.
           return true;
