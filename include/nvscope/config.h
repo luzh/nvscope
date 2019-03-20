@@ -104,7 +104,7 @@ struct nvs_runq {
 };
 
 #define NVS_SHM_RUNQ_OFF (NVS_SHM_CONFIG_SIZE)
-#define NVS_SHM_RUNQ_SIZE (4096)
+#define NVS_SHM_RUNQ_SIZE (500000)
 #define NVS_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvs_runq), CLSIZE)
 #define NVS_SHM_RUNQ_MAX_LEN \
   ((NVS_SHM_RUNQ_SIZE - NVS_SHM_RUNQ_META_SIZE) / sizeof(struct nvs_runq_entry))
