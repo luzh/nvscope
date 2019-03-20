@@ -62,6 +62,12 @@ nvs_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 set(NVS_PASSES_DIR ${CMAKE_BINARY_DIR}/lib/passes)
 set(NVS_TOOLS_DIR ${CMAKE_BINARY_DIR}/tools/nvscope)
 
+# Options
+option(NVS_DEBUG "Print NVScope debug messages" OFF)
+if (NVS_DEBUG)
+  nvs_warning("NVS_DEBUG set, may impact performance")
+endif()
+
 # Add directories.
 add_subdirectory(lib)
 add_subdirectory(test)

@@ -10,6 +10,6 @@ target_compile_options(
 
 # Todo: Define NVS_DEBUG according to build types
 target_compile_definitions(nvsrt
-  PUBLIC COLORFUL _GNU_SOURCE _FORTIFY_SOURCE=2 NVS_DEBUG
+  PUBLIC COLORFUL _GNU_SOURCE _FORTIFY_SOURCE=2 $<$<BOOL:${NVS_DEBUG}>:NVS_DEBUG>
 )
 target_include_directories(nvsrt PUBLIC ${CMAKE_HOME_DIRECTORY}/include)

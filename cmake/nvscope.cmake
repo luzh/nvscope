@@ -24,8 +24,12 @@ function(nvs_print MSGSTR)
   message(STATUS "${Blue}[NVS-INFO]:${ColorReset} ${MSGSTR}")
 endfunction()
 
+function(nvs_warning MSGSTR)
+  message(STATUS "${Yellow}[NVS-Warning]:${ColorReset} ${MSGSTR}")
+endfunction()
+
 function(nvs_debug MSGSTR)
-  message(STATUS "${Yellow}[NVS-Debug]:${ColorReset} ${MSGSTR}")
+  message(STATUS "${Magenta}[NVS-Debug]:${ColorReset} ${MSGSTR}")
 endfunction()
 
 function(nvs_fatal MSGSTR)
