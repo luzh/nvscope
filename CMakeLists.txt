@@ -1,8 +1,13 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(NVScope
-  DESCRIPTION "Automated recovery testing tools for NVMM applications"
+  DESCRIPTION "Analytics and recovery testing tools for NVMM applications"
 )
+
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Add CMake modules for NVScope.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
