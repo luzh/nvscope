@@ -74,10 +74,13 @@ function(nvs_set_sources_properties PROFILE)
   )
 
   set(EXTRA_COMPILE_FLAGS "")
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(EXTRA_COMPILE_FLAGS -O3 -DNDEBUG)
-  elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_CHECK)
+  if(BUILD_TYPE_CHECK STREQUAL "DEBUG")
+    nvs_print("Setting EXTRA_COMPILE_FLAGS for DEBUG build")
     set(EXTRA_COMPILE_FLAGS -ggdb)
+  elseif(BUILD_TYPE_CHECK STREQUAL "RELEASE")
+    nvs_print("Setting EXTRA_COMPILE_FLAGS for RELEASE build")
+    set(EXTRA_COMPILE_FLAGS -O3 -DNDEBUG)
   endif()
 
   # Specify -march for clflushopt/clwb to compile.

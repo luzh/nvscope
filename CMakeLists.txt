@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(NVScope
-  DESCRIPTION "Analytics and recovery testing tools for NVMM applications"
+  DESCRIPTION "Analytics and testing tools for NVMM applications"
 )
 
 set(CMAKE_C_STANDARD 99)

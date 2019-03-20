@@ -1,4 +1,4 @@
-# Analytics and Recovery Testing Tools for NVMM Apps
+# Analytics and Testing Tools for NVMM Applications
 
 Description.
 
@@ -18,7 +18,7 @@ rm llvm.tar.xz
 ## Build
 
 ```
-cmake -B build -S .
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
@@ -26,5 +26,6 @@ cmake --build build
 
 ```
 cd build
+make test
 ...
 ```
