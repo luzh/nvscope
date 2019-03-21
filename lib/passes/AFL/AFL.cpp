@@ -9,7 +9,6 @@
 #define AFL_LLVM_PASS
 
 #include "afl/config.h"
-#include "debug.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,15 +46,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   IntegerType *Int32Ty = IntegerType::getInt32Ty(C);
 
   /* Show a banner */
-
-  char be_quiet = 0;
-
-  if (isatty(2) && !getenv("AFL_QUIET"))
-    SAYF(cCYA "afl-llvm-pass " cBRI VERSION cRST
-              " by <lszekeres@google.com>\n");
-
-  else
-    be_quiet = 1;
+  errs() << "afl-llvm-pass by <lszekeres@google.com>\n";
 
   /* Decide instrumentation ratio */
 
@@ -64,8 +55,10 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   if (inst_ratio_str) {
     if (sscanf(inst_ratio_str, "%u", &inst_ratio) != 1 || !inst_ratio ||
-        inst_ratio > 100)
-      FATAL("Bad value of AFL_INST_RATIO (must be between 1 and 100)");
+        inst_ratio > 100) {
+      errs() << "Bad value of AFL_INST_RATIO (must be between 1 and 100)";
+      return false;
+    }
   }
 
   /* Get globals for the SHM region and the previous location. Note that
@@ -128,17 +121,16 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   /* Say something nice. */
 
-  if (!be_quiet) {
-    if (!inst_blocks)
-      WARNF("No instrumentation targets found.");
-    else
-      OKF("Instrumented %u locations (%s mode, ratio %u%%).", inst_blocks,
-          getenv("AFL_HARDEN")
-              ? "hardened"
-              : ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN"))
-                     ? "ASAN/MSAN"
-                     : "non-hardened"),
-          inst_ratio);
+  if (!inst_blocks) {
+    errs() << "No instrumentation targets found.";
+  } else {
+    const char *mode = getenv("AFL_HARDEN")
+                           ? "hardened"
+                           : ((getenv("AFL_USE_ASAN") || getenv("AFL_USE_MSAN"))
+                                  ? "ASAN/MSAN"
+                                  : "non-hardened");
+    errs() << "Instrumented " << inst_blocks << " locations (" << mode
+           << " mode, ratio " << inst_ratio << "%%).\n";
   }
 
   return true;
