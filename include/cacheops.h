@@ -14,7 +14,7 @@
  *
  * Do not use the faked operations for performance evaluation.
  *
- * Most machines should support _mm_sfence() and _mm_clflush() so they are not
+ * Most machines should support _mm_sfence() and _mm_clflush() so they are
  * simply wrapped.
  */
 
