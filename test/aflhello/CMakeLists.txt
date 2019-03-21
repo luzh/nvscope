@@ -11,20 +11,12 @@ set_property(
 )
 
 nvs_add_executable(${PROG} ${SRCS})
-
 add_dependencies(${PROG} AFLPasses)
-
 target_link_libraries(${PROG} aflrt)
 
-add_custom_target(
-  run-${PROG}
-  DEPENDS
-    ${PROG}
-  COMMENT
-    "Running aflhello (no fuzzing) ..."
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG}
-)
+add_test(NAME ${PROG}-exit0 COMMAND bash -c "./${PROG} <<< 123")
+add_test(NAME ${PROG}-abort COMMAND bash -c "./${PROG} <<< abc")
+set_tests_properties(${PROG}-abort PROPERTIES WILL_FAIL ON)
 
 set(AFL_FUZZ ${CMAKE_BINARY_DIR}/tools/afl/afl-fuzz)
 add_custom_target(
