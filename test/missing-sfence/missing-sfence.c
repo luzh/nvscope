@@ -1,5 +1,4 @@
 #include "headers.h"
-#include "debug.h"
 
 #define MMAP_SIZE (4096)
 #define OPEN_FLAG (O_CREAT | O_RDWR | O_SYNC)
@@ -39,16 +38,13 @@ int main(int argc, char **argv) {
   char *filename = argv[1];
   char *command = argv[2];
 
-  typedef int(*casefunc)(void *);
+  typedef int (*casefunc)(void *);
   casefunc cases[] = {case1, case1};
   casefunc runcase = NULL;
 
-  typedef int(*checkfunc)(void *);
+  typedef int (*checkfunc)(void *);
   checkfunc checkers[] = {check, check};
   checkfunc runchecker = NULL;
-
-  SHOW_VAR64U(sizeof(cases)/sizeof(cases[0]));
-  SHOW_VAR64U(sizeof(checkers)/sizeof(checkers[0]));
 
   if (strncmp(command, "case", 4) == 0) {
     size_t caseid = command[4] - '1';
