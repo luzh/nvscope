@@ -15,6 +15,8 @@ static char recovery[BINARY_PATH_LEN_MAX];
 static int32_t shm_id; /* ID of the SHM region */
 static char* shm_base; /* pointer to the SHM region */
 
+static char clockchars[4] = {'|', '/', '-', '\\'};
+
 /**
  * Communication functions
  *
@@ -199,9 +201,10 @@ static int check_status(int status, pid_t pid, char* pname) {
 }
 
 /*
- * Get rid of shared memory (atexit handler).
+ * Clean up before exit.
  */
-static void remove_shm(void) {
+static void cleanup(void) {
+  SAYF(CURSOR_SHOW);
   shmctl(shm_id, IPC_RMID, NULL);
   OKF("Shared memory removed");
 }
@@ -224,7 +227,7 @@ static void setup_shm(void) {
 
   OKF("Shared memory created");
 
-  atexit(remove_shm);
+  atexit(cleanup);
 
   shm_str = alloc_printf("%d", shm_id);
   setenv(NVS_ENV_SHM, shm_str, 1);
@@ -326,6 +329,15 @@ static pid_t start_forkserver(char* target, char** target_argv,
   return -1;
 }
 
+static void show_progress(size_t testid) {
+  /*
+   * Note: Printing wastes some cycles but it does not matter if the main and
+   * recovery processes take much more time.
+   */
+  SAYF(cLCY "[%c] " cRST "NVScope: finished test case %zu\r",
+       clockchars[testid & 3], testid);
+}
+
 int main(int argc, char** argv) {
   COMPILE_ERROR_ON(MAP_SIZE < NVS_SHM_RUNQ_OFF + NVS_SHM_RUNQ_SIZE);
   COMPILE_ERROR_ON(sizeof(struct nvs_target_config) != CLSIZE);
@@ -379,6 +391,8 @@ int main(int argc, char** argv) {
   benchmark_time_t start, end;
   benchmark_time_get(&start);
 
+  SAYF(CURSOR_HIDE);
+
   while (!fatal && !stop) {
     /* wait for requests from targets */
     main_info = read_message(main_info_fd);
@@ -422,10 +436,13 @@ int main(int argc, char** argv) {
         bug = check_status(tgconf_reco->status, tgconf_reco->pid, "recovery");
         main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
         send_message(main_ctrl_fd, main_ctrl);
+        show_progress(testcases);
         break;
       case MSG_TARGET_EXITED:
         check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
+        ACTF("NVScope: terminiating the mainproc forkserver...");
         send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
+        ACTF("NVScope: terminiating the recovery forkserver...");
         send_message(reco_ctrl_fd, MSG_EXIT_FORKSERVER);
         stop = 1;  // can restart the mainproc process
         break;
