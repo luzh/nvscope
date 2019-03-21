@@ -3,10 +3,9 @@
 Description.
 
 ## Setup
-The compiler part depends on LLVM 7.0.1. Refer to `scripts/build-llvm.sh` to
-build a customized version. Or acquire its pre-built binary can be acquired as
-follows. Place folder `llvm` or create a symbolic link in the project's root
-directory.
+The compiler part requires LLVM 7.0.1. Refer to `scripts/build-llvm.sh` to build
+a customized version. Or acquire its pre-built binary as follows. Place folder
+`llvm` or create a symbolic link in the project's root directory.
 
 ```bash
 mkdir -p llvm
