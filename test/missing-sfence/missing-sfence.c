@@ -1,3 +1,4 @@
+#include "cacheops.h"
 #include "headers.h"
 
 #define MMAP_SIZE (4096)
@@ -14,6 +15,9 @@ static int case1(void *pmem) {
 
   pobj->value = 9;
   pobj->valid = 1;
+
+  clwb(pmem);
+  sfence();
 
   return 0;
 }
