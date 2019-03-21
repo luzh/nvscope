@@ -215,9 +215,11 @@ function(nvs_add_executable)
       set(LLVM_OPT_BC_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.bc")
       set(LLVM_OPT_IR_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.ll")
       set(LLVM_OPT_AS_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.s")
+      set(LLVM_OPT_LOG_NAME "${SRC_FLAT_NAME}.opt${PASS_ID}.log")
       set(LLVM_OPT_BC_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_BC_NAME}")
       set(LLVM_OPT_IR_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_IR_NAME}")
       set(LLVM_OPT_AS_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_AS_NAME}")
+      set(LLVM_OPT_LOG_FILE "${LLVM_OUT_DIR}/${LLVM_OPT_LOG_NAME}")
 
       # Convert string to list to remove quotes.
       separate_arguments(PASS_ARGS UNIX_COMMAND ${LLVM_OPT_PASS})
@@ -235,13 +237,15 @@ function(nvs_add_executable)
 
       add_custom_command(
         OUTPUT
-          ${LLVM_OPT_BC_FILE} ${LLVM_OPT_IR_FILE} ${LLVM_OPT_AS_FILE}
+          ${LLVM_OPT_BC_FILE} ${LLVM_OPT_IR_FILE} ${LLVM_OPT_AS_FILE} ${LLVM_OPT_LOG_FILE}
         DEPENDS
           ${LLVM_BC_FILE} ${LLVM_OPT_DEPS}
         COMMENT
           "Applying LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}"
         COMMAND
-          ${LLVM_TOOLS_BINARY_DIR}/opt ${PASS_ARGS} ${LLVM_BC_FILE} -stats -o ${LLVM_OPT_BC_FILE}
+          ${LLVM_TOOLS_BINARY_DIR}/opt ${PASS_ARGS} ${LLVM_BC_FILE} -stats -o ${LLVM_OPT_BC_FILE} 2> ${LLVM_OPT_LOG_FILE}
+        COMMAND
+          ${CMAKE_COMMAND} -E echo "       LLVM opt details saved to ${LLVM_OPT_LOG_FILE}"
         COMMAND
           ${LLVM_TOOLS_BINARY_DIR}/llvm-dis ${LLVM_OPT_BC_FILE}
         COMMAND
