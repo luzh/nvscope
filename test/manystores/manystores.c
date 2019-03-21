@@ -1,36 +1,58 @@
 #include "cacheops.h"
 #include "headers.h"
 
-#define MMAP_SIZE (4096)
+#define MMAP_SIZE (10 * 1024 * 1024)
 #define OPEN_FLAGS (O_CREAT | O_RDWR | O_SYNC)
 #define OPEN_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 
-struct nvobj {
-  int value;
-  int valid;
-};
-
+/**
+ * This case should not be considered inconsistent. We use it for performance
+ * evaluation.
+ */
 static int case1(void *pmem) {
-  struct nvobj *pobj = (struct nvobj *)pmem;
+  if (((uint64_t)pmem & 4095) != 0) {
+    printf("Error: pmem %p is not 4K-aligned!\n", pmem);
+    return 1;
+  }
+  uint64_t *p64 = (uint64_t *)pmem;
 
-  pobj->value = 9;
-  pobj->valid = 1;
+  for (size_t i = 0; i < MMAP_SIZE / 8; ++i) {
+    p64[i] = i;
+    if ((i + 1) % 8 == 0) {
+      _mm_clflushopt(&p64[i]);
+      sfence();
+    }
+  }
 
-  clwb(pmem);
-  sfence();
+  printf("Stored %u words to pmem!\n", MMAP_SIZE / 8);
 
   return 0;
 }
 
-static int check(void *pmem) {
-  struct nvobj *pobj = (struct nvobj *)pmem;
-
-  if (pobj->valid && pobj->value != 9) {
-    printf("Consistency check failed!\n");
+static int check1(void *pmem) {
+  if (((uint64_t)pmem & 4095) != 0) {
+    printf("Error: pmem %p is not 4K-aligned!\n", pmem);
     return 1;
   }
+  uint64_t *p64 = (uint64_t *)pmem;
 
-  return 0;
+  int inhole = 0, err = 0;
+  for (size_t i = 0; i < MMAP_SIZE / 8; ++i) {
+    if (p64[i] != i && p64[i] == 0) {
+      inhole = 1;
+    } else if (inhole && p64[i] != 0) {
+      err = 1;
+      break;
+    }
+  }
+
+  if (err) printf("Error: inconsistent pmem data detected!\n");
+
+  return err;
+}
+
+static int nocheck(void *pmem) {
+  return (pmem == NULL);
 }
 
 int main(int argc, char **argv) {
@@ -47,7 +69,7 @@ int main(int argc, char **argv) {
   casefunc runcase = NULL;
 
   typedef int (*checkfunc)(void *);
-  checkfunc checkers[] = {check, check};
+  checkfunc checkers[] = {check1, nocheck};
   checkfunc runchecker = NULL;
 
   if (strncmp(command, "case", 4) == 0) {
