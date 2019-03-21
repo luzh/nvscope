@@ -204,6 +204,7 @@ struct NVScopeProbes : public FunctionPass {
               NVScopeSFenceOps = SFenceId;
             }
           } else {
+            // Calls through function pointers can be this type.
             // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
             errs() << "NVS-Pass: Indirect call\n";
           }
@@ -226,5 +227,5 @@ struct NVScopeProbes : public FunctionPass {
 }  // namespace
 
 char NVScopeProbes::ID = 0;
-static RegisterPass<NVScopeProbes> NVScopeInsertProbesPass(
+static RegisterPass<NVScopeProbes> NVScopeProbesPass(
     "probes", "NVScope Probes Insertion Pass");

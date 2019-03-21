@@ -145,4 +145,4 @@ bool AFLCoverage::runOnModule(Module &M) {
 }
 
 char AFLCoverage::ID = 0;
-static RegisterPass<AFLCoverage> AFLPass("aflcov", "AFL Coverage Pass");
+static RegisterPass<AFLCoverage> AFLCoveragePass("aflcov", "AFL Coverage Pass");

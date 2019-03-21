@@ -7,12 +7,12 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVS_PASSES_DIR}/AFL/LLVMAFL.so -aflcov"
+    "-load ${NVS_PASSES_DIR}/AFL/AFLPasses.so -aflcov"
 )
 
 nvs_add_executable(${PROG} ${SRCS})
 
-add_dependencies(${PROG} LLVMAFL)
+add_dependencies(${PROG} AFLPasses)
 
 target_link_libraries(${PROG} aflrt)
 

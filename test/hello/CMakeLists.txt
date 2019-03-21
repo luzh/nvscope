@@ -7,14 +7,14 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -hello"
-    "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -hello2"
-    "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -bin2mul"
+    "-load ${NVS_PASSES_DIR}/Hello/HelloPasses.so -hello"
+    "-load ${NVS_PASSES_DIR}/Hello/HelloPasses.so -hello2"
+    "-load ${NVS_PASSES_DIR}/Hello/HelloPasses.so -bin2mul"
 )
 
 nvs_add_executable(${PROG} ${SRCS})
 
-add_dependencies(${PROG} HelloPass)
+add_dependencies(${PROG} HelloPasses)
 
 add_test(NAME ${PROG}-1 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}>)
 add_test(NAME ${PROG}-2 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> 5)
