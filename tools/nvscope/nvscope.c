@@ -107,7 +107,7 @@ static void check_binary(char* fname, char* target) {
     SAYF("\n" cLRD "[-] " cRST
          "Oops, the target buffer length is not large enough to store the\n"
          "    target binary's path. Try to increase BINARY_PATH_MLEN_MAX.\n");
-    FATAL("NVScope: BINARY_PATH_LEN_LEN %zu <= bin_path_len %zu",
+    FATAL("NVScope: BINARY_PATH_LEN_LEN %u <= bin_path_len %zu",
           BINARY_PATH_LEN_MAX, bin_path_len);
   }
 
