@@ -1,20 +1,21 @@
-nvs_set_sources_properties(C_Default hello.c)
+set(PROG hello)
+set(SRCS hello.c)
 
-set(TARGET hello)
+nvs_set_sources_properties(C_Default ${SRCS})
 
 set_property(
   SOURCE
-    hello.c
+    ${SRCS}
   PROPERTY LLVM_OPT_PASSES
     "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -hello"
     "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -hello2"
     "-load ${NVS_PASSES_DIR}/Hello/HelloPass.so -bin2mul"
 )
 
-nvs_add_executable(${TARGET} hello.c)
+nvs_add_executable(${PROG} ${SRCS})
 
-add_dependencies(${TARGET} HelloPass)
+add_dependencies(${PROG} HelloPass)
 
-add_test(NAME ${TARGET}-1 COMMAND $<TARGET_NAME_IF_EXISTS:${TARGET}>)
-add_test(NAME ${TARGET}-2 COMMAND $<TARGET_NAME_IF_EXISTS:${TARGET}> 5)
-add_test(NAME ${TARGET}-3 COMMAND $<TARGET_NAME_IF_EXISTS:${TARGET}> 8 9)
+add_test(NAME ${PROG}-1 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}>)
+add_test(NAME ${PROG}-2 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> 5)
+add_test(NAME ${PROG}-3 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> 8 9)
