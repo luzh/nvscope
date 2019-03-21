@@ -72,7 +72,6 @@ function(nvs_set_sources_properties PROFILE)
     SOURCE
       ${SRCS}
     PROPERTY COMPILE_DEFINITIONS
-      COLORFUL
       _GNU_SOURCE
       MESSAGES_TO_STDOUT
   )

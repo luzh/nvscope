@@ -11,7 +11,7 @@
 
 /* Terminal colors */
 
-#ifdef COLORFUL
+#ifdef COLORPRINT
 
 #define cBLK "\x1b[0;30m"
 #define cRED "\x1b[0;31m"
