@@ -142,7 +142,8 @@ static void check_binary(char* fname, char* target) {
 
   if (!memmem(f_data, f_len, NVS_ENV_SHM, strlen(NVS_ENV_SHM) + 1)) {
     SAYF("\n" cLRD "[-] " cRST
-         "Looks like the target binary is not instrumented!\n");
+         "Looks like the target binary is not instrumented: %s\n",
+         target);
     FATAL("NVScope: no instrumentation detected - '%s' not found", NVS_ENV_SHM);
   }
 
@@ -344,12 +345,41 @@ int main(int argc, char** argv) {
   COMPILE_ERROR_ON(sizeof(struct nvs_target_config) != CLSIZE);
   COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvs_config, mainproc)));
 
-  if (argc < 2) FATAL("Usage: %s <mainproc>", argv[0]);
+  if (argc < 5)
+    FATAL(
+        "NVSope usage: %s --nvs-mainproc <mainproc and args> --nvs-recovery "
+        "<recovery and args>",
+        argv[0]);
 
-  char** mainproc_argv = argv + 1;  // skip the nvscope program
+  int main_args_start = 0, main_args_end = 0, reco_args_start = 0;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--nvs-mainproc") == 0) {
+      if (main_args_start != 0) FATAL("NVSope: duplicated --nvs-mainproc");
+      main_args_start = i + 1;
+    }
+    if (strcmp(argv[i], "--nvs-recovery") == 0) {
+      if (reco_args_start != 0) FATAL("NVSope: duplicated --nvs-recovery");
+      argv[i] = NULL;  // for terminating mainproc_argv
+      main_args_end = i - 1;
+      reco_args_start = i + 1;
+    }
+  }
+  if (main_args_start == 0 || main_args_end == 0 || reco_args_start >= argc ||
+      main_args_end < main_args_start)
+    FATAL("NVScope: argument parsing error!");
 
-  check_binary(argv[1], mainproc);
-  ACTF("Preparing to test program %s", mainproc);
+  char** mainproc_argv = argv + main_args_start;
+  char** recovery_argv = argv + reco_args_start;
+
+  check_binary(argv[main_args_start], mainproc);
+  SAYF(cLBL "[*] " cRST "Mainproc program and args:", mainproc);
+  for (char** arg = mainproc_argv; *arg != NULL; arg++) SAYF(" %s", *arg);
+  SAYF("\n");
+
+  check_binary(argv[reco_args_start], recovery);
+  SAYF(cLBL "[*] " cRST "Recovery program and args:", mainproc);
+  for (char** arg = recovery_argv; *arg != NULL; arg++) SAYF(" %s", *arg);
+  SAYF("\n");
 
   setup_shm();
 
@@ -368,10 +398,6 @@ int main(int argc, char** argv) {
                                          &main_info_fd, &main_ctrl_fd);
   if (main_fksv_pid < 0)
     FATAL("NVScope: mainproc's forkserver failed to start");
-
-  // Todo: Get recovery process from command line options.
-  memcpy(recovery, mainproc, BINARY_PATH_LEN_MAX);
-  char* recovery_argv[] = {recovery, "pmemfile1", "check2", NULL};
 
   ACTF("NVScope: spinning up the forkserver for recovery...");
   config->target_type = TYPE_RECOVERY;  // must set before start_forkserver()
@@ -440,6 +466,7 @@ int main(int argc, char** argv) {
         show_progress(testcases);
         break;
       case MSG_TARGET_EXITED:
+        SAYF("\n");
         check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
         ACTF("NVScope: terminiating the mainproc forkserver...");
         send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
