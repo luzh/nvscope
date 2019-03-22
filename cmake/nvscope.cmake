@@ -83,7 +83,8 @@ function(nvs_set_sources_properties PROFILE)
     set(EXTRA_COMPILE_FLAGS -ggdb)
   elseif(BUILD_TYPE_CHECK STREQUAL "RELEASE")
     nvs_print("Setting EXTRA_COMPILE_FLAGS for RELEASE build")
-    set(EXTRA_COMPILE_FLAGS -O3 -DNDEBUG)
+    # need -ggdb for debugging information
+    set(EXTRA_COMPILE_FLAGS -O3 -ggdb -DNDEBUG)
   endif()
 
   # Specify -march for clflushopt/clwb to compile.
