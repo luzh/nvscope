@@ -334,8 +334,9 @@ static void show_progress(size_t testid) {
    * Note: Printing wastes some cycles but it does not matter if the main and
    * recovery processes take much more time.
    */
+  size_t charid = (testid >> 10) & 3;
   SAYF(cLCY "[%c] " cRST "NVScope: finished test case %zu\r",
-       clockchars[testid & 3], testid);
+       clockchars[charid], testid);
 }
 
 int main(int argc, char** argv) {
