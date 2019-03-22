@@ -1,7 +1,7 @@
 #include "cacheops.h"
 #include "headers.h"
 
-#define MMAP_SIZE (10 * 1024 * 1024)
+#define MMAP_SIZE (256 * 1024)
 #define OPEN_FLAGS (O_CREAT | O_RDWR | O_SYNC)
 #define OPEN_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 
@@ -15,13 +15,16 @@ static int case1(void *pmem) {
     return 1;
   }
   uint64_t *p64 = (uint64_t *)pmem;
+  uint64_t *cnt = (uint64_t *)pmem;
 
-  for (size_t i = 0; i < MMAP_SIZE / 8; ++i) {
+  for (uint64_t i = 1; i < MMAP_SIZE / 8; ++i) {
     p64[i] = i;
-    if ((i + 1) % 8 == 0) {
-      _mm_clflushopt(&p64[i]);
-      sfence();
-    }
+    clflushopt(&p64[i]);
+    sfence();
+
+    *cnt = i;
+    clflushopt(cnt);
+    sfence();
   }
 
   printf("Stored %u words to pmem!\n", MMAP_SIZE / 8);
@@ -37,7 +40,7 @@ static int check1(void *pmem) {
   uint64_t *p64 = (uint64_t *)pmem;
 
   int inhole = 0, err = 0;
-  for (size_t i = 0; i < MMAP_SIZE / 8; ++i) {
+  for (size_t i = 1; i < MMAP_SIZE / 8; ++i) {
     if (p64[i] != i && p64[i] == 0) {
       inhole = 1;
     } else if (inhole && p64[i] != 0) {
@@ -51,9 +54,7 @@ static int check1(void *pmem) {
   return err;
 }
 
-static int nocheck(void *pmem) {
-  return (pmem == NULL);
-}
+static int nocheck(void *pmem) { return (pmem == NULL); }
 
 int main(int argc, char **argv) {
   if (argc != 3) {
