@@ -85,16 +85,10 @@ struct nvs_runq_entry {
     uint64_t *ptr64;
   };
   union {
-    uint8_t old8;
-    uint16_t old16;
-    uint32_t old32;
-    uint64_t old64;
-  };
-  union {
-    uint8_t new8;
-    uint16_t new16;
-    uint32_t new32;
-    uint64_t new64;
+    uint8_t val8;
+    uint16_t val16;
+    uint32_t val32;
+    uint64_t val64;
   };
 };
 

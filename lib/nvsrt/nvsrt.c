@@ -21,8 +21,8 @@ static void __nvs_print_runq() {
   DBGF(cCYA "--- NVS-RT run queue (...) ---" cRST);
   struct nvs_runq_entry *e = runq->entries;
   for (size_t i = 0; i < runq->len; i++, e++) {
-    DBGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->old64,
-         e->new64);
+    DBGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->val64,
+         *e->ptr64);
   }
   DBGF(cCYA "--- NVS-RT run queue (***) ---" cRST);
 }
@@ -67,8 +67,6 @@ static void __nvs_setup_shm(void) {
     uint32_t shmid = atoi(shmid_str);
 
     __shm_base = shmat(shmid, NULL, 0);
-
-    /* Whooooops. */
 
     if (__shm_base == (void *)-1) _exit(NVS_EXIT_BAD_SHM);
 
@@ -203,15 +201,14 @@ static inline int __store64_in_pmem(uint64_t *ptr) {
   return 1;
 }
 
-static inline int __runq_push_back_store64(uint64_t *ptr, uint64_t val) {
+static inline int __runq_push_back_store64(uint64_t *ptr) {
   if (runq->len == NVS_SHM_RUNQ_MAX_LEN) {
     ERRF("NVS-RT: run queue is full (%lu entries)!", runq->len);
     _exit(NVS_EXIT_RUNQ_FULL);
   }
 
   runq->entries[runq->len].ptr64 = ptr;
-  runq->entries[runq->len].old64 = *ptr;
-  runq->entries[runq->len].new64 = val;
+  runq->entries[runq->len].val64 = *ptr;
   runq->len += 1;
 
   return 0;
@@ -229,6 +226,7 @@ static inline void __runq_flush() {
 
 static int __next_test_case(uint64_t sfid) {
   static size_t caseid = 0;
+  uint64_t oldval, newval;
 
   if (caseid == 0) {
     TESTC("NVS-RT: make test case #%zu: crash after sfence #%zu", caseid, sfid);
@@ -238,10 +236,12 @@ static int __next_test_case(uint64_t sfid) {
 
   if (caseid > 1) {
     struct nvs_runq_entry *e = &runq->entries[caseid - 2];
-    *e->ptr64 = e->new64;
+    oldval = *e->ptr64;
+    newval = e->val64;
+    *e->ptr64 = newval;
     TESTC(
         "NVS-RT: pass over test case #%zu: redo store i64 [%p] 0x%lx -> 0x%lx",
-        caseid - 1, e->ptr64, e->old64, e->new64);
+        caseid - 1, e->ptr64, oldval, newval);
   }
 
   if (runq->len < caseid) {
@@ -251,10 +251,14 @@ static int __next_test_case(uint64_t sfid) {
 
   struct nvs_runq_entry *e = &runq->entries[caseid - 1];
 
-  *e->ptr64 = e->old64;
+  oldval = e->val64;
+  newval = *e->ptr64;
+
+  e->val64 = newval;
+  *e->ptr64 = oldval;
 
   TESTC("NVS-RT: make test case #%zu: undo store i64 [%p] 0x%lx <- 0x%lx",
-        caseid, e->ptr64, e->old64, e->new64);
+        caseid, e->ptr64, oldval, newval);
   caseid++;
 
   (void)sfid;
@@ -262,9 +266,8 @@ static int __next_test_case(uint64_t sfid) {
   return 1;
 }
 
-static inline int __recoverq_push_back_store64(uint64_t *ptr, uint64_t val) {
+static inline int __recoverq_push_back_store64(uint64_t *ptr) {
   (void)ptr;
-  (void)val;
 
   return 0;
 }
@@ -287,64 +290,72 @@ static void __emulate_crash(uint64_t sfid) {
   }
 }
 
-#ifdef NDEBUG
-void __nvs_probe_store64(uint64_t *ptr, uint64_t val) {
-  DBGF("NVS-RT: store i64 [%p] 0x%lx -> 0x%lx", (void *)ptr, *ptr, val);
-#else
-void __nvs_probe_store64(uint64_t *ptr, uint64_t val, char *file, char *func,
-                         int line) {
-  DBGF("NVS-RT: [%s, %s(), line %d]: store i64 [%p] 0x%lx -> 0x%lx", file, func,
-       line, (void *)ptr, *ptr, val);
-#endif
+void __nvs_probe_store64(uint64_t *ptr) {
+  DBGF("NVS-RT: store i64 to %p", ptr);
+
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
   if (!__nvs_enabled || !tgconf->tracing) return;
 
   if (!__store64_in_pmem(ptr)) return;
 
-  if (tgconf->stage == MAINPROC) __runq_push_back_store64(ptr, val);
+  if (tgconf->stage == MAINPROC) __runq_push_back_store64(ptr);
 
-  if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr, val);
+  if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr);
 }
 
-#ifdef NDEBUG
-void __nvs_probe_mmap(uint64_t mapaddr, uint64_t mapsize) {
-  DBGF("NVS-RT: mmap addr %p size %lu", (void *)mapaddr, mapsize);
-#else
-void __nvs_probe_mmap(uint64_t mapaddr, uint64_t mapsize, char *file,
-                      char *func, int line) {
-  DBGF("NVS-RT: [%s, %s(), line %d]: mmap addr %p size %lu", file, func, line,
-       (void *)mapaddr, mapsize);
-#endif
+void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file, int line) {
+  DBGF("NVS-RT: [%s() at %s:%4d]: store to %p size %lu", func, file, line, ptr, size);
+
+  (void)func;
+  (void)file;
+  (void)line;
+
+  if (size == 8) // Todo: handle other sizes
+    __nvs_probe_store64(ptr);
+}
+
+void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file, int line) {
+  DBGF("NVS-RT: [%s() at %s:%4d]: mmap addr %p size %lu", func, file, line, ptr, size);
+
   if (!__nvs_enabled || !tgconf->tracing) return;
 
-  (void)mapaddr;
-  (void)mapsize;
+  (void)ptr;
+  (void)size;
+  (void)func;
+  (void)file;
+  (void)line;
 
   /* Implementation */
   tgconf->stage = MAINPROC;
 }
 
-void __nvs_probe_clflush(uint64_t *ptr) {
-  DBGF("NVS-RT: seeing a CLFLUSH on %p", (void *)ptr);
+void __nvs_probe_clflush(void *ptr, char *func, char *file, int line) {
+  void *clptr = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: flush addr %p cache line %p", func, file, line, ptr, clptr);
 
   (void)ptr;
+  (void)clptr;
+  (void)func;
+  (void)file;
+  (void)line;
 
   if (!__nvs_enabled || !tgconf->tracing) return;
 }
 
-#ifdef NDEBUG
-void __nvs_probe_sfence(uint64_t sfid) {
-  DBGF("NVS-RT: epoch [sfence] #%lu", sfid);
-#else
-void __nvs_probe_sfence(uint64_t sfid, char *file, char *func, int line) {
-  DBGF("NVS-RT: [%s, %s(), line %d]: sfence #%lu", file, func, line, sfid);
-#endif
+void __nvs_probe_sfence(uint64_t sfid, char *func, char *file, int line) {
+  DBGF("NVS-RT: [%s() at %s:%4d]: sfence #%lu", func, file, line, sfid);
+
   if (!__nvs_enabled || !tgconf->tracing) return;
 
   __nvs_print_runq();
   __emulate_crash(sfid);
   __runq_flush();
+
+  (void)func;
+  (void)file;
+  (void)line;
 
   TESTC("NVS-RT: pass over epoch [sfence] #%zu", sfid);
 }
