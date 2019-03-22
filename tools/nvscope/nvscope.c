@@ -370,7 +370,7 @@ int main(int argc, char** argv) {
 
   // Todo: Get recovery process from command line options.
   memcpy(recovery, mainproc, BINARY_PATH_LEN_MAX);
-  char* recovery_argv[] = {recovery, "stackfile", "check", NULL};
+  char* recovery_argv[] = {recovery, "pmemfile1", "check2", NULL};
 
   ACTF("NVScope: spinning up the forkserver for recovery...");
   config->target_type = TYPE_RECOVERY;  // must set before start_forkserver()
@@ -483,11 +483,17 @@ int main(int argc, char** argv) {
   benchmark_time_get(&end);
   benchmark_time_diff(&runtime, &start, &end);
   unsigned long long runns = benchmark_time_get_nsecs(&runtime);
-  unsigned long long avgns = runns / testcases;
 
-  OKF("NVScope: total elapsed time to run %zu test cases is %lld ns, per test "
-      "case time is %lld ns",
-      testcases, runns, avgns);
+  if (testcases > 0) {
+    unsigned long long avgns = runns / testcases;
+
+    OKF("NVScope: total elapsed time to run %zu test cases is %lld ns, per "
+        "test case time is %lld ns",
+        testcases, runns, avgns);
+  } else {
+    WARNF("NVScope: total elapsed time to run is %lld ns with 0 testcases",
+          runns);
+  }
 
   return 0;
 }
