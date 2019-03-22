@@ -16,19 +16,21 @@ target_link_libraries(${PROG} nvsrt)
 
 # Note newer tests depend on older ones because the stackfile is stateful.
 
-add_test(NAME ${PROG}-push1  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> push stackfile)
-add_test(NAME ${PROG}-show1  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> show stackfile)
-add_test(NAME ${PROG}-pop1   COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> pop stackfile)
-add_test(NAME ${PROG}-pop2   COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> pop stackfile)
-add_test(NAME ${PROG}-show2  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> show stackfile)
-add_test(NAME ${PROG}-push3  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> push stackfile)
-add_test(NAME ${PROG}-push4  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> push stackfile)
-add_test(NAME ${PROG}-show3  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> show stackfile)
-add_test(NAME ${PROG}-check1 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> check stackfile)
+set(RUNPROG ${CMAKE_CURRENT_BINARY_DIR}/${PROG})
+
+add_test(NAME ${PROG}-push1  COMMAND ${RUNPROG} push stackfile)
+add_test(NAME ${PROG}-show1  COMMAND ${RUNPROG} show stackfile)
+add_test(NAME ${PROG}-pop1   COMMAND ${RUNPROG} pop stackfile)
+add_test(NAME ${PROG}-pop2   COMMAND ${RUNPROG} pop stackfile)
+add_test(NAME ${PROG}-show2  COMMAND ${RUNPROG} show stackfile)
+add_test(NAME ${PROG}-push3  COMMAND ${RUNPROG} push stackfile)
+add_test(NAME ${PROG}-push4  COMMAND ${RUNPROG} push stackfile)
+add_test(NAME ${PROG}-show3  COMMAND ${RUNPROG} show stackfile)
+add_test(NAME ${PROG}-check1 COMMAND ${RUNPROG} check stackfile)
 
 add_custom_target(
   scope-${PROG}-push DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
   DEPENDS nvscope
   COMMAND
-    ${NVS_TOOLS_DIR}/nvscope ${CMAKE_CURRENT_BINARY_DIR}/${PROG} push ${STACKFILE}
+    ${NVS_TOOLS_DIR}/nvscope --nvs-mainproc ${RUNPROG} push stackfile --nvs-recovery ${RUNPROG} check stackfile
 )

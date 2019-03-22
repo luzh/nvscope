@@ -1,5 +1,5 @@
-#include "headers.h"
 #include "cacheops.h"
+#include "headers.h"
 
 #define MMAP_SIZE (4096)
 #define OPEN_FLAGS (O_CREAT | O_RDWR | O_SYNC)

@@ -32,7 +32,10 @@ static int case1(void *pmem) {
   return 0;
 }
 
-static int check1(void *pmem) {
+/* minimize checking overhead for performance evaluation */
+static int check1(void *pmem) { return (pmem == NULL); }
+
+static int check2(void *pmem) {
   if (((uint64_t)pmem & 4095) != 0) {
     printf("Error: pmem %p is not 4K-aligned!\n", pmem);
     return 1;
@@ -54,8 +57,6 @@ static int check1(void *pmem) {
   return err;
 }
 
-static int nocheck(void *pmem) { return (pmem == NULL); }
-
 int main(int argc, char **argv) {
   if (argc != 3) {
     printf("Usage: %s <caseN | checkN> <file>\n", argv[0]);
@@ -70,7 +71,7 @@ int main(int argc, char **argv) {
   casefunc runcase = NULL;
 
   typedef int (*checkfunc)(void *);
-  checkfunc checkers[] = {check1, nocheck};
+  checkfunc checkers[] = {check1, check2};
   checkfunc runchecker = NULL;
 
   if (strncmp(command, "case", 4) == 0) {
