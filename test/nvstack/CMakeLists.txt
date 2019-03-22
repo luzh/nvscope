@@ -11,58 +11,24 @@ set_property(
 )
 
 nvs_add_executable(${PROG} ${SRCS})
-
 add_dependencies(${PROG} NVScopePasses)
-
 target_link_libraries(${PROG} nvsrt)
 
-set(STACKFILE "./stackfile")
+# Note newer tests depend on older ones because the stackfile is stateful.
+
+add_test(NAME ${PROG}-push1  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> push stackfile)
+add_test(NAME ${PROG}-show1  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> show stackfile)
+add_test(NAME ${PROG}-pop1   COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> pop stackfile)
+add_test(NAME ${PROG}-pop2   COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> pop stackfile)
+add_test(NAME ${PROG}-show2  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> show stackfile)
+add_test(NAME ${PROG}-push3  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> push stackfile)
+add_test(NAME ${PROG}-push4  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> push stackfile)
+add_test(NAME ${PROG}-show3  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> show stackfile)
+add_test(NAME ${PROG}-check1 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> check stackfile)
 
 add_custom_target(
-  push-${PROG} DEPENDS ${PROG} COMMENT "Running ${PROG} (push) ..."
-  COMMAND
-    test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} show
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} check
-)
-
-add_custom_target(
-  pop-${PROG} DEPENDS ${PROG} COMMENT "Running ${PROG} (pop) ..."
-  COMMAND
-    test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} pop
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} show
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} check
-)
-
-add_custom_target(
-  show-${PROG} DEPENDS ${PROG} COMMENT "Running ${PROG} (show) ..."
-  COMMAND
-    test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} show
-)
-
-add_custom_target(
-  check-${PROG} DEPENDS ${PROG} COMMENT "Running ${PROG} (check) ..."
-  COMMAND
-    test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
-  COMMAND
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} check
-)
-
-add_custom_target(
-  scope-push-${PROG} DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
+  scope-${PROG}-push DEPENDS ${PROG} COMMENT "Testing ${PROG} (push) ..."
   DEPENDS nvscope
   COMMAND
-    test -f ${STACKFILE} || dd if=/dev/zero of=${STACKFILE} bs=4k count=1
-  COMMAND
-    ${NVS_TOOLS_DIR}/nvscope ${CMAKE_CURRENT_BINARY_DIR}/${PROG} ${STACKFILE} push
+    ${NVS_TOOLS_DIR}/nvscope ${CMAKE_CURRENT_BINARY_DIR}/${PROG} push ${STACKFILE}
 )
