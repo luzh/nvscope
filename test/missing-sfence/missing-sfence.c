@@ -75,11 +75,14 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (strncmp(filename, "/dev/", 5) != 0) {
-    if (fallocate(fd, 0, 0, MMAP_SIZE) < 0) {
-      printf("Error: fallocate failed!\n");
-      close(fd);
-      return 1;
+  if (runcase) {
+    /* A checker should not modify the file with fallocate(). */
+    if (strncmp(filename, "/dev/", 5) != 0) {
+      if (fallocate(fd, 0, 0, MMAP_SIZE) < 0) {
+        printf("Error: fallocate failed!\n");
+        close(fd);
+        return 1;
+      }
     }
   }
 
