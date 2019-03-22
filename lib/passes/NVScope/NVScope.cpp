@@ -60,9 +60,24 @@ private:
   Value *findName(StringRef name, std::unordered_map<std::string, Value*>& map, IRBuilder<> &irb);
   void getDebugInfo(Instruction* I, StringRef& func, StringRef& file, int& line);
 
+  std::unordered_set<Value*> _stack;
   std::unordered_map<std::string, Value*> _files;
   std::unordered_map<std::string, Value*> _funcs;
 };
+
+/**
+ * Collect values that are allocated on the function stack.
+ */
+void NVScopeProbes::collectStackVariables(Function &F) {
+  _stack.clear();
+  for (auto &B : F) {
+    for (auto &I : B) {
+      if (I.getOpcode() == Instruction::Alloca) {
+        _stack.insert(dyn_cast<Value>(&I));
+      }
+    }
+  }
+}
 
 Value *NVScopeProbes::findName(StringRef name, std::unordered_map<std::string, Value*>& map, IRBuilder<> &irb) {
   auto pair = map.find(name.str());
@@ -90,6 +105,11 @@ void NVScopeProbes::getDebugInfo(Instruction* I, StringRef& func, StringRef& fil
  */
 bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
   Value *Ptr = StI->getPointerOperand();
+  // ignore stores to the function stack.
+  auto it = _stack.find(Ptr);
+  if (it != _stack.end()) {
+    return false;
+  }
   // Insert before the store instruction.
   IRBuilder<> IRB(StI);
   auto func = F.getName();
@@ -112,7 +132,7 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
        ConstantInt::get(IRB.getInt32Ty(), line, false)});
   ++NVScopeStoreInsts;
 
-  errs() << "NVScope: ";
+  errs() << "NVS-Pass: ";
   errs().write_escaped(file) << ":" << line << " store " << size << " bytes\n";
 
   return true;
@@ -161,6 +181,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
   StringRef file = "unknown source file";
   getDebugInfo(CI, func, file, line);
   bool Modified = false;
+
   if (Function *CIF = CI->getCalledFunction()) {
     StringRef callee = CIF->getName();
     if (callee.endswith("mmap")) {
@@ -176,7 +197,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
                      ConstantInt::get(Int32Ty, line, false)});
       Modified = true;
 
-      errs() << "NVScope: ";
+      errs() << "NVS-Pass: ";
       errs().write_escaped(file) << ":" << line << " mmap()\n";
 
     } else if (callee.contains("memset") ||
@@ -193,7 +214,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
                       ConstantInt::get(Int32Ty, line, false)});
       Modified = true;
 
-      errs() << "NVScope: ";
+      errs() << "NVS-Pass: ";
       errs().write_escaped(file) << ":" << line << " memcpy() or memset()\n";
 
     } else if (callee == "llvm.x86.sse2.clflush") {
@@ -207,7 +228,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
                       ConstantInt::get(Int32Ty, line, false)});
       Modified = true;
 
-      errs() << "NVScope: ";
+      errs() << "NVS-Pass: ";
       errs().write_escaped(file) << ":" << line << " _mm_clflush()\n";
 
     } else if (callee == "llvm.x86.sse.sfence") {
@@ -220,11 +241,16 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
                       ConstantInt::get(Int32Ty, line, false)});
       Modified = true;
 
-      errs() << "NVScope: ";
+      errs() << "NVS-Pass: ";
       errs().write_escaped(file) << ":" << line << " _mm_sfence()\n";
 
     }
+  } else {
+    // Calls through function pointers can be this type.
+    // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
+    errs() << "NVS-Pass: Indirect call\n";
   }
+
   if (Modified) {
     ++NVScopeCallInsts;
   }
@@ -238,9 +264,10 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
 bool NVScopeProbes::runOnFunction(Function &F) {
   ++NVScopeFunctions;
 
-  errs() << "NVScope: Analyzing function ";
+  errs() << "NVS-Pass: Analyzing function ";
   errs().write_escaped(F.getName()) << "()\n";
 
+  collectStackVariables(F);
   bool Modified = false;
   for (auto &B : F) {
     for (auto &I : B) {
