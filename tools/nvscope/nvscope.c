@@ -372,12 +372,12 @@ int main(int argc, char** argv) {
   char** recovery_argv = argv + reco_args_start;
 
   check_binary(argv[main_args_start], mainproc);
-  SAYF(cLBL "[*] " cRST "Mainproc program and args:", mainproc);
+  SAYF(cLBL "[*] " cRST "Mainproc program and args:");
   for (char** arg = mainproc_argv; *arg != NULL; arg++) SAYF(" %s", *arg);
   SAYF("\n");
 
   check_binary(argv[reco_args_start], recovery);
-  SAYF(cLBL "[*] " cRST "Recovery program and args:", mainproc);
+  SAYF(cLBL "[*] " cRST "Recovery program and args:");
   for (char** arg = recovery_argv; *arg != NULL; arg++) SAYF(" %s", *arg);
   SAYF("\n");
 
