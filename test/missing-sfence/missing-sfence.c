@@ -35,12 +35,12 @@ static int check(void *pmem) {
 
 int main(int argc, char **argv) {
   if (argc != 3) {
-    printf("Usage: %s <file> <caseN | checkN>\n", argv[0]);
+    printf("Usage: %s <caseN | checkN> <file>\n", argv[0]);
     return 1;
   }
 
-  char *filename = argv[1];
-  char *command = argv[2];
+  char *command = argv[1];
+  char *filename = argv[2];
 
   typedef int (*casefunc)(void *);
   casefunc cases[] = {case1, case1};
@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
 
   int fd = open(filename, OPEN_FLAGS, OPEN_MODE);
   if (fd < 0) {
-    printf("Error: open '%s' failed!\n", argv[1]);
+    printf("Error: open '%s' failed!\n", filename);
     return 1;
   }
 

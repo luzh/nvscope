@@ -14,5 +14,5 @@ nvs_add_executable(${PROG} ${SRCS})
 add_dependencies(${PROG} NVScopePasses)
 target_link_libraries(${PROG} nvsrt)
 
-add_test(NAME ${PROG}-case1  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> casefile1 case1)
-add_test(NAME ${PROG}-check1 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> casefile1 check1)
+add_test(NAME ${PROG}-case1  COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> case1 casefile1)
+add_test(NAME ${PROG}-check1 COMMAND $<TARGET_NAME_IF_EXISTS:${PROG}> check1 casefile1)
