@@ -304,19 +304,23 @@ void __nvs_probe_store64(uint64_t *ptr) {
   if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr);
 }
 
-void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file, int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: store to %p size %lu", func, file, line, ptr, size);
+void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file,
+                       int line) {
+  DBGF("NVS-RT: [%s() at %s:%4d]: store to %p size %lu", func, file, line, ptr,
+       size);
 
   (void)func;
   (void)file;
   (void)line;
 
-  if (size == 8) // Todo: handle other sizes
+  if (size == 8)  // Todo: handle other sizes
     __nvs_probe_store64(ptr);
 }
 
-void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file, int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: mmap addr %p size %lu", func, file, line, ptr, size);
+void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file,
+                         int line) {
+  DBGF("NVS-RT: [%s() at %s:%4d]: mmap addr %p size %lu", func, file, line, ptr,
+       size);
 
   if (!__nvs_enabled || !tgconf->tracing) return;
 
@@ -333,7 +337,8 @@ void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file, int l
 void __nvs_probe_clflush(void *ptr, char *func, char *file, int line) {
   void *clptr = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: flush addr %p cache line %p", func, file, line, ptr, clptr);
+  DBGF("NVS-RT: [%s() at %s:%4d]: flush addr %p cache line %p", func, file,
+       line, ptr, clptr);
 
   (void)ptr;
   (void)clptr;
