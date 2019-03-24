@@ -65,7 +65,13 @@ struct NVScopeProbes : public FunctionPass {
   std::unordered_set<Value *> _stack;
   std::unordered_map<std::string, Value *> _files;
   std::unordered_map<std::string, Value *> _funcs;
+
+  static std::unordered_set<std::string> _excluded;
 };
+
+/**
+ */
+std::unordered_set<std::string> NVScopeProbes::_excluded = {"clflush", "clflushopt", "clwb", "sfence"};
 
 /**
  * Collect values that are allocated on the function stack.
@@ -184,6 +190,11 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
   getDebugInfo(CI, func, file, line);
   bool Modified = false;
 
+  /**
+   * TODO: Instrumenting calls depends on the callee's names in LLVM IR. The
+   * following conditions may not be comprehensive.
+   */
+
   if (Function *CIF = CI->getCalledFunction()) {
     StringRef callee = CIF->getName();
     if (callee.endswith("mmap")) {
@@ -218,7 +229,21 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       errs() << "NVS-Pass: ";
       errs().write_escaped(file) << ":" << line << " memcpy() or memset()\n";
 
-    } else if (callee == "llvm.x86.sse2.clflush") {
+    } else if (callee == "clflushopt" || callee == "llvm.x86.sse2.clflushopt") {
+      ++NVScopeCLFOptOps;
+      std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int8PtrTy, Int32Ty};
+      FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
+      IRB.CreateCall(
+          F.getParent()->getOrInsertFunction("__nvs_probe_clflushopt", ProbeTy),
+          {CI->getOperand(0), findName(func, _funcs, IRB),
+           findName(file, _files, IRB),
+           ConstantInt::get(Int32Ty, line, false)});
+      Modified = true;
+
+      errs() << "NVS-Pass: ";
+      errs().write_escaped(file) << ":" << line << " " << callee << "\n";
+
+    } else if (callee == "clflush" || callee == "llvm.x86.sse2.clflush") {
       ++NVScopeCLFlushOps;
       std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int8PtrTy, Int32Ty};
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
@@ -230,9 +255,9 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       Modified = true;
 
       errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " _mm_clflush()\n";
+      errs().write_escaped(file) << ":" << line << " " << callee << "\n";
 
-    } else if (callee == "llvm.x86.sse.sfence") {
+    } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
       std::vector<Type *> Params = {Int64Ty, Int8PtrTy, Int8PtrTy, Int32Ty};
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
       IRB.CreateCall(
@@ -243,7 +268,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       Modified = true;
 
       errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " _mm_sfence()\n";
+      errs().write_escaped(file) << ":" << line << " sfence()\n";
     }
   } else {
     // Calls through function pointers can be this type.
@@ -264,6 +289,12 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
 bool NVScopeProbes::runOnFunction(Function &F) {
   ++NVScopeFunctions;
 
+  if (auto fname = _excluded.find(F.getName()) != _excluded.end()) {
+    errs() << "NVS-Pass: Skipping function ";
+    errs().write_escaped(F.getName()) << "()\n";
+    return false;
+  }
+
   errs() << "NVS-Pass: Analyzing function ";
   errs().write_escaped(F.getName()) << "()\n";
 
@@ -272,12 +303,11 @@ bool NVScopeProbes::runOnFunction(Function &F) {
   for (auto &B : F) {
     for (auto &I : B) {
       if (I.getOpcode() == Instruction::Store) {
-        Modified = instrumentStore(F, dyn_cast<StoreInst>(&I)) || Modified;
+        Modified |= instrumentStore(F, dyn_cast<StoreInst>(&I));
       } else if (isa<MemIntrinsic>(I)) {
-        Modified =
-            instrumentMemIntrinsic(F, dyn_cast<MemIntrinsic>(&I)) || Modified;
+        Modified |= instrumentMemIntrinsic(F, dyn_cast<MemIntrinsic>(&I));
       } else if (I.getOpcode() == Instruction::Call) {
-        Modified = instrumentCall(F, dyn_cast<CallInst>(&I)) || Modified;
+        Modified |= instrumentCall(F, dyn_cast<CallInst>(&I));
       }
     }
   }

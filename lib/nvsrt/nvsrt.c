@@ -334,10 +334,25 @@ void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file,
   tgconf->stage = MAINPROC;
 }
 
+void __nvs_probe_clflushopt(void *ptr, char *func, char *file, int line) {
+  void *clptr = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: clflushopt addr %p cache line %p", func, file,
+       line, ptr, clptr);
+
+  (void)ptr;
+  (void)clptr;
+  (void)func;
+  (void)file;
+  (void)line;
+
+  if (!__nvs_enabled || !tgconf->tracing) return;
+}
+
 void __nvs_probe_clflush(void *ptr, char *func, char *file, int line) {
   void *clptr = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: flush addr %p cache line %p", func, file,
+  DBGF("NVS-RT: [%s() at %s:%4d]: clflush addr %p cache line %p", func, file,
        line, ptr, clptr);
 
   (void)ptr;
