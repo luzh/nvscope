@@ -36,12 +36,12 @@ using namespace llvm;
 #define DEBUG_TYPE "[NVScope Pass]"
 
 STATISTIC(NVScopeFunctions, "Scanned functions");
-STATISTIC(NVScopeCallInsts, "CallInst instructions");
 STATISTIC(NVScopeMMapOps, "mmap() calls");
+STATISTIC(NVScopeCallInsts, "CallInst instructions");
 STATISTIC(NVScopeStoreInsts, "StoreInst instructions");
-STATISTIC(NVScopeCLFlushOps, "CLFLUSH operations");
-STATISTIC(NVScopeCLFOptOps, "CLFLUSHOPT operations");
 STATISTIC(NVScopeCLWBOps, "CLWB operations");
+STATISTIC(NVScopeCLFOptOps, "CLFLUSHOPT operations");
+STATISTIC(NVScopeCLFlushOps, "CLFLUSH operations");
 STATISTIC(NVScopeSFenceOps, "SFENCE operations");
 
 namespace {
@@ -53,6 +53,10 @@ struct NVScopeProbes : public FunctionPass {
 
  private:
   void collectStackVariables(Function &F);
+  void printInstrumentedCall(StringRef &callee, StringRef &file, int &line);
+  bool instrumentCLOps(Function &F, CallInst *CI, StringRef Probe,
+                       StringRef &callee, StringRef &func, StringRef &file,
+                       int &line);
   bool instrumentCall(Function &F, CallInst *CI);
   bool instrumentStore(Function &F, StoreInst *StI);
   bool instrumentMemIntrinsic(Function &F, MemIntrinsic *MI);
@@ -66,12 +70,17 @@ struct NVScopeProbes : public FunctionPass {
   std::unordered_map<std::string, Value *> _files;
   std::unordered_map<std::string, Value *> _funcs;
 
+  static std::unordered_set<std::string> _clops;
   static std::unordered_set<std::string> _excluded;
 };
 
 /**
  */
-std::unordered_set<std::string> NVScopeProbes::_excluded = {"clflush", "clflushopt", "clwb", "sfence"};
+std::unordered_set<std::string> NVScopeProbes::_clops = {
+    "clwb",    "llvm.x86.sse2.clwb",   "clflushopt", "llvm.x86.sse2.clflushopt",
+    "clflush", "llvm.x86.sse2.clflush"};
+std::unordered_set<std::string> NVScopeProbes::_excluded = {
+    "clflush", "clflushopt", "clwb", "sfence"};
 
 /**
  * Collect values that are allocated on the function stack.
@@ -85,6 +94,15 @@ void NVScopeProbes::collectStackVariables(Function &F) {
       }
     }
   }
+}
+
+/**
+ * Print source code information about instrumented locations.
+ */
+void NVScopeProbes::printInstrumentedCall(StringRef &callee, StringRef &file,
+                                          int &line) {
+  errs() << "NVS-Pass:   ";
+  errs().write_escaped(file) << ":" << line << " CALLED " << callee << "\n";
 }
 
 Value *NVScopeProbes::findName(StringRef name,
@@ -125,7 +143,7 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
   IRBuilder<> IRB(StI);
   auto func = F.getName();
   int line = -1;
-  StringRef file = "unknown source file";
+  StringRef file = "unknown source file (missing debug information?)";
   getDebugInfo(StI, func, file, line);
   auto size = F.getParent()->getDataLayout().getTypeStoreSize(
       StI->getValueOperand()->getType());
@@ -143,8 +161,8 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
        ConstantInt::get(IRB.getInt32Ty(), line, false)});
   ++NVScopeStoreInsts;
 
-  errs() << "NVS-Pass: ";
-  errs().write_escaped(file) << ":" << line << " store " << size << " bytes\n";
+  errs() << "NVS-Pass:   ";
+  errs().write_escaped(file) << ":" << line << " STORE " << size << " bytes\n";
 
   return true;
 }
@@ -158,7 +176,7 @@ bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
     ++NVScopeStoreInsts;
     auto func = F.getName();
     int line = -1;
-    StringRef file = "unknown source file";
+    StringRef file = "unknown source file (missing debug information?)";
     getDebugInfo(MI, func, file, line);
     std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt64Ty(),
                                   IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
@@ -174,6 +192,23 @@ bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
   return false;
 }
 
+bool NVScopeProbes::instrumentCLOps(Function &F, CallInst *CI, StringRef Probe,
+                                    StringRef &callee, StringRef &func,
+                                    StringRef &file, int &line) {
+  IRBuilder<> IRB(CI);
+  std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
+                                IRB.getInt8PtrTy(), IRB.getInt32Ty()};
+  FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
+  IRB.CreateCall(F.getParent()->getOrInsertFunction(Probe, ProbeTy),
+                 {CI->getOperand(0), findName(func, _funcs, IRB),
+                  findName(file, _files, IRB),
+                  ConstantInt::get(IRB.getInt32Ty(), line, false)});
+
+  printInstrumentedCall(callee, file, line);
+
+  return true;
+}
+
 /**
  * Instrument interesting function calls:
  *   mmap(), clflush(), clflushopt(), clwb(), sfence(), and similar ones.
@@ -183,10 +218,10 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
   Type *Int64Ty = Type::getInt64Ty(Ctx);
   Type *Int32Ty = Type::getInt32Ty(Ctx);
   Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
-  IRBuilder<> IRB(CI);
+
   auto func = F.getName();
   int line = -1;
-  StringRef file = "unknown source file";
+  StringRef file = "unknown source file (missing debug information?)";
   getDebugInfo(CI, func, file, line);
   bool Modified = false;
 
@@ -208,72 +243,59 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
           {CI, CI->getOperand(1), findName(func, _funcs, IRB),
            findName(file, _files, IRB),
            ConstantInt::get(Int32Ty, line, false)});
-      Modified = true;
 
-      errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " mmap()\n";
+      Modified = true;
+      printInstrumentedCall(callee, file, line);
 
     } else if (callee.contains("memset") || callee.contains("memcpy") ||
                callee.contains("memmove")) {
       ++NVScopeStoreInsts;
       std::vector<Type *> Params = {Int8PtrTy, Int64Ty, Int8PtrTy, Int8PtrTy,
                                     Int32Ty};
+      IRBuilder<> IRB(CI);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
       IRB.CreateCall(
           F.getParent()->getOrInsertFunction("__nvs_probe_store", ProbeTy),
           {CI->getOperand(0), CI->getOperand(2), findName(func, _funcs, IRB),
            findName(file, _files, IRB),
            ConstantInt::get(Int32Ty, line, false)});
-      Modified = true;
 
-      errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " memcpy() or memset()\n";
+      Modified = true;
+      printInstrumentedCall(callee, file, line);
+
+    } else if (callee == "clwb" || callee == "llvm.x86.sse2.clwb") {
+      ++NVScopeCLWBOps;
+      Modified =
+          instrumentCLOps(F, CI, "__nvs_probe_clwb", callee, func, file, line);
 
     } else if (callee == "clflushopt" || callee == "llvm.x86.sse2.clflushopt") {
       ++NVScopeCLFOptOps;
-      std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int8PtrTy, Int32Ty};
-      FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-      IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvs_probe_clflushopt", ProbeTy),
-          {CI->getOperand(0), findName(func, _funcs, IRB),
-           findName(file, _files, IRB),
-           ConstantInt::get(Int32Ty, line, false)});
-      Modified = true;
-
-      errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " " << callee << "\n";
+      Modified = instrumentCLOps(F, CI, "__nvs_probe_clflushopt", callee, func,
+                                 file, line);
 
     } else if (callee == "clflush" || callee == "llvm.x86.sse2.clflush") {
       ++NVScopeCLFlushOps;
-      std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int8PtrTy, Int32Ty};
-      FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-      IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvs_probe_clflush", ProbeTy),
-          {CI->getOperand(0), findName(func, _funcs, IRB),
-           findName(file, _files, IRB),
-           ConstantInt::get(Int32Ty, line, false)});
-      Modified = true;
-
-      errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " " << callee << "\n";
+      Modified = instrumentCLOps(F, CI, "__nvs_probe_clflush", callee, func,
+                                 file, line);
 
     } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
       std::vector<Type *> Params = {Int64Ty, Int8PtrTy, Int8PtrTy, Int32Ty};
+      IRBuilder<> IRB(CI);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
+
       IRB.CreateCall(
           F.getParent()->getOrInsertFunction("__nvs_probe_sfence", ProbeTy),
           {ConstantInt::get(Int64Ty, ++NVScopeSFenceOps, false),
            findName(func, _funcs, IRB), findName(file, _files, IRB),
            ConstantInt::get(Int32Ty, line, false)});
-      Modified = true;
 
-      errs() << "NVS-Pass: ";
-      errs().write_escaped(file) << ":" << line << " sfence()\n";
+      Modified = true;
+      printInstrumentedCall(callee, file, line);
     }
   } else {
     // Calls through function pointers can be this type.
     // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
-    errs() << "NVS-Pass: Indirect call\n";
+    errs() << "NVS-Pass: WARNING - Indirect call detected but not handled!\n";
   }
 
   if (Modified) {

@@ -306,7 +306,7 @@ void __nvs_probe_store64(uint64_t *ptr) {
 
 void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file,
                        int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: store to %p size %lu", func, file, line, ptr,
+  DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
 
   (void)func;
@@ -319,7 +319,7 @@ void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file,
 
 void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file,
                          int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: mmap addr %p size %lu", func, file, line, ptr,
+  DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line, ptr,
        size);
 
   if (!__nvs_enabled || !tgconf->tracing) return;
@@ -334,38 +334,46 @@ void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file,
   tgconf->stage = MAINPROC;
 }
 
-void __nvs_probe_clflushopt(void *ptr, char *func, char *file, int line) {
-  void *clptr = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
-
-  DBGF("NVS-RT: [%s() at %s:%4d]: clflushopt addr %p cache line %p", func, file,
-       line, ptr, clptr);
-
+void __clop_nofence(void *ptr, void *pcl, char *func, char *file, int line) {
   (void)ptr;
-  (void)clptr;
+  (void)pcl;
   (void)func;
   (void)file;
   (void)line;
 
   if (!__nvs_enabled || !tgconf->tracing) return;
+}
+
+void __nvs_probe_clwb(void *ptr, char *func, char *file, int line) {
+  void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
+       ptr, pcl);
+
+  __clop_nofence(ptr, pcl, func, file, line);
+}
+
+void __nvs_probe_clflushopt(void *ptr, char *func, char *file, int line) {
+  void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
+       line, ptr, pcl);
+
+  __clop_nofence(ptr, pcl, func, file, line);
 }
 
 void __nvs_probe_clflush(void *ptr, char *func, char *file, int line) {
-  void *clptr = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
+  void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: clflush addr %p cache line %p", func, file,
-       line, ptr, clptr);
+  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
+       line, ptr, pcl);
 
-  (void)ptr;
-  (void)clptr;
-  (void)func;
-  (void)file;
-  (void)line;
-
-  if (!__nvs_enabled || !tgconf->tracing) return;
+  __clop_nofence(ptr, pcl, func, file, line);
+  /* TODO: should also handle sfence here. */
 }
 
 void __nvs_probe_sfence(uint64_t sfid, char *func, char *file, int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: sfence #%lu", func, file, line, sfid);
+  DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
 
   if (!__nvs_enabled || !tgconf->tracing) return;
 
