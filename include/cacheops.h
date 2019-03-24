@@ -16,20 +16,20 @@
  *
  * Most machines should support _mm_sfence() and _mm_clflush() so they are
  * simply wrapped.
- */
-
-void sfence(void) { _mm_sfence(); }
-
-void clflush(void const *ptr) { _mm_clflush(ptr); }
-
-/**
+ *
  * Having __attribute__((optnone,noinline)) is to avoid compiler optimizing it
- * away so it emulates the behavior of calling to a real intrinsic function,
- * for example:
+ * away so it emulates the behavior of calling to a real intrinsic function, for
+ * example:
  *   tail call void @llvm.x86.clflushopt(i8* %0)
  * is emulated by
  *   tail call void @clflushopt(i8* %0)
  */
+
+void __attribute__((optnone, noinline)) sfence(void) { _mm_sfence(); }
+
+void __attribute__((optnone, noinline)) clflush(void const *ptr) {
+  _mm_clflush(ptr);
+}
 
 void __attribute__((optnone, noinline)) clflushopt(void const *ptr) {
   unsigned char loopcnt = *((char *)ptr);
