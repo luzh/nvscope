@@ -290,7 +290,7 @@ static void __emulate_crash(uint64_t sfid) {
   }
 }
 
-void __nvs_probe_store64(uint64_t *ptr) {
+void __nvs_store64(uint64_t *ptr) {
   DBGF("NVS-RT: store i64 to %p", ptr);
 
   /* PERF: Perhaps using likely/unlikely can improve performance. */
@@ -304,8 +304,7 @@ void __nvs_probe_store64(uint64_t *ptr) {
   if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr);
 }
 
-void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file,
-                       int line) {
+void __nvs_store(void *ptr, uint64_t size, char *func, char *file, int line) {
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
 
@@ -314,24 +313,40 @@ void __nvs_probe_store(void *ptr, uint64_t size, char *func, char *file,
   (void)line;
 
   if (size == 8)  // Todo: handle other sizes
-    __nvs_probe_store64(ptr);
+    __nvs_store64(ptr);
 }
 
-void __nvs_probe_mapping(void *ptr, uint64_t size, char *func, char *file,
-                         int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line, ptr,
-       size);
+/**
+ * Replaces the standard mmap() call with this wrapped version.
+ * void
+ * *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
+ *
+ * The targeted range is determined by the program's call to mmap(). We ignore
+ * stores that occur before the mmap() call.
+ */
+void *__nvs_mmap(void *addr, size_t length, int prot, int flags, int fd,
+                 off_t offset, char *func, char *file, int line) {
+  /**
+   * TODO: If necessary, we can change how mmap() is called, for example, using
+   * provate mapping other than shared.
+   */
+  void *pmap = mmap(addr, length, prot, flags, fd, offset);
 
-  if (!__nvs_enabled || !tgconf->tracing) return;
+  /* TODO: Save the mapped address and size for store range checking. */
 
-  (void)ptr;
-  (void)size;
+  DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
+       pmap, length);
+
+  if (!__nvs_enabled || !tgconf->tracing) return pmap;
+
   (void)func;
   (void)file;
   (void)line;
 
   /* Implementation */
   tgconf->stage = MAINPROC;
+
+  return pmap;
 }
 
 void __clop_nofence(void *ptr, void *pcl, char *func, char *file, int line) {
@@ -344,7 +359,7 @@ void __clop_nofence(void *ptr, void *pcl, char *func, char *file, int line) {
   if (!__nvs_enabled || !tgconf->tracing) return;
 }
 
-void __nvs_probe_clwb(void *ptr, char *func, char *file, int line) {
+void __nvs_clwb(void *ptr, char *func, char *file, int line) {
   void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
@@ -353,7 +368,7 @@ void __nvs_probe_clwb(void *ptr, char *func, char *file, int line) {
   __clop_nofence(ptr, pcl, func, file, line);
 }
 
-void __nvs_probe_clflushopt(void *ptr, char *func, char *file, int line) {
+void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
   void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
@@ -362,7 +377,7 @@ void __nvs_probe_clflushopt(void *ptr, char *func, char *file, int line) {
   __clop_nofence(ptr, pcl, func, file, line);
 }
 
-void __nvs_probe_clflush(void *ptr, char *func, char *file, int line) {
+void __nvs_clflush(void *ptr, char *func, char *file, int line) {
   void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
@@ -372,7 +387,7 @@ void __nvs_probe_clflush(void *ptr, char *func, char *file, int line) {
   /* TODO: should also handle sfence here. */
 }
 
-void __nvs_probe_sfence(uint64_t sfid, char *func, char *file, int line) {
+void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
 
   if (!__nvs_enabled || !tgconf->tracing) return;

@@ -27,6 +27,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -53,10 +54,13 @@ struct NVScopeProbes : public FunctionPass {
 
  private:
   void collectStackVariables(Function &F);
-  void printInstrumentedCall(StringRef &callee, StringRef &file, int &line);
-  bool instrumentCLOps(Function &F, CallInst *CI, StringRef Probe,
-                       StringRef &callee, StringRef &func, StringRef &file,
-                       int &line);
+  void printInstrumentedCall(const StringRef &func, const StringRef &file,
+                             const int line);
+
+  bool instrumentMmap(Function &F);
+  bool instrumentCLOp(Function &F, CallInst *CI, StringRef Probe,
+                      StringRef &callee, StringRef &func, StringRef &file,
+                      int &line);
   bool instrumentCall(Function &F, CallInst *CI);
   bool instrumentStore(Function &F, StoreInst *StI);
   bool instrumentMemIntrinsic(Function &F, MemIntrinsic *MI);
@@ -65,6 +69,8 @@ struct NVScopeProbes : public FunctionPass {
                   IRBuilder<> &irb);
   void getDebugInfo(Instruction *I, StringRef &func, StringRef &file,
                     int &line);
+
+  SmallVector<Instruction *, 8> _mmaps;
 
   std::unordered_set<Value *> _stack;
   std::unordered_map<std::string, Value *> _files;
@@ -99,10 +105,11 @@ void NVScopeProbes::collectStackVariables(Function &F) {
 /**
  * Print source code information about instrumented locations.
  */
-void NVScopeProbes::printInstrumentedCall(StringRef &callee, StringRef &file,
-                                          int &line) {
+void NVScopeProbes::printInstrumentedCall(const StringRef &func,
+                                          const StringRef &file,
+                                          const int line) {
   errs() << "NVS-Pass:   ";
-  errs().write_escaped(file) << ":" << line << " CALLED " << callee << "\n";
+  errs().write_escaped(file) << ":" << line << " CALLED " << func << "\n";
 }
 
 Value *NVScopeProbes::findName(StringRef name,
@@ -139,26 +146,27 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
   if (it != _stack.end()) {
     return false;
   }
-  // Insert before the store instruction.
-  IRBuilder<> IRB(StI);
-  auto func = F.getName();
+
   int line = -1;
+  StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
   getDebugInfo(StI, func, file, line);
   auto size = F.getParent()->getDataLayout().getTypeStoreSize(
       StI->getValueOperand()->getType());
+
+  // Insert before the store instruction.
+  IRBuilder<> IRB(StI);
   std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt64Ty(),
                                 IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                 IRB.getInt32Ty()};
   FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-  IRB.CreateCall(
-      F.getParent()->getOrInsertFunction("__nvs_probe_store", ProbeTy),
-      {Ptr->getType() == IRB.getInt8PtrTy()
-           ? Ptr
-           : IRB.CreatePointerCast(Ptr, IRB.getInt8PtrTy()),
-       ConstantInt::get(IRB.getInt64Ty(), size, false),
-       findName(func, _funcs, IRB), findName(file, _files, IRB),
-       ConstantInt::get(IRB.getInt32Ty(), line, false)});
+  IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
+                 {Ptr->getType() == IRB.getInt8PtrTy()
+                      ? Ptr
+                      : IRB.CreatePointerCast(Ptr, IRB.getInt8PtrTy()),
+                  ConstantInt::get(IRB.getInt64Ty(), size, false),
+                  findName(func, _funcs, IRB), findName(file, _files, IRB),
+                  ConstantInt::get(IRB.getInt32Ty(), line, false)});
   ++NVScopeStoreInsts;
 
   errs() << "NVS-Pass:   ";
@@ -174,27 +182,27 @@ bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
   IRBuilder<> IRB(MI);
   if (isa<MemTransferInst>(MI) || isa<MemSetInst>(MI)) {
     ++NVScopeStoreInsts;
-    auto func = F.getName();
+
     int line = -1;
+    StringRef func = F.getName();
     StringRef file = "unknown source file (missing debug information?)";
     getDebugInfo(MI, func, file, line);
     std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt64Ty(),
                                   IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                   IRB.getInt32Ty()};
     FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-    IRB.CreateCall(
-        F.getParent()->getOrInsertFunction("__nvs_probe_store", ProbeTy),
-        {MI->getOperand(0), MI->getOperand(2), findName(func, _funcs, IRB),
-         findName(file, _files, IRB),
-         ConstantInt::get(IRB.getInt32Ty(), line, false)});
+    IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
+                   {MI->getOperand(0), MI->getOperand(2),
+                    findName(func, _funcs, IRB), findName(file, _files, IRB),
+                    ConstantInt::get(IRB.getInt32Ty(), line, false)});
     return true;
   }
   return false;
 }
 
-bool NVScopeProbes::instrumentCLOps(Function &F, CallInst *CI, StringRef Probe,
-                                    StringRef &callee, StringRef &func,
-                                    StringRef &file, int &line) {
+bool NVScopeProbes::instrumentCLOp(Function &F, CallInst *CI, StringRef Probe,
+                                   StringRef &callee, StringRef &func,
+                                   StringRef &file, int &line) {
   IRBuilder<> IRB(CI);
   std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                 IRB.getInt8PtrTy(), IRB.getInt32Ty()};
@@ -210,6 +218,41 @@ bool NVScopeProbes::instrumentCLOps(Function &F, CallInst *CI, StringRef Probe,
 }
 
 /**
+ * Replaces calls to standard mmap functions with a warpper function, where
+ * mapping flags could be manipulated and the mapped region is recorded.
+ */
+bool NVScopeProbes::instrumentMmap(Function &F) {
+  int line = -1;
+  StringRef func = F.getName();
+  StringRef file = "unknown source file (missing debug information?)";
+  bool Modified = false;
+
+  for (auto I : _mmaps) {
+    auto CI = dyn_cast<CallInst>(I);
+    auto FT = CI->getFunctionType();
+    IRBuilder<> IRB(CI);
+    getDebugInfo(CI, func, file, line);
+    std::vector<Type *> Params(FT->param_begin(), FT->param_end());
+    Params.push_back(IRB.getInt8PtrTy());
+    Params.push_back(IRB.getInt8PtrTy());
+    Params.push_back(IRB.getInt32Ty());
+    std::vector<Value *> Args(CI->arg_begin(), CI->arg_end());
+    Args.push_back(findName(func, _funcs, IRB));
+    Args.push_back(findName(file, _files, IRB));
+    Args.push_back(ConstantInt::get(IRB.getInt32Ty(), line, false));
+    auto ProbeTy = FunctionType::get(FT->getReturnType(), Params, false);
+    auto Callee = F.getParent()->getOrInsertFunction("__nvs_mmap", ProbeTy);
+    ReplaceInstWithInst(CI, CallInst::Create(Callee, Args));
+
+    Modified = true;
+    printInstrumentedCall(F.getName(), file, line);
+  }
+  _mmaps.clear();
+
+  return Modified;
+}
+
+/**
  * Instrument interesting function calls:
  *   mmap(), clflush(), clflushopt(), clwb(), sfence(), and similar ones.
  */
@@ -219,8 +262,8 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
   Type *Int32Ty = Type::getInt32Ty(Ctx);
   Type *Int8PtrTy = Type::getInt8PtrTy(Ctx);
 
-  auto func = F.getName();
   int line = -1;
+  StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
   getDebugInfo(CI, func, file, line);
   bool Modified = false;
@@ -232,51 +275,45 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
 
   if (Function *CIF = CI->getCalledFunction()) {
     StringRef callee = CIF->getName();
-    if (callee.endswith("mmap")) {
+    /* TODO: There can be other functions (not instrumented) doing mmap. */
+    if (callee == "mmap") {
       ++NVScopeMMapOps;
-      IRBuilder<> IRB(CI->getNextNode());
-      std::vector<Type *> Params = {Int8PtrTy, Int64Ty, Int8PtrTy, Int8PtrTy,
-                                    Int32Ty};
-      FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-      IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvs_probe_mapping", ProbeTy),
-          {CI, CI->getOperand(1), findName(func, _funcs, IRB),
-           findName(file, _files, IRB),
-           ConstantInt::get(Int32Ty, line, false)});
+      /**
+       * ReplaceInstWithInst deletes (i.e. frees) the instruction "From", any
+       * iterators referring to From will be invalidated. We need to save the
+       * mmap call here and replace it in another loop, after the loop of
+       * "for (auto &B : F)" finishes.
+       */
+      _mmaps.push_back(CI);
 
-      Modified = true;
-      printInstrumentedCall(callee, file, line);
-
-    } else if (callee.contains("memset") || callee.contains("memcpy") ||
-               callee.contains("memmove")) {
+    } else if (callee == "memset" || callee == "memcpy" ||
+               callee == "memmove") {
       ++NVScopeStoreInsts;
       std::vector<Type *> Params = {Int8PtrTy, Int64Ty, Int8PtrTy, Int8PtrTy,
                                     Int32Ty};
       IRBuilder<> IRB(CI);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-      IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvs_probe_store", ProbeTy),
-          {CI->getOperand(0), CI->getOperand(2), findName(func, _funcs, IRB),
-           findName(file, _files, IRB),
-           ConstantInt::get(Int32Ty, line, false)});
+      IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
+                     {CI->getOperand(0), CI->getOperand(2),
+                      findName(func, _funcs, IRB), findName(file, _files, IRB),
+                      ConstantInt::get(Int32Ty, line, false)});
 
       Modified = true;
       printInstrumentedCall(callee, file, line);
 
     } else if (callee == "clwb" || callee == "llvm.x86.sse2.clwb") {
       ++NVScopeCLWBOps;
-      Modified =
-          instrumentCLOps(F, CI, "__nvs_probe_clwb", callee, func, file, line);
+      Modified = instrumentCLOp(F, CI, "__nvs_clwb", callee, func, file, line);
 
     } else if (callee == "clflushopt" || callee == "llvm.x86.sse2.clflushopt") {
       ++NVScopeCLFOptOps;
-      Modified = instrumentCLOps(F, CI, "__nvs_probe_clflushopt", callee, func,
-                                 file, line);
+      Modified =
+          instrumentCLOp(F, CI, "__nvs_clflushopt", callee, func, file, line);
 
     } else if (callee == "clflush" || callee == "llvm.x86.sse2.clflush") {
       ++NVScopeCLFlushOps;
-      Modified = instrumentCLOps(F, CI, "__nvs_probe_clflush", callee, func,
-                                 file, line);
+      Modified =
+          instrumentCLOp(F, CI, "__nvs_clflush", callee, func, file, line);
 
     } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
       std::vector<Type *> Params = {Int64Ty, Int8PtrTy, Int8PtrTy, Int32Ty};
@@ -284,7 +321,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
 
       IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvs_probe_sfence", ProbeTy),
+          F.getParent()->getOrInsertFunction("__nvs_sfence", ProbeTy),
           {ConstantInt::get(Int64Ty, ++NVScopeSFenceOps, false),
            findName(func, _funcs, IRB), findName(file, _files, IRB),
            ConstantInt::get(Int32Ty, line, false)});
@@ -333,6 +370,9 @@ bool NVScopeProbes::runOnFunction(Function &F) {
       }
     }
   }
+
+  Modified |= instrumentMmap(F);
+
   return Modified;
 }
 
