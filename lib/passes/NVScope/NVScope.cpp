@@ -58,21 +58,19 @@ struct NVScopeProbes : public FunctionPass {
                              const int line);
 
   bool instrumentMmap(Function &F);
-  bool instrumentCLOp(Function &F, CallInst *CI, StringRef Probe,
-                      StringRef &callee, StringRef &func, StringRef &file,
-                      int &line);
+  bool instrumentCLOp(Function &F, CallInst *CI, const StringRef ProbeName);
   bool instrumentCall(Function &F, CallInst *CI);
   bool instrumentStore(Function &F, StoreInst *StI);
   bool instrumentMemIntrinsic(Function &F, MemIntrinsic *MI);
 
-  Value *findName(StringRef name, std::unordered_map<std::string, Value *> &map,
-                  IRBuilder<> &irb);
+  Value *findName(IRBuilder<> &irb, const StringRef name,
+                  std::unordered_map<std::string, Value *> &map);
   void getDebugInfo(Instruction *I, StringRef &func, StringRef &file,
                     int &line);
 
   SmallVector<Instruction *, 8> _mmaps;
 
-  std::unordered_set<Value *> _stack;
+  std::unordered_set<Value *> _stackvars;
   std::unordered_map<std::string, Value *> _files;
   std::unordered_map<std::string, Value *> _funcs;
 
@@ -92,11 +90,11 @@ const std::unordered_set<std::string> NVScopeProbes::_excluded = {
  * Collect values that are allocated on the function stack.
  */
 void NVScopeProbes::collectStackVariables(Function &F) {
-  _stack.clear();
+  _stackvars.clear();
   for (auto &B : F) {
     for (auto &I : B) {
       if (I.getOpcode() == Instruction::Alloca) {
-        _stack.insert(dyn_cast<Value>(&I));
+        _stackvars.insert(dyn_cast<Value>(&I));
       }
     }
   }
@@ -112,9 +110,8 @@ void NVScopeProbes::printInstrumentedCall(const StringRef &func,
   errs().write_escaped(file) << ":" << line << " CALLED " << func << "\n";
 }
 
-Value *NVScopeProbes::findName(StringRef name,
-                               std::unordered_map<std::string, Value *> &map,
-                               IRBuilder<> &irb) {
+Value *NVScopeProbes::findName(IRBuilder<> &irb, const StringRef name,
+                               std::unordered_map<std::string, Value *> &map) {
   auto pair = map.find(name.str());
   if (pair == map.end()) {
     auto value = irb.CreateGlobalStringPtr(name);
@@ -142,8 +139,8 @@ void NVScopeProbes::getDebugInfo(Instruction *I, StringRef &func,
 bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
   Value *Ptr = StI->getPointerOperand();
   // ignore stores to the function stack.
-  auto it = _stack.find(Ptr);
-  if (it != _stack.end()) {
+  auto it = _stackvars.find(Ptr);
+  if (it != _stackvars.end()) {
     return false;
   }
 
@@ -165,7 +162,7 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
                       ? Ptr
                       : IRB.CreatePointerCast(Ptr, IRB.getInt8PtrTy()),
                   ConstantInt::get(IRB.getInt64Ty(), size, false),
-                  findName(func, _funcs, IRB), findName(file, _files, IRB),
+                  findName(IRB, func, _funcs), findName(IRB, file, _files),
                   ConstantInt::get(IRB.getInt32Ty(), line, false)});
   ++NVScopeStoreInsts;
 
@@ -193,26 +190,30 @@ bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
     FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
     IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
                    {MI->getOperand(0), MI->getOperand(2),
-                    findName(func, _funcs, IRB), findName(file, _files, IRB),
+                    findName(IRB, func, _funcs), findName(IRB, file, _files),
                     ConstantInt::get(IRB.getInt32Ty(), line, false)});
     return true;
   }
   return false;
 }
 
-bool NVScopeProbes::instrumentCLOp(Function &F, CallInst *CI, StringRef Probe,
-                                   StringRef &callee, StringRef &func,
-                                   StringRef &file, int &line) {
+bool NVScopeProbes::instrumentCLOp(Function &F, CallInst *CI,
+                                   const StringRef ProbeName) {
+  int line = -1;
+  StringRef func = F.getName();
+  StringRef file = "unknown source file (missing debug information?)";
+  getDebugInfo(CI, func, file, line);
+
   IRBuilder<> IRB(CI);
   std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                 IRB.getInt8PtrTy(), IRB.getInt32Ty()};
   FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-  IRB.CreateCall(F.getParent()->getOrInsertFunction(Probe, ProbeTy),
-                 {CI->getOperand(0), findName(func, _funcs, IRB),
-                  findName(file, _files, IRB),
+  IRB.CreateCall(F.getParent()->getOrInsertFunction(ProbeName, ProbeTy),
+                 {CI->getOperand(0), findName(IRB, func, _funcs),
+                  findName(IRB, file, _files),
                   ConstantInt::get(IRB.getInt32Ty(), line, false)});
 
-  printInstrumentedCall(callee, file, line);
+  printInstrumentedCall(CI->getCalledFunction()->getName(), file, line);
 
   return true;
 }
@@ -237,8 +238,8 @@ bool NVScopeProbes::instrumentMmap(Function &F) {
     Params.push_back(IRB.getInt8PtrTy());
     Params.push_back(IRB.getInt32Ty());
     std::vector<Value *> Args(CI->arg_begin(), CI->arg_end());
-    Args.push_back(findName(func, _funcs, IRB));
-    Args.push_back(findName(file, _files, IRB));
+    Args.push_back(findName(IRB, func, _funcs));
+    Args.push_back(findName(IRB, file, _files));
     Args.push_back(ConstantInt::get(IRB.getInt32Ty(), line, false));
     auto ProbeTy = FunctionType::get(FT->getReturnType(), Params, false);
     auto Callee = F.getParent()->getOrInsertFunction("__nvs_mmap", ProbeTy);
@@ -265,7 +266,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
   int line = -1;
   StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
-  getDebugInfo(CI, func, file, line);
+
   bool Modified = false;
 
   /**
@@ -292,10 +293,11 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       std::vector<Type *> Params = {Int8PtrTy, Int64Ty, Int8PtrTy, Int8PtrTy,
                                     Int32Ty};
       IRBuilder<> IRB(CI);
+      getDebugInfo(CI, func, file, line);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
       IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
                      {CI->getOperand(0), CI->getOperand(2),
-                      findName(func, _funcs, IRB), findName(file, _files, IRB),
+                      findName(IRB, func, _funcs), findName(IRB, file, _files),
                       ConstantInt::get(Int32Ty, line, false)});
 
       Modified = true;
@@ -303,27 +305,26 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
 
     } else if (callee == "clwb" || callee == "llvm.x86.sse2.clwb") {
       ++NVScopeCLWBOps;
-      Modified = instrumentCLOp(F, CI, "__nvs_clwb", callee, func, file, line);
+      Modified = instrumentCLOp(F, CI, "__nvs_clwb");
 
     } else if (callee == "clflushopt" || callee == "llvm.x86.sse2.clflushopt") {
       ++NVScopeCLFOptOps;
-      Modified =
-          instrumentCLOp(F, CI, "__nvs_clflushopt", callee, func, file, line);
+      Modified = instrumentCLOp(F, CI, "__nvs_clflushopt");
 
     } else if (callee == "clflush" || callee == "llvm.x86.sse2.clflush") {
       ++NVScopeCLFlushOps;
-      Modified =
-          instrumentCLOp(F, CI, "__nvs_clflush", callee, func, file, line);
+      Modified = instrumentCLOp(F, CI, "__nvs_clflush");
 
     } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
       std::vector<Type *> Params = {Int64Ty, Int8PtrTy, Int8PtrTy, Int32Ty};
       IRBuilder<> IRB(CI);
+      getDebugInfo(CI, func, file, line);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
 
       IRB.CreateCall(
           F.getParent()->getOrInsertFunction("__nvs_sfence", ProbeTy),
           {ConstantInt::get(Int64Ty, ++NVScopeSFenceOps, false),
-           findName(func, _funcs, IRB), findName(file, _files, IRB),
+           findName(IRB, func, _funcs), findName(IRB, file, _files),
            ConstantInt::get(Int32Ty, line, false)});
 
       Modified = true;
