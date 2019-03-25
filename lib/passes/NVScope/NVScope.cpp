@@ -70,16 +70,16 @@ struct NVScopeProbes : public FunctionPass {
   std::unordered_map<std::string, Value *> _files;
   std::unordered_map<std::string, Value *> _funcs;
 
-  static std::unordered_set<std::string> _clops;
-  static std::unordered_set<std::string> _excluded;
+  static const std::unordered_set<std::string> _clops;
+  static const std::unordered_set<std::string> _excluded;
 };
 
 /**
  */
-std::unordered_set<std::string> NVScopeProbes::_clops = {
+const std::unordered_set<std::string> NVScopeProbes::_clops = {
     "clwb",    "llvm.x86.sse2.clwb",   "clflushopt", "llvm.x86.sse2.clflushopt",
     "clflush", "llvm.x86.sse2.clflush"};
-std::unordered_set<std::string> NVScopeProbes::_excluded = {
+const std::unordered_set<std::string> NVScopeProbes::_excluded = {
     "clflush", "clflushopt", "clwb", "sfence"};
 
 /**
