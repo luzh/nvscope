@@ -14,6 +14,10 @@ struct nvs_config *config;
 struct nvs_target_config *tgconf;
 struct nvs_runq *runq;
 
+/* TODO: Should consider more mapped regions. */
+void *__nvs_user_mmap_addr;
+size_t __nvs_user_mmap_size;
+
 /**
  * Debug functions
  */
@@ -195,10 +199,18 @@ __attribute__((constructor(CONST_PRIO))) void __nvs_init(void) {
   __start_forkserver();
 }
 
-static inline int __store64_in_pmem(uint64_t *ptr) {
+static inline int __store_in_pmem(void *ptr, size_t size) {
   (void)ptr;
 
-  return 1;
+  if (__nvs_user_mmap_addr == NULL || __nvs_user_mmap_size == 0) return 0;
+
+  uintptr_t lb = (uintptr_t)__nvs_user_mmap_addr;
+  uintptr_t ub = lb + __nvs_user_mmap_size;
+
+  /* TODO: May also check if the store overflows the mapped region. */
+  if (lb <= (uintptr_t)ptr && (uintptr_t)ptr + size < ub) return 1;
+
+  return 0;
 }
 
 static inline int __runq_push_back_store64(uint64_t *ptr) {
@@ -290,21 +302,22 @@ static void __emulate_crash(uint64_t sfid) {
   }
 }
 
-void __nvs_store64(uint64_t *ptr) {
+void __nvs_store64(void *ptr) {
   DBGF("NVS-RT: store i64 to %p", ptr);
 
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
   if (!__nvs_enabled || !tgconf->tracing) return;
 
-  if (!__store64_in_pmem(ptr)) return;
-
   if (tgconf->stage == MAINPROC) __runq_push_back_store64(ptr);
 
   if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr);
 }
 
-void __nvs_store(void *ptr, uint64_t size, char *func, char *file, int line) {
+void __nvs_store(void *ptr, size_t size, char *func, char *file, int line) {
+
+  if (!__store_in_pmem(ptr, size)) return;
+
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
 
@@ -312,7 +325,7 @@ void __nvs_store(void *ptr, uint64_t size, char *func, char *file, int line) {
   (void)file;
   (void)line;
 
-  if (size == 8)  // Todo: handle other sizes
+  if (size == 8)  // TODO: handle other sizes
     __nvs_store64(ptr);
 }
 
@@ -342,6 +355,9 @@ void *__nvs_mmap(void *addr, size_t length, int prot, int flags, int fd,
   (void)func;
   (void)file;
   (void)line;
+
+  __nvs_user_mmap_addr = pmap;
+  __nvs_user_mmap_size = length;
 
   /* Implementation */
   tgconf->stage = MAINPROC;
