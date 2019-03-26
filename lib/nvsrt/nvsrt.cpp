@@ -46,14 +46,14 @@ class NVScopeRT {
   enum nvs_message read_message() const;
   void send_message(enum nvs_message msg) const;
   void send_anydata(void *data, ssize_t len) const;
-  void close_fds() const;
+  void close_channels() const;
 
   /* Add one mmaped range. */
   void add_nvrange(void *pmap, size_t size);
   /* Check if the stored data falls into mmaped ranges. */
   bool in_nvranges(void *ptr, size_t size) const;
   /* Save store information. */
-  void save_store(void *ptr, uint64_t size, char *func, char *file, int line);
+  void save_store(void *ptr, size_t size, char *func, char *file, int line);
   /* Save CLFLUSHOPT or CLWB operations. */
   void save_clop_nofence(void *ptr, char *func, char *file, int line);
   /* Perform analysis for insights. */
@@ -94,6 +94,7 @@ void NVScopeRT::add_nvrange(void *pmap, size_t size) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
   _nvranges.emplace_back(addr, addr + size);
 }
+
 bool NVScopeRT::in_nvranges(void *ptr, size_t size) const {
   uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
   /* TODO: May also check if the store overflows the mapped region. */
@@ -126,32 +127,30 @@ void NVScopeRT::send_anydata(void *data, ssize_t len) const {
   }
 }
 
-void NVScopeRT::close_fds() const {
+void NVScopeRT::close_channels() const {
   if (_tgconfig->read_fd > 0) close(_tgconfig->read_fd);
   if (_tgconfig->write_fd > 0) close(_tgconfig->write_fd);
 }
 
-void NVScopeRT::save_store(void *ptr, uint64_t size, char *func, char *file,
+void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
                            int line) {
-  if (in_nvranges(ptr, size)) {
-    auto start = reinterpret_cast<uintptr_t>(ptr);
-    auto last = static_cast<uintptr_t>(start + size);
-    auto cline = get_cache_line_addr(ptr);
-    auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
-    do {
-      auto it = _nvstores.find(cline);
-      if (it == _nvstores.end()) {
-        /**
-         * emplace returns a pair where `first` is an iterator pointing to the
-         * new element of the container.
-         */
-        it = _nvstores.emplace(cline, std::vector<std::shared_ptr<StoreInfo>>())
-                 .first;
-      }
-      it->second.emplace_back(store);
-      cline += CACHELINE_SIZE;
-    } while (last > cline);
-  }
+  auto start = reinterpret_cast<uintptr_t>(ptr);
+  auto last = static_cast<uintptr_t>(start + size);
+  auto cline = get_cache_line_addr(ptr);
+  auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
+  do {
+    auto it = _nvstores.find(cline);
+    if (it == _nvstores.end()) {
+      /**
+       * emplace returns a pair where `first` is an iterator pointing to the
+       * new element of the container.
+       */
+      it = _nvstores.emplace(cline, std::vector<std::shared_ptr<StoreInfo>>())
+               .first;
+    }
+    it->second.emplace_back(store);
+    cline += CACHELINE_SIZE;
+  } while (last > cline);
 }
 
 void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
@@ -255,7 +254,7 @@ static void __start_forkserver(void) {
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVS-RT: forkserver received command to exit");
-      nvsrt.close_fds();
+      nvsrt.close_channels();
       _exit(EXIT_SUCCESS);
     }
 
@@ -447,9 +446,7 @@ extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
 
-  (void)func;
-  (void)file;
-  (void)line;
+  nvsrt.save_store(ptr, size, func, file, line);
 
   if (size == 8)  // TODO: handle other sizes
     __nvs_store64(ptr);
