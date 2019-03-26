@@ -1,3 +1,12 @@
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include "afl/config.h"
 #include "debug.h"
 #include "headers.h"
@@ -14,9 +23,82 @@ struct nvs_config *config;
 struct nvs_target_config *tgconf;
 struct nvs_runq *runq;
 
-/* TODO: Should consider more mapped regions. */
-void *__nvs_user_mmap_addr;
-size_t __nvs_user_mmap_size;
+class NVScopeRT {
+ public:
+  void add_nvrange(void *pmap, size_t size) {
+    uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
+    _nvranges.emplace_back(addr, addr + size);
+  }
+
+  /* Check if the stored data falls into mmaped ranges. */
+  bool in_nvranges(void *ptr, size_t size) {
+    uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+    /* TODO: May also check if the store overflows the mapped region. */
+    return std::any_of(_nvranges.begin(), _nvranges.end(),
+                       [addr, size](auto &rg) {
+                         return rg.first <= addr && addr + size < rg.second;
+                       });
+  }
+
+  void save_store(void *ptr, uint64_t size, char *func, char *file, int line) {
+    if (in_nvranges(ptr, size)) {
+      auto start = reinterpret_cast<uintptr_t>(ptr);
+      auto last = static_cast<uintptr_t>(start + size);
+      auto cline = get_cache_line_addr(ptr);
+      auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
+      do {
+        auto it = _nvstores.find(cline);
+        if (it == _nvstores.end()) {
+          /**
+           * emplace returns a pair where `first` is an iterator pointing to the
+           * new element of the container.
+           */
+          it = _nvstores
+                   .emplace(cline, std::vector<std::shared_ptr<StoreInfo>>())
+                   .first;
+        }
+        it->second.emplace_back(store);
+        cline += CACHELINE_SIZE;
+      } while (last > cline);
+    }
+  }
+
+  void analyze(uint64_t sfid, char *func, char *file, int line) {
+    if (_nvstores.empty()) {
+      return;
+    }
+    (void)sfid;
+    (void)func;
+    (void)file;
+    (void)line;
+  }
+
+ private:
+  struct StoreInfo {
+    StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
+        : _start(start), _last(last), _func(func), _file(file), _line(line) {}
+    uintptr_t _start;  // start address of this store
+    uintptr_t _last;   // one byte after the last address
+    char *_func;
+    char *_file;
+    int _line;
+  };
+
+  uintptr_t get_cache_line_addr(void *ptr) {
+    return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
+  }
+
+  std::vector<std::pair<uintptr_t, uintptr_t>> _nvranges;
+
+  /**
+   * A collection of store operations. Each operation is placed in a vector
+   * that corresponds to a cache line this store is writing to.
+   */
+  std::unordered_map<uintptr_t, std::vector<std::shared_ptr<StoreInfo>>>
+      _nvstores;
+};
+
+static NVScopeRT nvsrt;
 
 /**
  * Debug functions
@@ -199,20 +281,6 @@ __attribute__((constructor(CONST_PRIO))) void __nvs_init(void) {
   __start_forkserver();
 }
 
-static inline int __store_in_pmem(void *ptr, size_t size) {
-  (void)ptr;
-
-  if (__nvs_user_mmap_addr == NULL || __nvs_user_mmap_size == 0) return 0;
-
-  uintptr_t lb = (uintptr_t)__nvs_user_mmap_addr;
-  uintptr_t ub = lb + __nvs_user_mmap_size;
-
-  /* TODO: May also check if the store overflows the mapped region. */
-  if (lb <= (uintptr_t)ptr && (uintptr_t)ptr + size < ub) return 1;
-
-  return 0;
-}
-
 static inline int __runq_push_back_store64(uint64_t *ptr) {
   if (runq->len == NVS_SHM_RUNQ_MAX_LEN) {
     ERRF("NVS-RT: run queue is full (%lu entries)!", runq->len);
@@ -316,7 +384,7 @@ void __nvs_store64(void *ptr) {
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  if (!__store_in_pmem(ptr, size)) return;
+  if (!nvsrt.in_nvranges(ptr, size)) return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
@@ -337,19 +405,19 @@ extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
  * The targeted range is determined by the program's call to mmap(). We ignore
  * stores that occur before the mmap() call.
  */
-extern "C" void *__nvs_mmap(void *addr, size_t length, int prot, int flags,
+extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
                             int fd, off_t offset, char *func, char *file,
                             int line) {
   /**
    * TODO: If necessary, we can change how mmap() is called, for example, using
    * provate mapping other than shared.
    */
-  void *pmap = mmap(addr, length, prot, flags, fd, offset);
+  void *pmap = mmap(addr, size, prot, flags, fd, offset);
 
   /* TODO: Save the mapped address and size for store range checking. */
 
   DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
-       pmap, length);
+       pmap, size);
 
   if (!__nvs_enabled || !tgconf->tracing) return pmap;
 
@@ -357,8 +425,7 @@ extern "C" void *__nvs_mmap(void *addr, size_t length, int prot, int flags,
   (void)file;
   (void)line;
 
-  __nvs_user_mmap_addr = pmap;
-  __nvs_user_mmap_size = length;
+  nvsrt.add_nvrange(pmap, size);
 
   /* Implementation */
   tgconf->stage = MAINPROC;
