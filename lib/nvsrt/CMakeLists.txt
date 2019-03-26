@@ -4,7 +4,7 @@ set(SRCS nvsrt.cpp)
 add_library(nvsrt STATIC ${SRCS})
 
 target_compile_options(nvsrt
-  PUBLIC -Wall -Wextra -funroll-loops -Wno-pointer-sign -masm=intel
+  PUBLIC -Wall -Wextra -Ofast -funroll-loops -Wno-pointer-sign -masm=intel
 )
 
 target_compile_definitions(nvsrt
