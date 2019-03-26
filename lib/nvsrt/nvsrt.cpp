@@ -17,63 +17,32 @@
 /**
  * Globals needed by the injected instrumentation.
  */
-int __nvs_enabled;  // __shm_base != NULL
-char *__shm_base;
-struct nvs_config *config;
 struct nvs_target_config *tgconf;
 struct nvs_runq *runq;
 
 class NVScopeRT {
  public:
-  void add_nvrange(void *pmap, size_t size) {
-    uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
-    _nvranges.emplace_back(addr, addr + size);
-  }
-
+  /* Enable NVS-RT. */
+  void enable() { _enabled = true; }
+  /* Set shared memory address for information exchange. */
+  void set_shm_base(void *shm) { _shm_base = shm; }
+  /* Check if NVS-RT is enabled. */
+  bool is_enabled() const { return _enabled; }
+  /* Add one mmaped range. */
+  void add_nvrange(void *pmap, size_t size);
   /* Check if the stored data falls into mmaped ranges. */
-  bool in_nvranges(void *ptr, size_t size) {
-    uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
-    /* TODO: May also check if the store overflows the mapped region. */
-    return std::any_of(_nvranges.begin(), _nvranges.end(),
-                       [addr, size](auto &rg) {
-                         return rg.first <= addr && addr + size < rg.second;
-                       });
-  }
+  bool in_nvranges(void *ptr, size_t size);
+  /* Save store information. */
+  void save_store(void *ptr, uint64_t size, char *func, char *file, int line);
+  /* Perform analysis for insights. */
+  void analyze(uint64_t sfid, char *func, char *file, int line);
 
-  void save_store(void *ptr, uint64_t size, char *func, char *file, int line) {
-    if (in_nvranges(ptr, size)) {
-      auto start = reinterpret_cast<uintptr_t>(ptr);
-      auto last = static_cast<uintptr_t>(start + size);
-      auto cline = get_cache_line_addr(ptr);
-      auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
-      do {
-        auto it = _nvstores.find(cline);
-        if (it == _nvstores.end()) {
-          /**
-           * emplace returns a pair where `first` is an iterator pointing to the
-           * new element of the container.
-           */
-          it = _nvstores
-                   .emplace(cline, std::vector<std::shared_ptr<StoreInfo>>())
-                   .first;
-        }
-        it->second.emplace_back(store);
-        cline += CACHELINE_SIZE;
-      } while (last > cline);
-    }
-  }
-
-  void analyze(uint64_t sfid, char *func, char *file, int line) {
-    if (_nvstores.empty()) {
-      return;
-    }
-    (void)sfid;
-    (void)func;
-    (void)file;
-    (void)line;
-  }
+  // NVScopeRT() : { }
 
  private:
+  static bool _enabled;
+  static void *_shm_base;
+
   struct StoreInfo {
     StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
         : _start(start), _last(last), _func(func), _file(file), _line(line) {}
@@ -98,7 +67,54 @@ class NVScopeRT {
       _nvstores;
 };
 
+void NVScopeRT::add_nvrange(void *pmap, size_t size) {
+  uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
+  _nvranges.emplace_back(addr, addr + size);
+}
+bool NVScopeRT::in_nvranges(void *ptr, size_t size) {
+  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  /* TODO: May also check if the store overflows the mapped region. */
+  return std::any_of(_nvranges.begin(), _nvranges.end(),
+                     [addr, size](auto &rg) {
+                       return rg.first <= addr && addr + size < rg.second;
+                     });
+}
+
+void NVScopeRT::save_store(void *ptr, uint64_t size, char *func, char *file,
+                           int line) {
+  if (in_nvranges(ptr, size)) {
+    auto start = reinterpret_cast<uintptr_t>(ptr);
+    auto last = static_cast<uintptr_t>(start + size);
+    auto cline = get_cache_line_addr(ptr);
+    auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
+    do {
+      auto it = _nvstores.find(cline);
+      if (it == _nvstores.end()) {
+        /**
+         * emplace returns a pair where `first` is an iterator pointing to the
+         * new element of the container.
+         */
+        it = _nvstores.emplace(cline, std::vector<std::shared_ptr<StoreInfo>>())
+                 .first;
+      }
+      it->second.emplace_back(store);
+      cline += CACHELINE_SIZE;
+    } while (last > cline);
+  }
+}
+
+void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
+  if (_nvstores.empty()) return;
+
+  (void)sfid;
+  (void)func;
+  (void)file;
+  (void)line;
+}
+
 static NVScopeRT nvsrt;
+bool NVScopeRT::_enabled = false;
+void *NVScopeRT::_shm_base = nullptr;
 
 /**
  * Debug functions
@@ -152,11 +168,11 @@ static void __nvs_setup_shm(void) {
   if (shmid_str) {
     uint32_t shmid = atoi(shmid_str);
 
-    __shm_base = (char *)shmat(shmid, NULL, 0);
+    void *shm_base = shmat(shmid, NULL, 0);
+    if (shm_base == reinterpret_cast<void *>(-1)) _exit(NVS_EXIT_BAD_SHM);
+    nvsrt.set_shm_base(shm_base);
 
-    if (__shm_base == (void *)-1) _exit(NVS_EXIT_BAD_SHM);
-
-    config = (struct nvs_config *)(__shm_base);
+    struct nvs_config *config = (struct nvs_config *)(shm_base);
 
     /* should be initialized by parent (nvscope) */
     if (!config->initialized) {
@@ -176,13 +192,11 @@ static void __nvs_setup_shm(void) {
       _exit(NVS_EXIT_BAD_CONFIG);
     }
 
-    runq = (struct nvs_runq *)(__shm_base + NVS_SHM_RUNQ_OFF);
+    runq = (struct nvs_runq *)((char *)shm_base + NVS_SHM_RUNQ_OFF);
 
-    __nvs_enabled = 1;
+    nvsrt.enable();
 
   } else {
-    __nvs_enabled = 0;
-
     WARNF("NVS-RT: shared memory not found, tracing functions disabled");
   }
 }
@@ -267,8 +281,11 @@ static void __start_forkserver(void) {
  * with the constructor attribute.
  */
 __attribute__((constructor(CONST_PRIO))) void __nvs_init(void) {
-  if (__nvs_enabled) {
-    /* This function should not fire more than once if __nvs_enabled. */
+  if (nvsrt.is_enabled()) {
+    /**
+     * Because we use forkservers, this function should not fire more than once
+     * if NVS-RT is already enabled.
+     */
     ERRF("NVS-RT: instrumented program already started");
     _exit(EXIT_FAILURE);
   }
@@ -276,7 +293,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvs_init(void) {
   __nvs_setup_shm();
 
   /* If not testing, return to execute the target program, e.g. from main(). */
-  if (!__nvs_enabled) return;
+  if (!nvsrt.is_enabled()) return;
 
   __start_forkserver();
 }
@@ -375,7 +392,7 @@ void __nvs_store64(void *ptr) {
 
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
-  if (!__nvs_enabled || !tgconf->tracing) return;
+  if (!nvsrt.is_enabled() || !tgconf->tracing) return;
 
   if (tgconf->stage == MAINPROC) __runq_push_back_store64((uint64_t *)ptr);
 
@@ -419,7 +436,7 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
        pmap, size);
 
-  if (!__nvs_enabled || !tgconf->tracing) return pmap;
+  if (!nvsrt.is_enabled() || !tgconf->tracing) return pmap;
 
   (void)func;
   (void)file;
@@ -440,7 +457,7 @@ void __clop_nofence(void *ptr, void *pcl, char *func, char *file, int line) {
   (void)file;
   (void)line;
 
-  if (!__nvs_enabled || !tgconf->tracing) return;
+  if (!nvsrt.is_enabled() || !tgconf->tracing) return;
 }
 
 extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
@@ -474,7 +491,7 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
 extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
 
-  if (!__nvs_enabled || !tgconf->tracing) return;
+  if (!nvsrt.is_enabled() || !tgconf->tracing) return;
 
   __nvs_print_runq();
   __emulate_crash(sfid);
