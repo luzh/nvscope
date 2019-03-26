@@ -17,23 +17,45 @@
 /**
  * Globals needed by the injected instrumentation.
  */
-struct nvs_target_config *tgconf;
 struct nvs_runq *runq;
 
 class NVScopeRT {
  public:
   /* Enable NVS-RT. */
-  void enable() { _enabled = true; }
+  void set_enable() { _enabled = true; }
   /* Set shared memory address for information exchange. */
   void set_shm_base(void *shm) { _shm_base = shm; }
+  /* Set config region for target control. */
+  void set_tgconfig(struct nvs_target_config *conf) { _tgconfig = conf; }
   /* Check if NVS-RT is enabled. */
   bool is_enabled() const { return _enabled; }
+  /* Check if NVS-RT is enabled and tracing. */
+  bool is_tracing() const { return _enabled && _tgconfig->tracing; }
+
+  /* Set target process PID. */
+  void set_target_pid(pid_t pid) { _tgconfig->pid = pid; }
+  /* Set target stage. */
+  void set_target_stage(enum nvs_target_stage stge) { _tgconfig->stage = stge; }
+  /* Set target process status. */
+  void set_target_status(int status) { _tgconfig->status = status; }
+
+  /* Get target stage. */
+  enum nvs_target_stage get_target_stage() { return _tgconfig->stage; }
+
+  /* Communication methods. */
+  enum nvs_message read_message() const;
+  void send_message(enum nvs_message msg) const;
+  void send_anydata(void *data, ssize_t len) const;
+  void close_fds() const;
+
   /* Add one mmaped range. */
   void add_nvrange(void *pmap, size_t size);
   /* Check if the stored data falls into mmaped ranges. */
-  bool in_nvranges(void *ptr, size_t size);
+  bool in_nvranges(void *ptr, size_t size) const;
   /* Save store information. */
   void save_store(void *ptr, uint64_t size, char *func, char *file, int line);
+  /* Save CLFLUSHOPT or CLWB operations. */
+  void save_clop_nofence(void *ptr, char *func, char *file, int line);
   /* Perform analysis for insights. */
   void analyze(uint64_t sfid, char *func, char *file, int line);
 
@@ -42,6 +64,7 @@ class NVScopeRT {
  private:
   static bool _enabled;
   static void *_shm_base;
+  static struct nvs_target_config *_tgconfig;
 
   struct StoreInfo {
     StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
@@ -71,13 +94,41 @@ void NVScopeRT::add_nvrange(void *pmap, size_t size) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
   _nvranges.emplace_back(addr, addr + size);
 }
-bool NVScopeRT::in_nvranges(void *ptr, size_t size) {
+bool NVScopeRT::in_nvranges(void *ptr, size_t size) const {
   uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
   /* TODO: May also check if the store overflows the mapped region. */
   return std::any_of(_nvranges.begin(), _nvranges.end(),
                      [addr, size](auto &rg) {
                        return rg.first <= addr && addr + size < rg.second;
                      });
+}
+
+enum nvs_message NVScopeRT::read_message() const {
+  enum nvs_message msg;
+  if (read(_tgconfig->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVS-RT: read() from fd %d failed", _tgconfig->read_fd);
+    _exit(EXIT_FAILURE);
+  }
+  return msg;
+}
+
+void NVScopeRT::send_message(enum nvs_message msg) const {
+  if (write(_tgconfig->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
+    ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
+    _exit(EXIT_FAILURE);
+  }
+}
+
+void NVScopeRT::send_anydata(void *data, ssize_t len) const {
+  if (write(_tgconfig->write_fd, data, len) != len) {
+    ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
+    _exit(EXIT_FAILURE);
+  }
+}
+
+void NVScopeRT::close_fds() const {
+  if (_tgconfig->read_fd > 0) close(_tgconfig->read_fd);
+  if (_tgconfig->write_fd > 0) close(_tgconfig->write_fd);
 }
 
 void NVScopeRT::save_store(void *ptr, uint64_t size, char *func, char *file,
@@ -103,6 +154,19 @@ void NVScopeRT::save_store(void *ptr, uint64_t size, char *func, char *file,
   }
 }
 
+void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
+  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  void *pcl = reinterpret_cast<void *>(ALIGN_DOWN(addr, CACHELINE_SIZE));
+
+  (void)ptr;
+  (void)pcl;
+  (void)func;
+  (void)file;
+  (void)line;
+
+  if (!is_tracing()) return;
+}
+
 void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
   if (_nvstores.empty()) return;
 
@@ -115,6 +179,9 @@ void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
 static NVScopeRT nvsrt;
 bool NVScopeRT::_enabled = false;
 void *NVScopeRT::_shm_base = nullptr;
+struct nvs_target_config *NVScopeRT::_tgconfig = nullptr;
+
+/*--------------------- End of NVScopeRT Implementation ---------------------*/
 
 /**
  * Debug functions
@@ -128,36 +195,6 @@ static void __nvs_print_runq() {
   }
   DBGF(cCYA "--- NVS-RT run queue (***) ---" cRST);
 }
-
-/**
- * Communication functions
- *
- * Now we use pipes. It is possible to change them to use other mechanisms.
- */
-static inline enum nvs_message __read_message() {
-  enum nvs_message msg;
-  if (read(tgconf->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVS-RT: read() from tgconf->read_fd %d failed", tgconf->read_fd);
-    _exit(EXIT_FAILURE);
-  }
-  return msg;
-}
-
-static inline void __send_message(enum nvs_message msg) {
-  if (write(tgconf->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVS-RT: write() to tgconf->write_fd %d failed", tgconf->write_fd);
-    _exit(EXIT_FAILURE);
-  }
-}
-
-#if 0
-static inline void __send_data(void *data, ssize_t len) {
-  if (write(tgconf->write_fd, data, len) != len) {
-    ERRF("NVS-RT: write() to tgconf->write_fd %d failed", tgconf->write_fd);
-    _exit(EXIT_FAILURE);
-  }
-}
-#endif
 
 /**
  * Shared memory setup
@@ -179,8 +216,10 @@ static void __nvs_setup_shm(void) {
       ERRF("NVS-RT: config region not initialized");
       _exit(NVS_EXIT_BAD_SHM);
     }
-    // if (config->stage == NONE) config->stage = DONTCARE;
+    // if (nvsrt.get_target_stage() == ST_NONE)
+    // nvsrt.set_target_stage(ST_DONTCARE);
 
+    struct nvs_target_config *tgconf = nullptr;
     if (config->target_type == TYPE_MAINPROC) {
       tgconf = &config->mainproc;
       OKF("NVS-RT: target mainproc attached to shared memory");
@@ -194,7 +233,8 @@ static void __nvs_setup_shm(void) {
 
     runq = (struct nvs_runq *)((char *)shm_base + NVS_SHM_RUNQ_OFF);
 
-    nvsrt.enable();
+    nvsrt.set_enable();
+    nvsrt.set_tgconfig(tgconf);
 
   } else {
     WARNF("NVS-RT: shared memory not found, tracing functions disabled");
@@ -206,17 +246,16 @@ static void __nvs_setup_shm(void) {
  */
 static void __start_forkserver(void) {
   /* initial communication with nvscope */
-  __send_message(MSG_FORKSERVER_HELLO);
+  nvsrt.send_message(MSG_FORKSERVER_HELLO);
 
   while (1) {
-    __send_message(MSG_FORKSERVER_READY);
+    nvsrt.send_message(MSG_FORKSERVER_READY);
 
-    enum nvs_message command = __read_message();
+    enum nvs_message command = nvsrt.read_message();
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVS-RT: forkserver received command to exit");
-      close(tgconf->read_fd);
-      close(tgconf->write_fd);
+      nvsrt.close_fds();
       _exit(EXIT_SUCCESS);
     }
 
@@ -247,8 +286,8 @@ static void __start_forkserver(void) {
        * testing requests and results.
        */
 
-      tgconf->pid = getpid();
-      __send_message(MSG_TARGET_STARTED);
+      nvsrt.set_target_pid(getpid());
+      nvsrt.send_message(MSG_TARGET_STARTED);
 
       return;  // execute the target progrm, e.g. from main().
     }
@@ -271,8 +310,8 @@ static void __start_forkserver(void) {
       ERRF("NVS-RT: unexpected waitpid() return value %u", cpidw);
     }
 
-    tgconf->status = status;
-    __send_message(MSG_TARGET_EXITED);
+    nvsrt.set_target_status(status);
+    nvsrt.send_message(MSG_TARGET_EXITED);
   }
 }
 
@@ -371,9 +410,9 @@ static inline int __recoverq_push_back_store64(void *ptr) {
 
 static void __emulate_crash(uint64_t sfid) {
   while (__next_test_case(sfid)) {
-    __send_message(MSG_AWAITING_CHECK);
+    nvsrt.send_message(MSG_AWAITING_CHECK);
 
-    enum nvs_message command = __read_message();
+    enum nvs_message command = nvsrt.read_message();
 
     if (command == MSG_SHOW_BUG_AND_EXIT) {
       ERRF("NVS-RT: found bug at sfence #%zu test case #?", sfid);
@@ -392,11 +431,13 @@ void __nvs_store64(void *ptr) {
 
   /* PERF: Perhaps using likely/unlikely can improve performance. */
 
-  if (!nvsrt.is_enabled() || !tgconf->tracing) return;
+  if (!nvsrt.is_tracing()) return;
 
-  if (tgconf->stage == MAINPROC) __runq_push_back_store64((uint64_t *)ptr);
+  if (nvsrt.get_target_stage() == ST_MAINPROC)
+    __runq_push_back_store64((uint64_t *)ptr);
 
-  if (tgconf->stage == RECOVERY) __recoverq_push_back_store64(ptr);
+  if (nvsrt.get_target_stage() == ST_RECOVERY)
+    __recoverq_push_back_store64(ptr);
 }
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
@@ -436,7 +477,7 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
        pmap, size);
 
-  if (!nvsrt.is_enabled() || !tgconf->tracing) return pmap;
+  if (!nvsrt.is_tracing()) return pmap;
 
   (void)func;
   (void)file;
@@ -444,54 +485,37 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
 
   nvsrt.add_nvrange(pmap, size);
 
-  /* Implementation */
-  tgconf->stage = MAINPROC;
+  nvsrt.set_target_stage(ST_MAINPROC);
 
   return pmap;
 }
 
-void __clop_nofence(void *ptr, void *pcl, char *func, char *file, int line) {
-  (void)ptr;
-  (void)pcl;
-  (void)func;
-  (void)file;
-  (void)line;
-
-  if (!nvsrt.is_enabled() || !tgconf->tracing) return;
-}
-
 extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
-  void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
-
   DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
-       ptr, pcl);
+       ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
 
-  __clop_nofence(ptr, pcl, func, file, line);
+  nvsrt.save_clop_nofence(ptr, func, file, line);
 }
 
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
-  void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
-
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
-       line, ptr, pcl);
+       line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
 
-  __clop_nofence(ptr, pcl, func, file, line);
+  nvsrt.save_clop_nofence(ptr, func, file, line);
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
-  void *pcl = (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE);
-
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
-       line, ptr, pcl);
+       line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
 
-  __clop_nofence(ptr, pcl, func, file, line);
+  nvsrt.save_clop_nofence(ptr, func, file, line);
   /* TODO: should also handle sfence here. */
 }
 
 extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
 
-  if (!nvsrt.is_enabled() || !tgconf->tracing) return;
+  if (!nvsrt.is_tracing()) return;
 
   __nvs_print_runq();
   __emulate_crash(sfid);
