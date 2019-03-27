@@ -412,8 +412,8 @@ int main(int argc, char** argv) {
   enum nvs_message main_info, main_ctrl, reco_info;
 
   /* testing mainproc but not recovery */
-  tgconf_main->tracing = 1;
-  tgconf_reco->tracing = 0;
+  tgconf_main->enabled = 1;
+  tgconf_reco->enabled = 0;
 
   benchmark_time_t start, end;
   benchmark_time_get(&start);

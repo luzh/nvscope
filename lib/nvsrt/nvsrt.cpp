@@ -12,7 +12,7 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
-#define CONST_PRIO 0  // constructor priority (runs before a target's main)
+#define NVS_INIT_PRIO 0  // __nvs_init priority (runs before a target's main)
 
 /**
  * Globals needed by the injected instrumentation.
@@ -22,16 +22,13 @@ struct nvs_runq *runq;
 class NVScopeRT {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
  public:
-  /* Enable NVS-RT. */
-  void set_enable() { _enabled = true; }
   /* Set shared memory address for information exchange. */
   void set_shm_base(void *shm) { _shm_base = shm; }
   /* Set config region for target control. */
   void set_tgconfig(struct nvs_target_config *conf) { _tgconfig = conf; }
   /* Check if NVS-RT is enabled. */
-  bool is_enabled() const { return _enabled; }
-  /* Check if NVS-RT is enabled and tracing. */
-  bool is_tracing() const { return _enabled && _tgconfig->tracing; }
+  bool is_enabled() const { return _tgconfig->enabled; }
+
   /**
    * Initialize the store queue. TODO: Currently it's a pre-allocated region in
    * the shared memory. We need a more flexible data structure to save the
@@ -66,13 +63,12 @@ class NVScopeRT {
   /* Perform analysis for insights. */
   void analyze(uint64_t sfid, char *func, char *file, int line);
 
-  NVScopeRT(bool enable, void *_shm, struct nvs_target_config *tgconf)
-      : _enabled(enable), _shm_base(_shm), _tgconfig(tgconf) {
-    OKF("NVS-RT: nvscope run-time created");
+  NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
+      : _shm_base(_shm), _tgconfig(tgconf) {
+    OKF("NVS-RT: nvscope run-time constructed");
   }
 
  private:
-  bool _enabled;
   void *_shm_base;
   struct nvs_target_config *_tgconfig;
 
@@ -80,7 +76,7 @@ class NVScopeRT {
     StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
         : _start(start), _last(last), _func(func), _file(file), _line(line) {}
     uintptr_t _start;  // start address of this store
-    uintptr_t _last;   // one byte after the last address
+    uintptr_t _last;   // one byte after the stored range
     char *_func;
     char *_file;
     int _line;
@@ -172,8 +168,6 @@ void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
   (void)func;
   (void)file;
   (void)line;
-
-  if (!is_tracing()) return;
 }
 
 void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
@@ -234,7 +228,7 @@ static void __nvs_setup_shm(void) {
       _exit(NVS_EXIT_BAD_CONFIG);
     }
 
-    nvsrt = new NVScopeRT(false, nullptr, nullptr);
+    nvsrt = new NVScopeRT(nullptr, nullptr);
     if (!nvsrt) {
       ERRF("NVS-RT: creating nvscope run-time failed");
       _exit(NVS_EXIT_BAD_CONFIG);
@@ -242,15 +236,13 @@ static void __nvs_setup_shm(void) {
 
     runq = (struct nvs_runq *)((char *)shm_base + NVS_SHM_RUNQ_OFF);
 
-    nvsrt->set_enable();
     nvsrt->set_shm_base(shm_base);
     nvsrt->set_tgconfig(tgconf);
 
     if (nvsrt->get_target_stage() == ST_NONE)
       nvsrt->set_target_stage(ST_DONTCARE);
-
   } else {
-    WARNF("NVS-RT: shared memory not found, tracing functions disabled");
+    WARNF("NVS-RT: shared memory not found, nvscope run-time disabled");
   }
 }
 
@@ -333,7 +325,7 @@ static void __start_forkserver(void) {
  * Initialize NVS-RT run-time data structures. Runs before the target's main()
  * with the constructor attribute.
  */
-__attribute__((constructor(CONST_PRIO))) void __nvs_init(void) {
+__attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
   if (nvsrt) {
     /**
      * Because we use forkservers, this function should not fire more than once
@@ -346,7 +338,7 @@ __attribute__((constructor(CONST_PRIO))) void __nvs_init(void) {
   __nvs_setup_shm();
 
   /* If not testing, return to execute the target program, e.g. from main(). */
-  if (!nvsrt || !nvsrt->is_enabled()) return;
+  if (!nvsrt) return;
 
   __start_forkserver();
 }
@@ -437,15 +429,21 @@ static void __emulate_crash(uint64_t sfid) {
 void __nvs_store64(void *ptr) {
   DBGF("NVS-RT: store i64 to %p", ptr);
 
-  /* PERF: Perhaps using likely/unlikely can improve performance. */
+  /* TODO-PERF: Perhaps using likely/unlikely can improve performance. */
 
   if (nvsrt->get_target_stage() == ST_MAINPROC)
     __runq_push_back_store64((uint64_t *)ptr);
 }
 
+/**
+ * The following functions are injected into target programs for testing.
+ * They should be exposed with C linkage (declared as extern "C") if target
+ * programs are written in C because C++ names are usually mangled.
+ */
+
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  if (!nvsrt || !nvsrt->is_tracing() || !nvsrt->in_nvranges(ptr, size)) return;
+  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->in_nvranges(ptr, size)) return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
@@ -478,7 +476,7 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
        pmap, size);
 
-  if (!nvsrt || !nvsrt->is_tracing()) return pmap;
+  if (!nvsrt || !nvsrt->is_enabled()) return pmap;
 
   (void)func;
   (void)file;
@@ -492,6 +490,8 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
 }
 
 extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
+  if (!nvsrt || !nvsrt->is_enabled()) return;
+
   DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
        ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
 
@@ -499,6 +499,8 @@ extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
+  if (!nvsrt || !nvsrt->is_enabled()) return;
+
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
        line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
 
@@ -506,17 +508,20 @@ extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
+  if (!nvsrt || !nvsrt->is_enabled()) return;
+
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
        line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
 
   nvsrt->save_clop_nofence(ptr, func, file, line);
+
   /* TODO: should also handle sfence here. */
 }
 
 extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
 
-  if (!nvsrt || !nvsrt->is_tracing()) return;
+  if (!nvsrt || !nvsrt->is_enabled()) return;
 
   __nvs_print_runq();
   __emulate_crash(sfid);
