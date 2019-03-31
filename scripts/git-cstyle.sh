@@ -5,7 +5,7 @@ if [ -z $CLANG_FORMAT ]; then
 fi
 
 PAGER="less -FrX"
-STYLE=google
+STYLE=file
 
 if [ ! -f $CLANG_FORMAT ]; then
   echo "Error: Invalid CLANG_FORMAT '$CLANG_FORMAT'" && exit 1
@@ -35,7 +35,7 @@ else
 
   if [ -z $2 ]; then # only check the spedified files
     diffall "$files" | $PAGER
-  elif [ $2 == "-A" ]; then # apply file changes in-place
+  elif [ $2 == "-i" ]; then # apply file changes in-place
     for file in $files; do
       if ! diffone $file > /dev/null; then
         $CLANG_FORMAT -style=$STYLE -i $file
