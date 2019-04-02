@@ -23,6 +23,7 @@ cscope.po.out
 
 # CMake generated files
 build
+cmake-build-*
 
 # Other temporaty files
 llvm
@@ -34,6 +35,7 @@ vimtabs
 *.s
 *.log
 *.rel
+.idea
 
 # https://github.com/github/gitignore/blob/master/C.gitignore
 
