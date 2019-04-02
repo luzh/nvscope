@@ -23,7 +23,8 @@ static int checkmeta(void *pmem) {
 
 static int check(void *pmem) {
   int err = checkmeta(pmem);
-  if (err) return err;
+  if (err)
+    return err;
 
   uint64_t *pnvals = (uint64_t *)pmem;
   uint64_t nvals = *pnvals;
@@ -46,12 +47,15 @@ static int check(void *pmem) {
 
 static int peek(void *pmem, uint64_t *topval) {
   int err = checkmeta(pmem);
-  if (err) return err;
+  if (err)
+    return err;
 
-  if (topval == NULL) return EINVAL;
+  if (topval == NULL)
+    return EINVAL;
 
   uint64_t nvals = *((uint64_t *)pmem);
-  if (nvals == 0) *topval = 0;
+  if (nvals == 0)
+    *topval = 0;
 
   uint64_t *top = (uint64_t *)pmem + META_SIZE / 8 + nvals - 1;
   *topval = *top;
@@ -61,7 +65,8 @@ static int peek(void *pmem, uint64_t *topval) {
 
 static int push(void *pmem, uint64_t value) {
   int err = checkmeta(pmem);
-  if (err) return err;
+  if (err)
+    return err;
 
   uint64_t *pnvals = (uint64_t *)pmem;
   uint64_t nvals = *pnvals;
@@ -87,7 +92,8 @@ static int push(void *pmem, uint64_t value) {
 
 static int pop(void *pmem, uint64_t *retval) {
   int err = checkmeta(pmem);
-  if (err) return err;
+  if (err)
+    return err;
 
   uint64_t *pnvals = (uint64_t *)pmem;
   uint64_t nvals = *pnvals;
@@ -99,7 +105,8 @@ static int pop(void *pmem, uint64_t *retval) {
   }
 
   uint64_t value = *top;
-  if (retval != NULL) *retval = value;
+  if (retval != NULL)
+    *retval = value;
 
   *pnvals = nvals - 1;
   clflushopt(pnvals);
@@ -112,14 +119,16 @@ static int pop(void *pmem, uint64_t *retval) {
 
 static int show(void *pmem) {
   int err = checkmeta(pmem);
-  if (err) return err;
+  if (err)
+    return err;
 
   uint64_t *pnvals = (uint64_t *)pmem;
   uint64_t nvals = *pnvals;
   uint64_t *valptr = (uint64_t *)pmem + META_SIZE / 8;
 
   printf("Stack values (total %ld, top on the right):", nvals);
-  for (uint64_t i = 0; i < nvals; i++) printf(" %lu", valptr[i]);
+  for (uint64_t i = 0; i < nvals; i++)
+    printf(" %lu", valptr[i]);
   printf("\n");
 
   return 0;
@@ -174,20 +183,21 @@ int main(int argc, char **argv) {
   int err = 0;
   uint64_t topval;
   switch (op) {
-    case OP_PUSH:
-      if ((err = peek(pmem, &topval)) == 0) push(pmem, topval + 1);
-      break;
-    case OP_POP:
-      pop(pmem, NULL);
-      break;
-    case OP_SHOW:
-      show(pmem);
-      break;
-    case OP_CHECK:
-      err = check(pmem);
-      break;
-    default:
-      break;
+  case OP_PUSH:
+    if ((err = peek(pmem, &topval)) == 0)
+      push(pmem, topval + 1);
+    break;
+  case OP_POP:
+    pop(pmem, NULL);
+    break;
+  case OP_SHOW:
+    show(pmem);
+    break;
+  case OP_CHECK:
+    err = check(pmem);
+    break;
+  default:
+    break;
   }
 
   close(fd);

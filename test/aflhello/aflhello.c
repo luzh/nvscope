@@ -13,7 +13,7 @@ int main() {
       printf("Into path b\n");
       if (key[2] == 'c') {
         printf("Into path c\n");
-        abort();  // simulating a bug causing a crash
+        abort(); // simulating a bug causing a crash
       }
     }
   }

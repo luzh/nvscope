@@ -97,8 +97,10 @@ int main(int argc, char **argv) {
 
   int err = 0;
 
-  if (runcase) err = runcase(pmem);
-  if (runchecker) err = runchecker(pmem);
+  if (runcase)
+    err = runcase(pmem);
+  if (runchecker)
+    err = runchecker(pmem);
 
   munmap(pmem, MMAP_SIZE);
 
