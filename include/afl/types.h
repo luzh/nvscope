@@ -56,17 +56,17 @@ typedef int64_t s64;
 #define MAX(_a, _b) ((_a) > (_b) ? (_a) : (_b))
 #endif /* !MIN */
 
-#define SWAP16(_x)                    \
-  ({                                  \
-    u16 _ret = (_x);                  \
-    (u16)((_ret << 8) | (_ret >> 8)); \
+#define SWAP16(_x)                                                             \
+  ({                                                                           \
+    u16 _ret = (_x);                                                           \
+    (u16)((_ret << 8) | (_ret >> 8));                                          \
   })
 
-#define SWAP32(_x)                                                   \
-  ({                                                                 \
-    u32 _ret = (_x);                                                 \
-    (u32)((_ret << 24) | (_ret >> 24) | ((_ret << 8) & 0x00FF0000) | \
-          ((_ret >> 8) & 0x0000FF00));                               \
+#define SWAP32(_x)                                                             \
+  ({                                                                           \
+    u32 _ret = (_x);                                                           \
+    (u32)((_ret << 24) | (_ret >> 24) | ((_ret << 8) & 0x00FF0000) |           \
+          ((_ret >> 8) & 0x0000FF00));                                         \
   })
 
 #ifdef AFL_LLVM_PASS

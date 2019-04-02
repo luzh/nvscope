@@ -18,7 +18,7 @@
 #define ALIGNED_CL(x) ALIGNED_64(x)
 #define ALIGNED_4K(x) (((uint64_t)(x) & (4096 - 1)) == 0)
 
-#define BINARY_PATH_LEN_MAX (512)  // buffer length to store binary paths
+#define BINARY_PATH_LEN_MAX (512) // buffer length to store binary paths
 
 /* Environment variable used to pass SHM ID to the target programs. */
 
@@ -57,20 +57,20 @@ enum nvs_target_stage { ST_NONE, ST_DONTCARE, ST_MAINPROC, ST_RECOVERY };
 enum nvs_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
 
 struct nvs_target_config {
-  int enabled;                  // if nvscope run-time is enabled
-  pid_t pid;                    // target process pid
-  int status;                   // target process status
-  pid_t fksv_pid;               // target forkserver pid
-  int read_fd;                  // pipe endpoint to read from nvscope
-  int write_fd;                 // pipe endpoint to write to nvscope
-  enum nvs_target_stage stage;  // TODO: may remove
-  int reserved[9];              // pack to whole cache lines
+  int enabled;                 // if nvscope run-time is enabled
+  pid_t pid;                   // target process pid
+  int status;                  // target process status
+  pid_t fksv_pid;              // target forkserver pid
+  int read_fd;                 // pipe endpoint to read from nvscope
+  int write_fd;                // pipe endpoint to write to nvscope
+  enum nvs_target_stage stage; // TODO: may remove
+  int reserved[9];             // pack to whole cache lines
 } __attribute__((packed));
 
 struct nvs_config {
   int initialized;
   enum nvs_target_type target_type;
-  int reserved[14];  // pack to whole cache lines
+  int reserved[14]; // pack to whole cache lines
   struct nvs_target_config mainproc;
   struct nvs_target_config recovery;
 } __attribute__((packed));
@@ -100,7 +100,7 @@ struct nvs_runq {
 #define NVS_SHM_RUNQ_OFF (NVS_SHM_CONFIG_SIZE)
 #define NVS_SHM_RUNQ_SIZE (500000)
 #define NVS_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvs_runq), CLSIZE)
-#define NVS_SHM_RUNQ_MAX_LEN \
+#define NVS_SHM_RUNQ_MAX_LEN                                                   \
   ((NVS_SHM_RUNQ_SIZE - NVS_SHM_RUNQ_META_SIZE) / sizeof(struct nvs_runq_entry))
 
 #endif

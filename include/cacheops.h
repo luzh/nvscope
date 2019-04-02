@@ -33,12 +33,14 @@ void __attribute__((optnone, noinline)) clflush(void const *ptr) {
 
 void __attribute__((optnone, noinline)) clflushopt(void const *ptr) {
   unsigned char loopcnt = *((char *)ptr);
-  while (loopcnt > 0) --loopcnt;
+  while (loopcnt > 0)
+    --loopcnt;
 }
 
 void __attribute__((optnone, noinline)) clwb(void const *ptr) {
   unsigned char loopcnt = *((char *)ptr);
-  while (loopcnt > 0) --loopcnt;
+  while (loopcnt > 0)
+    --loopcnt;
 }
 
 #endif

@@ -145,28 +145,28 @@
 
 /* Show a prefixed warning. */
 
-#define WARNF(x...)           \
-  do {                        \
-    SAYF(cYEL "[!] " cRST x); \
-    SAYF(cRST "\n");          \
+#define WARNF(x...)                                                            \
+  do {                                                                         \
+    SAYF(cYEL "[!] " cRST x);                                                  \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 #ifdef NVS_DEBUG
 
 /* Show a prefixed debug message. */
 
-#define DBGF(x...)            \
-  do {                        \
-    SAYF(cBLU "[>] " cRST x); \
-    SAYF(cRST "\n");          \
+#define DBGF(x...)                                                             \
+  do {                                                                         \
+    SAYF(cBLU "[>] " cRST x);                                                  \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 /* Show a prefixed test case message. */
 
-#define TESTC(x...)      \
-  do {                   \
-    SAYF(cBLU "[$] " x); \
-    SAYF(cRST "\n");     \
+#define TESTC(x...)                                                            \
+  do {                                                                         \
+    SAYF(cBLU "[$] " x);                                                       \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 #else
@@ -176,97 +176,99 @@
 
 /* Show a prefixed "doing something" message. */
 
-#define ACTF(x...)            \
-  do {                        \
-    SAYF(cLBL "[*] " cRST x); \
-    SAYF(cRST "\n");          \
+#define ACTF(x...)                                                             \
+  do {                                                                         \
+    SAYF(cLBL "[*] " cRST x);                                                  \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 /* Show a prefixed "success" message. */
 
-#define OKF(x...)             \
-  do {                        \
-    SAYF(cLGN "[+] " cRST x); \
-    SAYF(cRST "\n");          \
+#define OKF(x...)                                                              \
+  do {                                                                         \
+    SAYF(cLGN "[+] " cRST x);                                                  \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 /* Show a prefixed fatal error message. */
 
-#define ERRF(x...)            \
-  do {                        \
-    SAYF(cLRD "[-] " cRST x); \
-    SAYF(cRST "\n");          \
+#define ERRF(x...)                                                             \
+  do {                                                                         \
+    SAYF(cLRD "[-] " cRST x);                                                  \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 /* Die with a verbose non-OS fatal error message. */
 
-#define FATAL(x...)                                                          \
-  do {                                                                       \
-    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                \
-         "\n[-] PROGRAM ABORT : " cBRI x);                                   \
-    SAYF(cLRD "\n         Location : " cRST "%s(), %s:%u\n\n", __FUNCTION__, \
-         __FILE__, __LINE__);                                                \
-    exit(1);                                                                 \
+#define FATAL(x...)                                                            \
+  do {                                                                         \
+    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                  \
+         "\n[-] PROGRAM ABORT : " cBRI x);                                     \
+    SAYF(cLRD "\n         Location : " cRST "%s(), %s:%u\n\n", __FUNCTION__,   \
+         __FILE__, __LINE__);                                                  \
+    exit(1);                                                                   \
   } while (0)
 
 /* Die by calling abort() to provide a core dump. */
 
-#define ABORT(x...)                                                          \
-  do {                                                                       \
-    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                \
-         "\n[-] PROGRAM ABORT : " cBRI x);                                   \
-    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n\n", __FUNCTION__, \
-         __FILE__, __LINE__);                                                \
-    abort();                                                                 \
+#define ABORT(x...)                                                            \
+  do {                                                                         \
+    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                  \
+         "\n[-] PROGRAM ABORT : " cBRI x);                                     \
+    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n\n", __FUNCTION__,   \
+         __FILE__, __LINE__);                                                  \
+    abort();                                                                   \
   } while (0)
 
 /* Die while also including the output of perror(). */
 
-#define PFATAL(x...)                                                       \
-  do {                                                                     \
-    fflush(stdout);                                                        \
-    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                              \
-         "\n[-]  SYSTEM ERROR : " cBRI x);                                 \
-    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n", __FUNCTION__, \
-         __FILE__, __LINE__);                                              \
-    SAYF(cLRD "       OS message : " cRST "%s\n", strerror(errno));        \
-    exit(1);                                                               \
+#define PFATAL(x...)                                                           \
+  do {                                                                         \
+    fflush(stdout);                                                            \
+    SAYF(bSTOP RESET_G1 CURSOR_SHOW cRST cLRD                                  \
+         "\n[-]  SYSTEM ERROR : " cBRI x);                                     \
+    SAYF(cLRD "\n    Stop location : " cRST "%s(), %s:%u\n", __FUNCTION__,     \
+         __FILE__, __LINE__);                                                  \
+    SAYF(cLRD "       OS message : " cRST "%s\n", strerror(errno));            \
+    exit(1);                                                                   \
   } while (0)
 
 /* Die with FAULT() or PFAULT() depending on the value of res (used to
    interpret different failure modes for read(), write(), etc). */
 
-#define RPFATAL(res, x...) \
-  do {                     \
-    if (res < 0)           \
-      PFATAL(x);           \
-    else                   \
-      FATAL(x);            \
+#define RPFATAL(res, x...)                                                     \
+  do {                                                                         \
+    if (res < 0)                                                               \
+      PFATAL(x);                                                               \
+    else                                                                       \
+      FATAL(x);                                                                \
   } while (0)
 
 /* Error-checking versions of read() and write() that call RPFATAL() as
    appropriate. */
 
-#define ck_write(fd, buf, len, fn)                            \
-  do {                                                        \
-    u32 _len = (len);                                         \
-    s32 _res = write(fd, buf, _len);                          \
-    if (_res != _len) RPFATAL(_res, "Short write to %s", fn); \
+#define ck_write(fd, buf, len, fn)                                             \
+  do {                                                                         \
+    u32 _len = (len);                                                          \
+    s32 _res = write(fd, buf, _len);                                           \
+    if (_res != _len)                                                          \
+      RPFATAL(_res, "Short write to %s", fn);                                  \
   } while (0)
 
-#define ck_read(fd, buf, len, fn)                              \
-  do {                                                         \
-    u32 _len = (len);                                          \
-    s32 _res = read(fd, buf, _len);                            \
-    if (_res != _len) RPFATAL(_res, "Short read from %s", fn); \
+#define ck_read(fd, buf, len, fn)                                              \
+  do {                                                                         \
+    u32 _len = (len);                                                          \
+    s32 _res = read(fd, buf, _len);                                            \
+    if (_res != _len)                                                          \
+      RPFATAL(_res, "Short read from %s", fn);                                 \
   } while (0)
 
 /* Variable and definition printers */
 
-#define VARF(x...)                              \
-  do {                                          \
-    SAYF(cYEL "[>] " cLCY "Variable: " cRST x); \
-    SAYF(cRST "\n");                            \
+#define VARF(x...)                                                             \
+  do {                                                                         \
+    SAYF(cYEL "[>] " cLCY "Variable: " cRST x);                                \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 #define SHOW_VAR32I(x) VARF("%s = %d", #x, (int32_t)x)
@@ -277,17 +279,17 @@
 #define SHOW_VAR64U(x) VARF("%s = %lu", #x, (uint64_t)x)
 #define SHOW_VAR64X(x) VARF("%s = 0x%lx", #x, (uint64_t)x)
 
-#define SHOW_VARSTR(x)                                           \
-  do {                                                           \
-    SAYF(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x); \
-    SAYF(cRST "\n");                                             \
+#define SHOW_VARSTR(x)                                                         \
+  do {                                                                         \
+    SAYF(cYEL "[>] " cLCY "String: " cRST "%s = \"%s\"", #x, x);               \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 #define TOSTR(x) #x
-#define SHOW_DEFSTR(x)                                                 \
-  do {                                                                 \
-    SAYF(cYEL "[>] " cLCY "Definition: " cRST "%s: %s", #x, TOSTR(x)); \
-    SAYF(cRST "\n");                                                   \
+#define SHOW_DEFSTR(x)                                                         \
+  do {                                                                         \
+    SAYF(cYEL "[>] " cLCY "Definition: " cRST "%s: %s", #x, TOSTR(x));         \
+    SAYF(cRST "\n");                                                           \
   } while (0)
 
 #define OFFSETOF(type, member) ((size_t) & (((type *)0)->member))
