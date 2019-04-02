@@ -13,7 +13,7 @@ static char mainproc[BINARY_PATH_LEN_MAX];
 static char recovery[BINARY_PATH_LEN_MAX];
 
 static int32_t shm_id; /* ID of the SHM region */
-static char* shm_base; /* pointer to the SHM region */
+static char *shm_base; /* pointer to the SHM region */
 
 static char clockchars[4] = {'|', '/', '-', '\\'};
 
@@ -46,13 +46,13 @@ static inline void read_data(int channel, void* data, ssize_t len) {
  * shell script - a common and painful mistake. We also check for a valid ELF
  * header and for evidence of AFL instrumentation.
  */
-static void check_binary(char* fname, char* target) {
-  char* bin_path = NULL;
-  char* env_path = NULL;
+static void check_binary(char *fname, char *target) {
+  char *bin_path = NULL;
+  char *env_path = NULL;
   struct stat st;
 
   int fd;
-  char* f_data;
+  char *f_data;
   uint32_t f_len = 0;
 
   ACTF("Validating target binary '%s'...", fname);
@@ -95,12 +95,15 @@ static void check_binary(char* fname, char* target) {
       bin_path = NULL;
     }
 
-    if (!bin_path) FATAL("NVScope: '%s' not found or not executable", fname);
+    if (!bin_path)
+      FATAL("NVScope: '%s' not found or not executable", fname);
   }
 
-  if (getenv("NVS_SKIP_BIN_CHECK")) return;
+  if (getenv("NVS_SKIP_BIN_CHECK"))
+    return;
 
-  if (target == NULL) FATAL("NVScope: invalid buffer to store target's path");
+  if (target == NULL)
+    FATAL("NVScope: invalid buffer to store target's path");
   size_t bin_path_len = strlen(bin_path);
   if (BINARY_PATH_LEN_MAX <= bin_path_len) {
     ck_free(bin_path);
@@ -123,11 +126,13 @@ static void check_binary(char* fname, char* target) {
 
   fd = open(target, O_RDONLY);
 
-  if (fd < 0) PFATAL("NVScope: unable to open '%s'", target);
+  if (fd < 0)
+    PFATAL("NVScope: unable to open '%s'", target);
 
   f_data = mmap(0, f_len, PROT_READ, MAP_PRIVATE, fd, 0);
 
-  if (f_data == MAP_FAILED) PFATAL("NVScope: unable to mmap file '%s'", target);
+  if (f_data == MAP_FAILED)
+    PFATAL("NVScope: unable to mmap file '%s'", target);
 
   close(fd);
 
@@ -171,13 +176,15 @@ static void check_binary(char* fname, char* target) {
   }
 #endif
 
-  if (munmap(f_data, f_len)) PFATAL("NVScope: unmap() failed");
+  if (munmap(f_data, f_len))
+    PFATAL("NVScope: unmap() failed");
 }
 
-static int check_status(int status, pid_t pid, char* pname) {
+static int check_status(int status, pid_t pid, char *pname) {
   int err = 1;
 
-  if (pname == NULL) pname = "(unnamed)";
+  if (pname == NULL)
+    pname = "(unnamed)";
 
   if (WIFEXITED(status)) {
     int exstatus = WEXITSTATUS(status);
@@ -214,7 +221,7 @@ static void cleanup(void) {
  * Configure shared memory and virgin_bits. This is called at startup.
  */
 static void setup_shm(void) {
-  char* shm_str;
+  char *shm_str;
 
 #if 0
   if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
@@ -224,7 +231,8 @@ static void setup_shm(void) {
 #endif
 
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
-  if (shm_id < 0) PFATAL("shmget() failed");
+  if (shm_id < 0)
+    PFATAL("shmget() failed");
 
   OKF("Shared memory created");
 
@@ -236,7 +244,8 @@ static void setup_shm(void) {
   ck_free(shm_str);
 
   shm_base = shmat(shm_id, NULL, 0);
-  if (!shm_base) PFATAL("shmat() failed");
+  if (!shm_base)
+    PFATAL("shmat() failed");
 
   memset(shm_base, 0, MAP_SIZE);
 }
@@ -249,9 +258,9 @@ static void setup_shm(void) {
  * cloning a stopped child. So, we just execute once, and then send commands
  * through a pipe. The other part of this logic is in lib/nvsrt/nvsrt.c.
  */
-static pid_t start_forkserver(char* target, char** target_argv,
-                              struct nvs_target_config* target_conf,
-                              int* parent_read_fd, int* parent_write_fd) {
+static pid_t start_forkserver(char *target, char **target_argv,
+                              struct nvs_target_config *target_conf,
+                              int *parent_read_fd, int *parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
   assert(target_conf != NULL && parent_read_fd != NULL &&
@@ -264,7 +273,7 @@ static pid_t start_forkserver(char* target, char** target_argv,
   if (fksv_pid < 0)
     PFATAL("NVScope: fork() to run the target program's forkserver failed");
 
-  if (fksv_pid == 0) {  // target program's forkserver process
+  if (fksv_pid == 0) { // target program's forkserver process
     struct rlimit rlim;
 
     /*
@@ -318,7 +327,7 @@ static pid_t start_forkserver(char* target, char** target_argv,
 
   if (pidw < 0) {
     ERRF("NVScope: waitpid(%u) failed", fksv_pid);
-  } else if (pidw == fksv_pid) {  // target's forkserver reaped
+  } else if (pidw == fksv_pid) { // target's forkserver reaped
     check_status(status, fksv_pid, "target's forkserver");
   } else {
     ERRF("NVScope: unexpected waitpid() return value %u", pidw);
@@ -340,26 +349,27 @@ static void show_progress(size_t testid) {
        clockchars[charid], testid);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   COMPILE_ERROR_ON(MAP_SIZE < NVS_SHM_RUNQ_OFF + NVS_SHM_RUNQ_SIZE);
   COMPILE_ERROR_ON(sizeof(struct nvs_target_config) != CLSIZE);
   COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvs_config, mainproc)));
 
   if (argc < 5)
-    FATAL(
-        "NVSope usage: %s --nvs-mainproc <mainproc and args> --nvs-recovery "
-        "<recovery and args>",
-        argv[0]);
+    FATAL("NVSope usage: %s --nvs-mainproc <mainproc and args> --nvs-recovery "
+          "<recovery and args>",
+          argv[0]);
 
   int main_args_start = 0, main_args_end = 0, reco_args_start = 0;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--nvs-mainproc") == 0) {
-      if (main_args_start != 0) FATAL("NVSope: duplicated --nvs-mainproc");
+      if (main_args_start != 0)
+        FATAL("NVSope: duplicated --nvs-mainproc");
       main_args_start = i + 1;
     }
     if (strcmp(argv[i], "--nvs-recovery") == 0) {
-      if (reco_args_start != 0) FATAL("NVSope: duplicated --nvs-recovery");
-      argv[i] = NULL;  // for terminating mainproc_argv
+      if (reco_args_start != 0)
+        FATAL("NVSope: duplicated --nvs-recovery");
+      argv[i] = NULL; // for terminating mainproc_argv
       main_args_end = i - 1;
       reco_args_start = i + 1;
     }
@@ -368,39 +378,41 @@ int main(int argc, char** argv) {
       main_args_end < main_args_start)
     FATAL("NVScope: argument parsing error!");
 
-  char** mainproc_argv = argv + main_args_start;
-  char** recovery_argv = argv + reco_args_start;
+  char **mainproc_argv = argv + main_args_start;
+  char **recovery_argv = argv + reco_args_start;
 
   check_binary(argv[main_args_start], mainproc);
   SAYF(cLBL "[*] " cRST "Mainproc program and args:");
-  for (char** arg = mainproc_argv; *arg != NULL; arg++) SAYF(" %s", *arg);
+  for (char **arg = mainproc_argv; *arg != NULL; arg++)
+    SAYF(" %s", *arg);
   SAYF("\n");
 
   check_binary(argv[reco_args_start], recovery);
   SAYF(cLBL "[*] " cRST "Recovery program and args:");
-  for (char** arg = recovery_argv; *arg != NULL; arg++) SAYF(" %s", *arg);
+  for (char **arg = recovery_argv; *arg != NULL; arg++)
+    SAYF(" %s", *arg);
   SAYF("\n");
 
   setup_shm();
 
-  struct nvs_config* config = (struct nvs_config*)(shm_base);
+  struct nvs_config *config = (struct nvs_config *)(shm_base);
   config->initialized = 1;
 
-  struct nvs_target_config* tgconf_main = &config->mainproc;
-  struct nvs_target_config* tgconf_reco = &config->recovery;
+  struct nvs_target_config *tgconf_main = &config->mainproc;
+  struct nvs_target_config *tgconf_reco = &config->recovery;
 
-  int main_ctrl_fd, main_info_fd;  // mainproc control pipes
-  int reco_ctrl_fd, reco_info_fd;  // recovery control pipes
+  int main_ctrl_fd, main_info_fd; // mainproc control pipes
+  int reco_ctrl_fd, reco_info_fd; // recovery control pipes
 
   ACTF("NVScope: spinning up the forkserver for mainproc...");
-  config->target_type = TYPE_MAINPROC;  // must set before start_forkserver()
+  config->target_type = TYPE_MAINPROC; // must set before start_forkserver()
   pid_t main_fksv_pid = start_forkserver(mainproc, mainproc_argv, tgconf_main,
                                          &main_info_fd, &main_ctrl_fd);
   if (main_fksv_pid < 0)
     FATAL("NVScope: mainproc's forkserver failed to start");
 
   ACTF("NVScope: spinning up the forkserver for recovery...");
-  config->target_type = TYPE_RECOVERY;  // must set before start_forkserver()
+  config->target_type = TYPE_RECOVERY; // must set before start_forkserver()
   pid_t reco_fksv_pid = start_forkserver(recovery, recovery_argv, tgconf_reco,
                                          &reco_info_fd, &reco_ctrl_fd);
   if (reco_fksv_pid < 0)
@@ -425,59 +437,59 @@ int main(int argc, char** argv) {
     main_info = read_message(main_info_fd);
 
     switch (main_info) {
-      case MSG_FORKSERVER_READY:
-        send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
-        break;
-      case MSG_TARGET_STARTED:
-        DBGF("NVScope: target process started, pid %d", tgconf_main->pid);
-        break;
-      case MSG_AWAITING_CHECK:
-        DBGF("NVScope: mainproc requested to run recovery and checking");
+    case MSG_FORKSERVER_READY:
+      send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
+      break;
+    case MSG_TARGET_STARTED:
+      DBGF("NVScope: target process started, pid %d", tgconf_main->pid);
+      break;
+    case MSG_AWAITING_CHECK:
+      DBGF("NVScope: mainproc requested to run recovery and checking");
 
-        ++testcases;
+      ++testcases;
 
-        reco_info = read_message(reco_info_fd);
-        if (reco_info != MSG_FORKSERVER_READY) {
-          ERRF("NVScope: received inappropriate message %d", reco_info);
-          fatal = 1;
-          break;
-        }
-
-        send_message(reco_ctrl_fd, MSG_FORK_AND_RUN);
-
-        reco_info = read_message(reco_info_fd);
-        if (reco_info != MSG_TARGET_STARTED) {
-          ERRF("NVScope: received inappropriate message %d", reco_info);
-          fatal = 1;
-          break;
-        }
-        DBGF("NVScope: recovery process started, pid %d", tgconf_reco->pid);
-
-        reco_info = read_message(reco_info_fd);
-        if (reco_info != MSG_TARGET_EXITED) {
-          ERRF("NVScope: received inappropriate message %d", reco_info);
-          fatal = 1;
-          break;
-        }
-
-        bug = check_status(tgconf_reco->status, tgconf_reco->pid, "recovery");
-        main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
-        send_message(main_ctrl_fd, main_ctrl);
-        show_progress(testcases);
-        break;
-      case MSG_TARGET_EXITED:
-        SAYF("\n");
-        check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
-        ACTF("NVScope: terminiating the mainproc forkserver...");
-        send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
-        ACTF("NVScope: terminiating the recovery forkserver...");
-        send_message(reco_ctrl_fd, MSG_EXIT_FORKSERVER);
-        stop = 1;  // can restart the mainproc process
-        break;
-      default:
-        ERRF("NVScope: received inappropriate message %d", main_info);
+      reco_info = read_message(reco_info_fd);
+      if (reco_info != MSG_FORKSERVER_READY) {
+        ERRF("NVScope: received inappropriate message %d", reco_info);
         fatal = 1;
         break;
+      }
+
+      send_message(reco_ctrl_fd, MSG_FORK_AND_RUN);
+
+      reco_info = read_message(reco_info_fd);
+      if (reco_info != MSG_TARGET_STARTED) {
+        ERRF("NVScope: received inappropriate message %d", reco_info);
+        fatal = 1;
+        break;
+      }
+      DBGF("NVScope: recovery process started, pid %d", tgconf_reco->pid);
+
+      reco_info = read_message(reco_info_fd);
+      if (reco_info != MSG_TARGET_EXITED) {
+        ERRF("NVScope: received inappropriate message %d", reco_info);
+        fatal = 1;
+        break;
+      }
+
+      bug = check_status(tgconf_reco->status, tgconf_reco->pid, "recovery");
+      main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
+      send_message(main_ctrl_fd, main_ctrl);
+      show_progress(testcases);
+      break;
+    case MSG_TARGET_EXITED:
+      SAYF("\n");
+      check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
+      ACTF("NVScope: terminiating the mainproc forkserver...");
+      send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
+      ACTF("NVScope: terminiating the recovery forkserver...");
+      send_message(reco_ctrl_fd, MSG_EXIT_FORKSERVER);
+      stop = 1; // can restart the mainproc process
+      break;
+    default:
+      ERRF("NVScope: received inappropriate message %d", main_info);
+      fatal = 1;
+      break;
     }
   }
 
