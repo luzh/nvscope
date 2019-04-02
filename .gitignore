@@ -26,6 +26,7 @@ build
 
 # Other temporaty files
 llvm
+boost
 google
 vimtabs
 
