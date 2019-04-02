@@ -27,7 +27,7 @@ using namespace llvm;
 namespace {
 
 class AFLCoverage : public ModulePass {
- public:
+public:
   static char ID;
   AFLCoverage() : ModulePass(ID) {}
 
@@ -37,7 +37,7 @@ class AFLCoverage : public ModulePass {
   //  return "American Fuzzy Lop Instrumentation";
   // }
 };
-}  // namespace
+} // namespace
 
 bool AFLCoverage::runOnModule(Module &M) {
   LLVMContext &C = M.getContext();
@@ -81,7 +81,8 @@ bool AFLCoverage::runOnModule(Module &M) {
       BasicBlock::iterator IP = BB.getFirstInsertionPt();
       IRBuilder<> IRB(&(*IP));
 
-      if (AFL_R(100) >= inst_ratio) continue;
+      if (AFL_R(100) >= inst_ratio)
+        continue;
 
       /* Make up cur_loc */
 

@@ -27,7 +27,7 @@ STATISTIC(HelloCounter, "Counts number of functions greeted");
 namespace {
 // Hello - The first implementation, without getAnalysisUsage.
 struct Hello : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
+  static char ID; // Pass identification, replacement for typeid
   Hello() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
@@ -37,7 +37,7 @@ struct Hello : public FunctionPass {
     return false;
   }
 };
-}  // namespace
+} // namespace
 
 char Hello::ID = 0;
 static RegisterPass<Hello> X("hello", "Hello World Pass");
@@ -45,7 +45,7 @@ static RegisterPass<Hello> X("hello", "Hello World Pass");
 namespace {
 // Hello2 - The second implementation with getAnalysisUsage implemented.
 struct Hello2 : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
+  static char ID; // Pass identification, replacement for typeid
   Hello2() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
@@ -60,18 +60,18 @@ struct Hello2 : public FunctionPass {
     AU.setPreservesAll();
   }
 };
-}  // namespace
+} // namespace
 
 char Hello2::ID = 0;
-static RegisterPass<Hello2> Y(
-    "hello2", "Hello World Pass (with getAnalysisUsage implemented)");
+static RegisterPass<Hello2>
+    Y("hello2", "Hello World Pass (with getAnalysisUsage implemented)");
 
 namespace {
 // Bin2Mul - Replace the first binary operator (+, -, etc.) in every function
 // with a multiply.
 // Source: www.cs.cornell.edu/~asampson/blog/llvm.html
 struct Bin2Mul : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
+  static char ID; // Pass identification, replacement for typeid
   Bin2Mul() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
@@ -93,7 +93,7 @@ struct Bin2Mul : public FunctionPass {
           // Everywhere the old instruction was used as an operand, use our
           // new multiply instruction instead.
           for (auto &U : Op->uses()) {
-            User *user = U.getUser();  // A User is anything with operands.
+            User *user = U.getUser(); // A User is anything with operands.
             user->setOperand(U.getOperandNo(), Mul);
           }
 
@@ -108,8 +108,8 @@ struct Bin2Mul : public FunctionPass {
     return false;
   }
 };
-}  // namespace
+} // namespace
 
 char Bin2Mul::ID = 0;
-static RegisterPass<Bin2Mul> Bin2MulPass(
-    "bin2mul", "Binary Operator to Multiplication Pass");
+static RegisterPass<Bin2Mul>
+    Bin2MulPass("bin2mul", "Binary Operator to Multiplication Pass");

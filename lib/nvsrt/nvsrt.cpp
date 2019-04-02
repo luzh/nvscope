@@ -12,7 +12,7 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
-#define NVS_INIT_PRIO 0  // __nvs_init priority (runs before a target's main)
+#define NVS_INIT_PRIO 0 // __nvs_init priority (runs before a target's main)
 
 /**
  * Globals needed by the injected instrumentation.
@@ -21,7 +21,7 @@ struct nvs_runq *runq;
 
 class NVScopeRT {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
- public:
+public:
   /* Set shared memory address for information exchange. */
   void set_shm_base(void *shm) { _shm_base = shm; }
   /* Set config region for target control. */
@@ -68,15 +68,15 @@ class NVScopeRT {
     OKF("NVS-RT: nvscope run-time constructed");
   }
 
- private:
+private:
   void *_shm_base;
   struct nvs_target_config *_tgconfig;
 
   struct StoreInfo {
     StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
         : _start(start), _last(last), _func(func), _file(file), _line(line) {}
-    uintptr_t _start;  // start address of this store
-    uintptr_t _last;   // one byte after the stored range
+    uintptr_t _start; // start address of this store
+    uintptr_t _last;  // one byte after the stored range
     char *_func;
     char *_file;
     int _line;
@@ -134,8 +134,10 @@ void NVScopeRT::send_anydata(void *data, ssize_t len) const {
 }
 
 void NVScopeRT::close_channels() const {
-  if (_tgconfig->read_fd > 0) close(_tgconfig->read_fd);
-  if (_tgconfig->write_fd > 0) close(_tgconfig->write_fd);
+  if (_tgconfig->read_fd > 0)
+    close(_tgconfig->read_fd);
+  if (_tgconfig->write_fd > 0)
+    close(_tgconfig->write_fd);
 }
 
 void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
@@ -171,7 +173,8 @@ void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
 }
 
 void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
-  if (_nvstores.empty()) return;
+  if (_nvstores.empty())
+    return;
 
   (void)sfid;
   (void)func;
@@ -206,7 +209,8 @@ static void __nvs_setup_shm(void) {
     uint32_t shmid = atoi(shmid_str);
 
     void *shm_base = shmat(shmid, NULL, 0);
-    if (shm_base == reinterpret_cast<void *>(-1)) _exit(NVS_EXIT_BAD_SHM);
+    if (shm_base == reinterpret_cast<void *>(-1))
+      _exit(NVS_EXIT_BAD_SHM);
 
     struct nvs_config *config = (struct nvs_config *)(shm_base);
 
@@ -295,7 +299,7 @@ static void __start_forkserver(void) {
       nvsrt->set_target_pid(getpid());
       nvsrt->send_message(MSG_TARGET_STARTED);
 
-      return;  // execute the target progrm, e.g. from main().
+      return; // execute the target progrm, e.g. from main().
     }
 
     DBGF("NVS-RT: target process started, pid %d", cpid);
@@ -310,7 +314,7 @@ static void __start_forkserver(void) {
     if (cpidw < 0) {
       ERRF("NVS-RT: waitpid() for %u failed", cpid);
       _exit(EXIT_FAILURE);
-    } else if (cpidw == cpid) {  // child process reaped
+    } else if (cpidw == cpid) { // child process reaped
       DBGF("NVS-RT: target process %u finished", cpid);
     } else {
       ERRF("NVS-RT: unexpected waitpid() return value %u", cpidw);
@@ -338,7 +342,8 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
   __nvs_setup_shm();
 
   /* If not testing, return to execute the target program, e.g. from main(). */
-  if (!nvsrt) return;
+  if (!nvsrt)
+    return;
 
   __start_forkserver();
 }
@@ -443,14 +448,15 @@ void __nvs_store64(void *ptr) {
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->in_nvranges(ptr, size)) return;
+  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->in_nvranges(ptr, size))
+    return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
 
   nvsrt->save_store(ptr, size, func, file, line);
 
-  if (size == 8)  // TODO: handle other sizes
+  if (size == 8) // TODO: handle other sizes
     __nvs_store64(ptr);
 }
 
@@ -476,7 +482,8 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   DBGF("NVS-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
        pmap, size);
 
-  if (!nvsrt || !nvsrt->is_enabled()) return pmap;
+  if (!nvsrt || !nvsrt->is_enabled())
+    return pmap;
 
   (void)func;
   (void)file;
@@ -490,7 +497,8 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
 }
 
 extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
-  if (!nvsrt || !nvsrt->is_enabled()) return;
+  if (!nvsrt || !nvsrt->is_enabled())
+    return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
        ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
@@ -499,7 +507,8 @@ extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
-  if (!nvsrt || !nvsrt->is_enabled()) return;
+  if (!nvsrt || !nvsrt->is_enabled())
+    return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
        line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
@@ -508,7 +517,8 @@ extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
-  if (!nvsrt || !nvsrt->is_enabled()) return;
+  if (!nvsrt || !nvsrt->is_enabled())
+    return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
        line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
@@ -521,7 +531,8 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
 extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
 
-  if (!nvsrt || !nvsrt->is_enabled()) return;
+  if (!nvsrt || !nvsrt->is_enabled())
+    return;
 
   __nvs_print_runq();
   __emulate_crash(sfid);

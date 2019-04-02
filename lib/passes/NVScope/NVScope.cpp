@@ -48,11 +48,11 @@ STATISTIC(NVScopeSFenceOps, "SFENCE operations");
 namespace {
 // NVScopeProbes
 struct NVScopeProbes : public FunctionPass {
-  static char ID;  // Pass identification, replacement for typeid
+  static char ID; // Pass identification, replacement for typeid
   NVScopeProbes() : FunctionPass(ID) {}
   bool runOnFunction(Function &F) override;
 
- private:
+private:
   void collectStackVariables(Function &F);
   void printInstrumentedCall(const StringRef &func, const StringRef &file,
                              const int line);
@@ -377,8 +377,8 @@ bool NVScopeProbes::runOnFunction(Function &F) {
   return Modified;
 }
 
-}  // namespace
+} // namespace
 
 char NVScopeProbes::ID = 0;
-static RegisterPass<NVScopeProbes> NVScopeProbesPass(
-    "probes", "NVScope Probes Insertion Pass");
+static RegisterPass<NVScopeProbes>
+    NVScopeProbesPass("probes", "NVScope Probes Insertion Pass");

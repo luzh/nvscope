@@ -49,7 +49,7 @@
    run. It will end up as .comm, so it shouldn't be too wasteful. */
 
 u8 __afl_area_initial[MAP_SIZE];
-u8* __afl_area_ptr = __afl_area_initial;
+u8 *__afl_area_ptr = __afl_area_initial;
 
 __thread u32 __afl_prev_loc;
 
@@ -60,7 +60,7 @@ static u8 is_persistent;
 /* SHM setup. */
 
 static void __afl_map_shm(void) {
-  u8* id_str = getenv(SHM_ENV_VAR);
+  u8 *id_str = getenv(SHM_ENV_VAR);
 
   /* If we're running under AFL, attach to the appropriate region, replacing the
      early-stage __afl_area_initial region that is needed to allow some really
@@ -73,7 +73,8 @@ static void __afl_map_shm(void) {
 
     /* Whooooops. */
 
-    if (__afl_area_ptr == (void*)-1) _exit(1);
+    if (__afl_area_ptr == (void *)-1)
+      _exit(1);
 
     /* Write something into the bitmap so that even with low AFL_INST_RATIO,
        our parent doesn't give up on us. */
@@ -93,7 +94,8 @@ static void __afl_start_forkserver(void) {
   /* Phone home and tell the parent that we're OK. If parent isn't there,
      assume we're not running in forkserver mode and just execute program. */
 
-  if (write(FORKSRV_FD + 1, tmp, 4) != 4) return;
+  if (write(FORKSRV_FD + 1, tmp, 4) != 4)
+    return;
 
   while (1) {
     u32 was_killed;
@@ -101,7 +103,8 @@ static void __afl_start_forkserver(void) {
 
     /* Wait for parent by reading from the pipe. Abort if read fails. */
 
-    if (read(FORKSRV_FD, &was_killed, 4) != 4) _exit(1);
+    if (read(FORKSRV_FD, &was_killed, 4) != 4)
+      _exit(1);
 
     /* If we stopped the child in persistent mode, but there was a race
        condition and afl-fuzz already issued SIGKILL, write off the old
@@ -109,14 +112,16 @@ static void __afl_start_forkserver(void) {
 
     if (child_stopped && was_killed) {
       child_stopped = 0;
-      if (waitpid(child_pid, &status, 0) < 0) _exit(1);
+      if (waitpid(child_pid, &status, 0) < 0)
+        _exit(1);
     }
 
     if (!child_stopped) {
       /* Once woken up, create a clone of our process. */
 
       child_pid = fork();
-      if (child_pid < 0) _exit(1);
+      if (child_pid < 0)
+        _exit(1);
 
       /* In child process: close fds, resume execution. */
 
@@ -136,7 +141,8 @@ static void __afl_start_forkserver(void) {
 
     /* In parent process: write PID to pipe, then wait for child. */
 
-    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4) _exit(1);
+    if (write(FORKSRV_FD + 1, &child_pid, 4) != 4)
+      _exit(1);
 
     if (waitpid(child_pid, &status, is_persistent ? WUNTRACED : 0) < 0)
       _exit(1);
@@ -145,11 +151,13 @@ static void __afl_start_forkserver(void) {
        a successful run. In this case, we want to wake it up without forking
        again. */
 
-    if (WIFSTOPPED(status)) child_stopped = 1;
+    if (WIFSTOPPED(status))
+      child_stopped = 1;
 
     /* Relay wait status to pipe, then loop back. */
 
-    if (write(FORKSRV_FD + 1, &status, 4) != 4) _exit(1);
+    if (write(FORKSRV_FD + 1, &status, 4) != 4)
+      _exit(1);
   }
 }
 
@@ -215,7 +223,8 @@ void __afl_manual_init(void) {
 __attribute__((constructor(CONST_PRIO))) void __afl_auto_init(void) {
   is_persistent = !!getenv(PERSIST_ENV_VAR);
 
-  if (getenv(DEFER_ENV_VAR)) return;
+  if (getenv(DEFER_ENV_VAR))
+    return;
 
   __afl_manual_init();
 }
@@ -227,7 +236,7 @@ __attribute__((constructor(CONST_PRIO))) void __afl_auto_init(void) {
    The first function (__sanitizer_cov_trace_pc_guard) is called back on every
    edge (as opposed to every basic block). */
 
-void __sanitizer_cov_trace_pc_guard(uint32_t* guard) {
+void __sanitizer_cov_trace_pc_guard(uint32_t *guard) {
   __afl_area_ptr[*guard]++;
 }
 
@@ -235,14 +244,16 @@ void __sanitizer_cov_trace_pc_guard(uint32_t* guard) {
    ID of 0 as a special value to indicate non-instrumented bits. That may
    still touch the bitmap, but in a fairly harmless way. */
 
-void __sanitizer_cov_trace_pc_guard_init(uint32_t* start, uint32_t* stop) {
+void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop) {
   u32 inst_ratio = 100;
-  u8* x;
+  u8 *x;
 
-  if (start == stop || *start) return;
+  if (start == stop || *start)
+    return;
 
   x = getenv("AFL_INST_RATIO");
-  if (x) inst_ratio = atoi(x);
+  if (x)
+    inst_ratio = atoi(x);
 
   if (!inst_ratio || inst_ratio > 100) {
     fprintf(stderr, "[-] ERROR: Invalid AFL_INST_RATIO (must be 1-100).\n");

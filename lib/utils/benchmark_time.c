@@ -17,7 +17,8 @@ void benchmark_time_diff(benchmark_time_t *d, benchmark_time_t *t1,
                          benchmark_time_t *t2) {
   long long nsecs =
       (t2->tv_sec - t1->tv_sec) * NSECPSEC + t2->tv_nsec - t1->tv_nsec;
-  if (nsecs < 0) printf("Error: timer nsecs %lld < 0\n", nsecs);
+  if (nsecs < 0)
+    printf("Error: timer nsecs %lld < 0\n", nsecs);
   d->tv_sec = nsecs / NSECPSEC;
   d->tv_nsec = nsecs % NSECPSEC;
 }
