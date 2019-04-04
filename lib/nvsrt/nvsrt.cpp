@@ -29,6 +29,9 @@ public:
   /* Check if NVS-RT is enabled. */
   bool is_enabled() const { return _tgconfig->enabled; }
 
+  /* Create mmap shadow. */
+  void *create_shadow_map(size_t size);
+
   /**
    * Initialize the store queue. TODO: Currently it's a pre-allocated region in
    * the shared memory. We need a more flexible data structure to save the
@@ -86,7 +89,8 @@ private:
     return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
   }
 
-  std::vector<std::pair<uintptr_t, uintptr_t>> _nvranges;
+  /* user's map start, user's map end, shadow's map pointer */
+  std::unordered_map<uintptr_t, std::pair<size_t, void *>> _nvranges;
 
   /**
    * A collection of store operations. Each operation is placed in a vector
@@ -98,7 +102,12 @@ private:
 
 void NVScopeRT::add_nvrange(void *pmap, size_t size) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
-  _nvranges.emplace_back(addr, addr + size);
+
+  void *shadow = create_shadow_map(size);
+
+  OKF("NVS-RT: shadow map %p created for %p size %zu", shadow, pmap, size);
+
+  _nvranges.emplace(addr, std::pair<size_t, void *>(addr + size, shadow));
 }
 
 bool NVScopeRT::in_nvranges(void *ptr, size_t size) const {
@@ -106,7 +115,7 @@ bool NVScopeRT::in_nvranges(void *ptr, size_t size) const {
   /* TODO: May also check if the store overflows the mapped region. */
   return std::any_of(_nvranges.begin(), _nvranges.end(),
                      [addr, size](auto &rg) {
-                       return rg.first <= addr && addr + size < rg.second;
+                       return rg.first <= addr && addr + size < rg.second.first;
                      });
 }
 
@@ -131,6 +140,19 @@ void NVScopeRT::send_anydata(void *data, ssize_t len) const {
     ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
     _exit(EXIT_FAILURE);
   }
+}
+
+void *NVScopeRT::create_shadow_map(size_t size) {
+  /* Mapped region should be zeroed according to MAP_ANONYMOUS semantics. */
+  void *shadow = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+  if (shadow == MAP_FAILED) {
+    ERRF("NVS-RT: Creating shadow mmap failed");
+    _exit(NVS_EXIT_BAD_CONFIG);
+  }
+
+  return shadow;
 }
 
 void NVScopeRT::close_channels() const {
@@ -232,16 +254,13 @@ static void __nvs_setup_shm(void) {
       _exit(NVS_EXIT_BAD_CONFIG);
     }
 
-    nvsrt = new NVScopeRT(nullptr, nullptr);
+    runq = (struct nvs_runq *)((char *)shm_base + NVS_SHM_RUNQ_OFF);
+
+    nvsrt = new NVScopeRT(shm_base, tgconf);
     if (!nvsrt) {
       ERRF("NVS-RT: creating nvscope run-time failed");
       _exit(NVS_EXIT_BAD_CONFIG);
     }
-
-    runq = (struct nvs_runq *)((char *)shm_base + NVS_SHM_RUNQ_OFF);
-
-    nvsrt->set_shm_base(shm_base);
-    nvsrt->set_tgconfig(tgconf);
 
     if (nvsrt->get_target_stage() == ST_NONE)
       nvsrt->set_target_stage(ST_DONTCARE);
