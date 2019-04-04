@@ -58,7 +58,7 @@ public:
   /* Add one mmaped range. */
   void add_nvrange(void *pmap, size_t size);
   /* Check if the stored data falls into mmaped ranges. */
-  bool in_nvranges(void *ptr, size_t size) const;
+  bool in_nvranges(void *ptr, size_t size);
   /* Save store information. */
   void save_store(void *ptr, size_t size, char *func, char *file, int line);
   /* Save CLFLUSHOPT or CLWB operations. */
@@ -67,14 +67,11 @@ public:
   void analyze(uint64_t sfid, char *func, char *file, int line);
 
   NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
-      : _shm_base(_shm), _tgconfig(tgconf) {
+      : _shm_base(_shm), _tgconfig(tgconf), _rangeid(-1) {
     OKF("NVS-RT: nvscope run-time constructed");
   }
 
 private:
-  void *_shm_base;
-  struct nvs_target_config *_tgconfig;
-
   struct StoreInfo {
     StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
         : _start(start), _last(last), _func(func), _file(file), _line(line) {}
@@ -85,12 +82,28 @@ private:
     int _line;
   };
 
+  struct RangeInfo {
+    RangeInfo(uintptr_t start, size_t end, void *shadow)
+        : _start(start), _end(end), _shadow(shadow) {}
+    uintptr_t _start; // user's mmap start address
+    size_t _end; // user's mmap end address
+    void *_shadow; // shadow map pointer of the same size
+  };
+
   uintptr_t get_cache_line_addr(void *ptr) {
     return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
   }
 
+  void *_shm_base;
+  struct nvs_target_config *_tgconfig;
+
   /* user's map start, user's map end, shadow's map pointer */
-  std::unordered_map<uintptr_t, std::pair<size_t, void *>> _nvranges;
+  std::vector<RangeInfo> _nvranges;
+  /*
+   * element index of _nvranges corresponding to the current store
+   * NOTE: This works only if _nvranges never shrink.
+   */
+  int _rangeid;
 
   /**
    * A collection of store operations. Each operation is placed in a vector
@@ -107,16 +120,22 @@ void NVScopeRT::add_nvrange(void *pmap, size_t size) {
 
   OKF("NVS-RT: shadow map %p created for %p size %zu", shadow, pmap, size);
 
-  _nvranges.emplace(addr, std::pair<size_t, void *>(addr + size, shadow));
+  _nvranges.emplace_back(addr, addr + size, shadow);
 }
 
-bool NVScopeRT::in_nvranges(void *ptr, size_t size) const {
-  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
-  /* TODO: May also check if the store overflows the mapped region. */
-  return std::any_of(_nvranges.begin(), _nvranges.end(),
-                     [addr, size](auto &rg) {
-                       return rg.first <= addr && addr + size < rg.second.first;
-                     });
+bool NVScopeRT::in_nvranges(void *ptr, size_t size) {
+  uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
+  uintptr_t end = start + size;
+
+  for (auto it = _nvranges.begin(); it != _nvranges.end(); ++it) {
+    /* TODO: May also check if the store overflows the mapped region. */
+    if (it->_start <= start && end < it->_end) {
+      _rangeid = std::distance(_nvranges.begin(), it);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 enum nvs_message NVScopeRT::read_message() const {
