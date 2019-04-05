@@ -12,7 +12,8 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
-#define NVS_INIT_PRIO 0 // __nvs_init priority (runs before a target's main)
+const int nvs_init_prio = 0; // __nvs_init priority (runs before main)
+const int nvs_fini_prio = 0; // __nvs_fini priority (runs before termination)
 
 /**
  * Globals needed by the injected instrumentation.
@@ -55,6 +56,9 @@ public:
   void send_anydata(void *data, ssize_t len) const;
   void close_channels() const;
 
+  /* Cleanup tasks before a child process exits. */
+  void child_cleanup();
+
   /* Add one mmaped range. */
   void add_nvrange(void *pmap, size_t size);
   /* Check if the stored data falls into mmaped ranges. */
@@ -86,8 +90,8 @@ private:
     RangeInfo(uintptr_t start, size_t end, void *shadow)
         : _start(start), _end(end), _shadow(shadow) {}
     uintptr_t _start; // user's mmap start address
-    size_t _end; // user's mmap end address
-    void *_shadow; // shadow map pointer of the same size
+    size_t _end;      // user's mmap end address
+    void *_shadow;    // shadow map pointer of the same size
   };
 
   uintptr_t get_cache_line_addr(void *ptr) {
@@ -97,11 +101,16 @@ private:
   void *_shm_base;
   struct nvs_target_config *_tgconfig;
 
-  /* user's map start, user's map end, shadow's map pointer */
+  /**
+   * user's map start, user's map end, shadow's map pointer
+   * TODO: Using a vector assumes there are only few mappings (less than 10),
+   * where a linear search is good enough. But if there are tens or hundreds of
+   * mappings we should use a hash map.
+   */
   std::vector<RangeInfo> _nvranges;
-  /*
+  /**
    * element index of _nvranges corresponding to the current store
-   * NOTE: This works only if _nvranges never shrink.
+   * TODO: This works only if _nvranges never shrink.
    */
   int _rangeid;
 
@@ -179,6 +188,19 @@ void NVScopeRT::close_channels() const {
     close(_tgconfig->read_fd);
   if (_tgconfig->write_fd > 0)
     close(_tgconfig->write_fd);
+}
+
+void NVScopeRT::child_cleanup() {
+  for (auto &range : _nvranges) {
+    assert(range._start && range._start < range._end);
+    size_t size = range._end - range._start;
+    assert(range._shadow != nullptr);
+    if (munmap(range._shadow, size) != -1) {
+      OKF("NVS-RT: shadow %p size %zu unmapped", range._shadow, size);
+    } else {
+      ERRF("NVS-RT: shadow %p size %zu unmap failed!", range._shadow, size);
+    }
+  }
 }
 
 void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
@@ -332,6 +354,10 @@ static void __start_forkserver(void) {
        * In afl-llvm-rt.o.c, AFL closes the pipe fds because they are not needed
        * anymore. But nvsrt still needs them to communicate with nvscope for
        * testing requests and results.
+       *
+       * The child process also inherits nvsrt and all modifications to it will
+       * be in copy-on-write manner. When the child exits, the forkserver
+       * (parent) does not see changes that the child made to nvsrt.
        */
 
       nvsrt->set_target_pid(getpid());
@@ -367,7 +393,7 @@ static void __start_forkserver(void) {
  * Initialize NVS-RT run-time data structures. Runs before the target's main()
  * with the constructor attribute.
  */
-__attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
+__attribute__((constructor(nvs_init_prio))) void __nvs_init(void) {
   if (nvsrt) {
     /**
      * Because we use forkservers, this function should not fire more than once
@@ -384,6 +410,11 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
     return;
 
   __start_forkserver();
+}
+
+__attribute__((destructor(nvs_fini_prio))) void __nvs_fini(void) {
+  if (nvsrt)
+    nvsrt->child_cleanup();
 }
 
 static inline int __runq_push_back_store64(uint64_t *ptr) {
