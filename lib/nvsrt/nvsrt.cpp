@@ -12,13 +12,18 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
-const int nvs_init_prio = 0; // __nvs_init priority (runs before main)
-const int nvs_fini_prio = 0; // __nvs_fini priority (runs before termination)
+const int nvs_init_prio{0}; // __nvs_init priority (runs before main)
+const int nvs_fini_prio{0}; // __nvs_fini priority (runs before termination)
+const int cache_line_size{64};
 
 /**
  * Globals needed by the injected instrumentation.
  */
 struct nvs_runq *runq;
+
+static uintptr_t cache_addr_of(void *ptr) {
+  return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
+}
 
 class NVScopeRT {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
@@ -31,7 +36,7 @@ public:
   bool is_enabled() const { return _tgconfig->enabled; }
 
   /* Create mmap shadow. */
-  void *create_shadow_map(size_t size);
+  uintptr_t create_shadow_map(size_t size);
 
   /**
    * Initialize the store queue. TODO: Currently it's a pre-allocated region in
@@ -62,7 +67,7 @@ public:
   /* Add one mmaped range. */
   void add_nvrange(void *pmap, size_t size);
   /* Check if the stored data falls into mmaped ranges. */
-  bool in_nvranges(void *ptr, size_t size);
+  bool store_in_range(void *ptr, size_t size);
   /* Save store information. */
   void save_store(void *ptr, size_t size, char *func, char *file, int line);
   /* Save CLFLUSHOPT or CLWB operations. */
@@ -87,16 +92,12 @@ private:
   };
 
   struct RangeInfo {
-    RangeInfo(uintptr_t start, size_t end, void *shadow)
+    RangeInfo(uintptr_t start, uintptr_t end, uintptr_t shadow)
         : _start(start), _end(end), _shadow(shadow) {}
-    uintptr_t _start; // user's mmap start address
-    size_t _end;      // user's mmap end address
-    void *_shadow;    // shadow map pointer of the same size
+    uintptr_t _start;  // user's mmap start address
+    uintptr_t _end;    // user's mmap end address
+    uintptr_t _shadow; // shadow map pointer of the same size
   };
-
-  uintptr_t get_cache_line_addr(void *ptr) {
-    return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
-  }
 
   void *_shm_base;
   struct nvs_target_config *_tgconfig;
@@ -125,14 +126,15 @@ private:
 void NVScopeRT::add_nvrange(void *pmap, size_t size) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
 
-  void *shadow = create_shadow_map(size);
+  uintptr_t shadow = create_shadow_map(size);
 
-  OKF("NVS-RT: shadow map %p created for %p size %zu", shadow, pmap, size);
+  OKF("NVS-RT: shadow map %p created for %p size %zu",
+      reinterpret_cast<void *>(shadow), pmap, size);
 
   _nvranges.emplace_back(addr, addr + size, shadow);
 }
 
-bool NVScopeRT::in_nvranges(void *ptr, size_t size) {
+bool NVScopeRT::store_in_range(void *ptr, size_t size) {
   uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
   uintptr_t end = start + size;
 
@@ -170,7 +172,7 @@ void NVScopeRT::send_anydata(void *data, ssize_t len) const {
   }
 }
 
-void *NVScopeRT::create_shadow_map(size_t size) {
+uintptr_t NVScopeRT::create_shadow_map(size_t size) {
   /* Mapped region should be zeroed according to MAP_ANONYMOUS semantics. */
   void *shadow = mmap(NULL, size, PROT_READ | PROT_WRITE,
                       MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -180,7 +182,7 @@ void *NVScopeRT::create_shadow_map(size_t size) {
     _exit(NVS_EXIT_BAD_CONFIG);
   }
 
-  return shadow;
+  return reinterpret_cast<uintptr_t>(shadow);
 }
 
 void NVScopeRT::close_channels() const {
@@ -194,11 +196,12 @@ void NVScopeRT::child_cleanup() {
   for (auto &range : _nvranges) {
     assert(range._start && range._start < range._end);
     size_t size = range._end - range._start;
-    assert(range._shadow != nullptr);
-    if (munmap(range._shadow, size) != -1) {
-      OKF("NVS-RT: shadow %p size %zu unmapped", range._shadow, size);
+    void *shadow = reinterpret_cast<void *>(range._shadow);
+    assert(shadow != nullptr);
+    if (munmap(shadow, size) != -1) {
+      OKF("NVS-RT: shadow %p size %zu unmapped", shadow, size);
     } else {
-      ERRF("NVS-RT: shadow %p size %zu unmap failed!", range._shadow, size);
+      ERRF("NVS-RT: shadow %p size %zu unmap failed!", shadow, size);
     }
   }
 }
@@ -207,7 +210,7 @@ void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
                            int line) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
   auto last = static_cast<uintptr_t>(start + size);
-  auto cline = get_cache_line_addr(ptr);
+  auto cline = cache_addr_of(ptr);
   auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
   do {
     auto it = _nvstores.find(cline);
@@ -220,13 +223,23 @@ void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
                .first;
     }
     it->second.emplace_back(store);
-    cline += CACHELINE_SIZE;
+    cline += cache_line_size;
   } while (last > cline);
+
+  RangeInfo &nvrange = _nvranges[_rangeid];
+
+  assert(nvrange._start <= reinterpret_cast<uintptr_t>(ptr));
+  assert(reinterpret_cast<uintptr_t>(ptr) + size < nvrange._end);
+
+  uintptr_t offset = reinterpret_cast<uintptr_t>(ptr) - nvrange._start;
+  void *shadowptr = reinterpret_cast<void *>(nvrange._shadow + offset);
+
+  memcpy(shadowptr, ptr, size);
 }
 
 void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
-  uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
-  void *pcl = reinterpret_cast<void *>(ALIGN_DOWN(addr, CACHELINE_SIZE));
+  // uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  void *pcl = reinterpret_cast<void *>(cache_addr_of(ptr));
 
   (void)ptr;
   (void)pcl;
@@ -517,7 +530,7 @@ void __nvs_store64(void *ptr) {
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->in_nvranges(ptr, size))
+  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->store_in_range(ptr, size))
     return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
@@ -570,7 +583,7 @@ extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
     return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
-       ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
+       ptr, reinterpret_cast<void *>(cache_addr_of(ptr)));
 
   nvsrt->save_clop_nofence(ptr, func, file, line);
 }
@@ -580,7 +593,7 @@ extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
     return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
-       line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
+       line, ptr, reinterpret_cast<void *>(cache_addr_of(ptr)));
 
   nvsrt->save_clop_nofence(ptr, func, file, line);
 }
@@ -590,7 +603,7 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
     return;
 
   DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
-       line, ptr, (void *)ALIGN_DOWN((uintptr_t)ptr, CACHELINE_SIZE));
+       line, ptr, reinterpret_cast<void *>(cache_addr_of(ptr)));
 
   nvsrt->save_clop_nofence(ptr, func, file, line);
 
