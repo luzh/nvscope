@@ -65,7 +65,7 @@ public:
   void child_cleanup();
 
   /* Add one mmaped range. */
-  void add_nvrange(void *pmap, size_t size);
+  void add_nvrange(void *pmap, size_t size, char *func, char *file, int line);
   /* Check if the stored data falls into mmaped ranges. */
   bool store_in_range(void *ptr, size_t size);
   /* Save store information. */
@@ -82,21 +82,29 @@ public:
 
 private:
   struct StoreInfo {
-    StoreInfo(uintptr_t start, uintptr_t last, char *func, char *file, int line)
-        : _start(start), _last(last), _func(func), _file(file), _line(line) {}
-    uintptr_t _start; // start address of this store
-    uintptr_t _last;  // one byte after the stored range
+    StoreInfo(uintptr_t start, uintptr_t end, uintptr_t shadow, char *func,
+              char *file, int linenr)
+        : _start(start), _end(end), _shadow(shadow), _func(func), _file(file),
+          _linenr(linenr) {}
+    uintptr_t _start;  // start address of this store
+    uintptr_t _end;    // one byte after the stored range
+    uintptr_t _shadow; // shadow data address corresponding to _start
     char *_func;
     char *_file;
-    int _line;
+    int _linenr;
   };
 
   struct RangeInfo {
-    RangeInfo(uintptr_t start, uintptr_t end, uintptr_t shadow)
-        : _start(start), _end(end), _shadow(shadow) {}
+    RangeInfo(uintptr_t start, uintptr_t end, uintptr_t shadow, char *func,
+              char *file, int linenr)
+        : _start(start), _end(end), _shadow(shadow), _func(func), _file(file),
+          _linenr(linenr) {}
     uintptr_t _start;  // user's mmap start address
     uintptr_t _end;    // user's mmap end address
-    uintptr_t _shadow; // shadow map pointer of the same size
+    uintptr_t _shadow; // shadow mmap address corresponding to _start
+    char *_func;
+    char *_file;
+    int _linenr;
   };
 
   void *_shm_base;
@@ -123,7 +131,8 @@ private:
       _nvstores;
 };
 
-void NVScopeRT::add_nvrange(void *pmap, size_t size) {
+void NVScopeRT::add_nvrange(void *pmap, size_t size, char *func, char *file,
+                            int line) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
 
   uintptr_t shadow = create_shadow_map(size);
@@ -131,7 +140,7 @@ void NVScopeRT::add_nvrange(void *pmap, size_t size) {
   OKF("NVS-RT: shadow map %p created for %p size %zu",
       reinterpret_cast<void *>(shadow), pmap, size);
 
-  _nvranges.emplace_back(addr, addr + size, shadow);
+  _nvranges.emplace_back(addr, addr + size, shadow, func, file, line);
 }
 
 bool NVScopeRT::store_in_range(void *ptr, size_t size) {
@@ -209,9 +218,22 @@ void NVScopeRT::child_cleanup() {
 void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
                            int line) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
-  auto last = static_cast<uintptr_t>(start + size);
   auto cline = cache_addr_of(ptr);
-  auto store = std::make_shared<StoreInfo>(start, last, func, file, line);
+  auto end = static_cast<uintptr_t>(start + size);
+
+  RangeInfo &nvrange = _nvranges[_rangeid];
+
+  assert(nvrange._start <= reinterpret_cast<uintptr_t>(ptr));
+  assert(reinterpret_cast<uintptr_t>(ptr) + size < nvrange._end);
+
+  uintptr_t offset = reinterpret_cast<uintptr_t>(ptr) - nvrange._start;
+  uintptr_t shadow = nvrange._shadow + offset;
+  void *shadowptr = reinterpret_cast<void *>(shadow);
+
+  memcpy(shadowptr, ptr, size);
+
+  auto store =
+      std::make_shared<StoreInfo>(start, end, shadow, func, file, line);
   do {
     auto it = _nvstores.find(cline);
     if (it == _nvstores.end()) {
@@ -224,17 +246,7 @@ void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
     }
     it->second.emplace_back(store);
     cline += cache_line_size;
-  } while (last > cline);
-
-  RangeInfo &nvrange = _nvranges[_rangeid];
-
-  assert(nvrange._start <= reinterpret_cast<uintptr_t>(ptr));
-  assert(reinterpret_cast<uintptr_t>(ptr) + size < nvrange._end);
-
-  uintptr_t offset = reinterpret_cast<uintptr_t>(ptr) - nvrange._start;
-  void *shadowptr = reinterpret_cast<void *>(nvrange._shadow + offset);
-
-  memcpy(shadowptr, ptr, size);
+  } while (end > cline);
 }
 
 void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
@@ -567,11 +579,7 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   if (!nvsrt || !nvsrt->is_enabled())
     return pmap;
 
-  (void)func;
-  (void)file;
-  (void)line;
-
-  nvsrt->add_nvrange(pmap, size);
+  nvsrt->add_nvrange(pmap, size, func, file, line);
 
   nvsrt->set_target_stage(ST_MAINPROC);
 
