@@ -21,17 +21,13 @@ const int cache_line_size{64};
  */
 struct nvs_runq *runq;
 
-static uintptr_t cache_addr_of(void *ptr) {
+static uintptr_t cache_addr_of(const void *ptr) {
   return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
 }
 
 class NVScopeRT {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
 public:
-  /* Set shared memory address for information exchange. */
-  void set_shm_base(void *shm) { _shm_base = shm; }
-  /* Set config region for target control. */
-  void set_tgconfig(struct nvs_target_config *conf) { _tgconfig = conf; }
   /* Check if NVS-RT is enabled. */
   bool is_enabled() const { return _tgconfig->enabled; }
 
@@ -77,7 +73,12 @@ public:
 
   NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf), _rangeid(-1) {
-    OKF("NVS-RT: nvscope run-time constructed");
+    if (_shm_base) {
+      OKF("NVS-RT: nvscope run-time constructed");
+    } else {
+      ERRF("NVS-RT: invalid shared memory address");
+      _exit(NVS_EXIT_BAD_SHM);
+    }
   }
 
 private:
@@ -133,9 +134,8 @@ private:
 
 void NVScopeRT::add_nvrange(void *pmap, size_t size, char *func, char *file,
                             int line) {
-  uintptr_t addr = reinterpret_cast<uintptr_t>(pmap);
-
-  uintptr_t shadow = create_shadow_map(size);
+  auto addr = reinterpret_cast<uintptr_t>(pmap);
+  auto shadow = create_shadow_map(size);
 
   OKF("NVS-RT: shadow map %p created for %p size %zu",
       reinterpret_cast<void *>(shadow), pmap, size);
@@ -144,8 +144,8 @@ void NVScopeRT::add_nvrange(void *pmap, size_t size, char *func, char *file,
 }
 
 bool NVScopeRT::store_in_range(void *ptr, size_t size) {
-  uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
-  uintptr_t end = start + size;
+  auto start = reinterpret_cast<uintptr_t>(ptr);
+  auto end = start + size;
 
   for (auto it = _nvranges.begin(); it != _nvranges.end(); ++it) {
     /* TODO: May also check if the store overflows the mapped region. */
@@ -342,7 +342,7 @@ static void __start_forkserver(void) {
   /* initial communication with nvscope */
   nvsrt->send_message(MSG_FORKSERVER_HELLO);
 
-  while (1) {
+  while (true) {
     nvsrt->send_message(MSG_FORKSERVER_READY);
 
     enum nvs_message command = nvsrt->read_message();
@@ -528,7 +528,7 @@ static void __emulate_crash(uint64_t sfid) {
 void __nvs_store64(void *ptr) {
   DBGF("NVS-RT: store i64 to %p", ptr);
 
-  /* TODO-PERF: Perhaps using likely/unlikely can improve performance. */
+  /* TODO: Perhaps using likely/unlikely can improve performance. */
 
   if (nvsrt->get_target_stage() == ST_MAINPROC)
     __runq_push_back_store64((uint64_t *)ptr);
