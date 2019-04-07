@@ -47,6 +47,7 @@ enum nvs_message {
 enum nvs_excode {
   NVS_EXIT_SUCCESS = 0,
   NVS_EXIT_BAD_SHM,
+  NVS_EXIT_BAD_MSG,
   NVS_EXIT_BAD_CONFIG,
   NVS_EXIT_RUNQ_FULL,
   NVS_EXIT_FOUNDBUG

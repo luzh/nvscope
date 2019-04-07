@@ -14,12 +14,7 @@
 
 const int nvs_init_prio{0}; // __nvs_init priority (runs before main)
 const int nvs_fini_prio{0}; // __nvs_fini priority (runs before termination)
-const int cache_line_size{64};
-
-/**
- * Globals needed by the injected instrumentation.
- */
-struct nvs_runq *runq;
+// const int cache_line_size{64};
 
 static uintptr_t cache_addr_of(const void *ptr) {
   return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
@@ -68,6 +63,11 @@ public:
   void save_store(void *ptr, size_t size, char *func, char *file, int line);
   /* Save CLFLUSHOPT or CLWB operations. */
   void save_clop_nofence(void *ptr, char *func, char *file, int line);
+
+  /* Print content of nvstores (up to limit entries). */
+  void print_nvstores(size_t limit) const;
+  /* Generate the next test case. */
+  bool next_reorder();
   /* Perform analysis for insights. */
   void analyze(uint64_t sfid, char *func, char *file, int line);
 
@@ -124,12 +124,14 @@ private:
    */
   int _rangeid;
 
+  std::vector<StoreInfo> _nvstores;
+
   /**
    * A collection of store operations. Each operation is placed in a vector
    * that corresponds to a cache line this store is writing to.
+   * std::unordered_map<uintptr_t, std::vector<std::shared_ptr<StoreInfo>>>
+   * _clstores;
    */
-  std::unordered_map<uintptr_t, std::vector<std::shared_ptr<StoreInfo>>>
-      _nvstores;
 };
 
 void NVScopeRT::add_nvrange(void *pmap, size_t size, char *func, char *file,
@@ -218,7 +220,6 @@ void NVScopeRT::child_cleanup() {
 void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
                            int line) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
-  auto cline = cache_addr_of(ptr);
   auto end = static_cast<uintptr_t>(start + size);
 
   RangeInfo &nvrange = _nvranges[_rangeid];
@@ -232,21 +233,7 @@ void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
 
   memcpy(shadowptr, ptr, size);
 
-  auto store =
-      std::make_shared<StoreInfo>(start, end, shadow, func, file, line);
-  do {
-    auto it = _nvstores.find(cline);
-    if (it == _nvstores.end()) {
-      /**
-       * emplace returns a pair where `first` is an iterator pointing to the
-       * new element of the container.
-       */
-      it = _nvstores.emplace(cline, std::vector<std::shared_ptr<StoreInfo>>())
-               .first;
-    }
-    it->second.emplace_back(store);
-    cline += cache_line_size;
-  } while (end > cline);
+  _nvstores.emplace_back(start, end, shadow, func, file, line);
 }
 
 void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
@@ -260,32 +247,100 @@ void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
   (void)line;
 }
 
+void NVScopeRT::print_nvstores(size_t limit) const {
+  size_t n = 0;
+
+  DBGF(cCYA "--- NVS-RT collected stores (...) ---" cRST);
+  for (auto &store : _nvstores) {
+    DBGF("Entry[%zu]: [%s() at %s:%4d], store to %p size %zu", n, store._func,
+         store._file, store._linenr, reinterpret_cast<void *>(store._start),
+         store._end - store._start);
+    if (0 < limit && limit <= ++n)
+      break;
+  }
+  DBGF(cCYA "--- NVS-RT collected stores (***) ---" cRST);
+}
+
+bool NVScopeRT::next_reorder() {
+  static size_t caseid = 0;
+
+  if (caseid == 0) {
+    TESTC("NVS-RT: make test case #%zu: crash after sfence", caseid);
+    caseid++;
+    return true;
+  }
+
+  if (caseid > 1) {
+    StoreInfo &store = _nvstores[caseid - 2];
+    char *start = reinterpret_cast<char *>(store._start);
+    char *end = reinterpret_cast<char *>(store._end);
+    char *shadow = reinterpret_cast<char *>(store._shadow);
+
+    std::swap_ranges(start, end, shadow);
+
+    TESTC("NVS-RT: pass over test case #%zu: redo store to %p size %zu",
+          caseid - 1, start, end - start);
+  }
+
+  if (_nvstores.size() < caseid) {
+    caseid = 0;
+    return false;
+  }
+
+  StoreInfo &store = _nvstores[caseid - 1];
+  char *start = reinterpret_cast<char *>(store._start);
+  char *end = reinterpret_cast<char *>(store._end);
+  char *shadow = reinterpret_cast<char *>(store._shadow);
+
+  /**
+   * TODO: Need to check the efficiency of this library function. Does it
+   * allocate a temporaty buffer to do the swap?
+   */
+  std::swap_ranges(start, end, shadow);
+
+  TESTC("NVS-RT: make test case #%zu: undo store to %p size %zu", caseid, start,
+        end - start);
+  caseid++;
+
+  return true;
+}
+
 void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
   if (_nvstores.empty())
     return;
 
-  (void)sfid;
-  (void)func;
-  (void)file;
-  (void)line;
+  DBGF("NVS-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", sfid, func,
+       file, line);
+
+  while (next_reorder()) {
+    send_message(MSG_AWAITING_CHECK);
+
+    enum nvs_message command = read_message();
+
+    if (command == MSG_SHOW_BUG_AND_EXIT) {
+      ERRF("NVS-RT: found bug at sfence #%zu [%s() at %s:%4d], test case #?",
+           sfid, func, file, line);
+      _exit(NVS_EXIT_FOUNDBUG);
+    }
+
+    if (command != MSG_CONTINUE_TO_RUN) {
+      ERRF("NVS-RT: received inappropriate message %d", command);
+      _exit(NVS_EXIT_BAD_MSG);
+    }
+  }
+
+  /*
+   * TODO: Only remove flushed (clflushopt, clwb) stores, since they should be
+   * persistent after the sfence and not be affected by reordering. Now assume
+   * clflush(opt) or clwb is complete, and we simply set the queue length to
+   * zero to flush it.
+   */
+  _nvstores.clear();
 }
 
 static NVScopeRT *nvsrt;
 
 /*--------------------- End of NVScopeRT Implementation ---------------------*/
-
-/**
- * Debug functions
- */
-static void __nvs_print_runq() {
-  DBGF(cCYA "--- NVS-RT run queue (...) ---" cRST);
-  struct nvs_runq_entry *e = runq->entries;
-  for (size_t i = 0; i < runq->len; i++, e++) {
-    DBGF("Entry[%zu]: i64 [%p] 0x%lx -> 0x%lx", i, e->ptr64, e->val64,
-         *e->ptr64);
-  }
-  DBGF(cCYA "--- NVS-RT run queue (***) ---" cRST);
-}
 
 /**
  * Shared memory setup
@@ -319,8 +374,6 @@ static void __nvs_setup_shm(void) {
       ERRF("NVS-RT: invalid target type");
       _exit(NVS_EXIT_BAD_CONFIG);
     }
-
-    runq = (struct nvs_runq *)((char *)shm_base + NVS_SHM_RUNQ_OFF);
 
     nvsrt = new NVScopeRT(shm_base, tgconf);
     if (!nvsrt) {
@@ -356,7 +409,7 @@ static void __start_forkserver(void) {
 
     if (command != MSG_FORK_AND_RUN) {
       ERRF("NVS-RT: received inappropriate message %d", command);
-      _exit(EXIT_FAILURE);
+      _exit(NVS_EXIT_BAD_MSG);
     }
 
     pid_t cpid = fork();
@@ -442,98 +495,6 @@ __attribute__((destructor(nvs_fini_prio))) void __nvs_fini(void) {
     nvsrt->child_cleanup();
 }
 
-static inline int __runq_push_back_store64(uint64_t *ptr) {
-  if (runq->len == NVS_SHM_RUNQ_MAX_LEN) {
-    ERRF("NVS-RT: run queue is full (%lu entries)!", runq->len);
-    _exit(NVS_EXIT_RUNQ_FULL);
-  }
-
-  runq->entries[runq->len].ptr64 = ptr;
-  runq->entries[runq->len].val64 = *ptr;
-  runq->len += 1;
-
-  return 0;
-}
-
-static inline void __runq_flush() {
-  /*
-   * Todo: Remove flushed (clflushopt, clwb) stores from the runq, since they
-   * should be persistent after the sfence and not be affected by reordering.
-   * Now assume clflush(opt) or clwb is complete, and we simply set the queue
-   * length to zero to flush it.
-   */
-  runq->len = 0;
-}
-
-static int __next_test_case(uint64_t sfid) {
-  static size_t caseid = 0;
-  uint64_t oldval, newval;
-
-  if (caseid == 0) {
-    TESTC("NVS-RT: make test case #%zu: crash after sfence #%zu", caseid, sfid);
-    caseid++;
-    return 1;
-  }
-
-  if (caseid > 1) {
-    struct nvs_runq_entry *e = &runq->entries[caseid - 2];
-    oldval = *e->ptr64;
-    newval = e->val64;
-    *e->ptr64 = newval;
-    TESTC(
-        "NVS-RT: pass over test case #%zu: redo store i64 [%p] 0x%lx -> 0x%lx",
-        caseid - 1, e->ptr64, oldval, newval);
-  }
-
-  if (runq->len < caseid) {
-    caseid = 0;
-    return 0;
-  }
-
-  struct nvs_runq_entry *e = &runq->entries[caseid - 1];
-
-  oldval = e->val64;
-  newval = *e->ptr64;
-
-  e->val64 = newval;
-  *e->ptr64 = oldval;
-
-  TESTC("NVS-RT: make test case #%zu: undo store i64 [%p] 0x%lx <- 0x%lx",
-        caseid, e->ptr64, oldval, newval);
-  caseid++;
-
-  (void)sfid;
-
-  return 1;
-}
-
-static void __emulate_crash(uint64_t sfid) {
-  while (__next_test_case(sfid)) {
-    nvsrt->send_message(MSG_AWAITING_CHECK);
-
-    enum nvs_message command = nvsrt->read_message();
-
-    if (command == MSG_SHOW_BUG_AND_EXIT) {
-      ERRF("NVS-RT: found bug at sfence #%zu test case #?", sfid);
-      _exit(NVS_EXIT_FOUNDBUG);
-    }
-
-    if (command != MSG_CONTINUE_TO_RUN) {
-      ERRF("NVS-RT: received inappropriate message %d", command);
-      _exit(EXIT_FAILURE);
-    }
-  }
-}
-
-void __nvs_store64(void *ptr) {
-  DBGF("NVS-RT: store i64 to %p", ptr);
-
-  /* TODO: Perhaps using likely/unlikely can improve performance. */
-
-  if (nvsrt->get_target_stage() == ST_MAINPROC)
-    __runq_push_back_store64((uint64_t *)ptr);
-}
-
 /**
  * The following functions are injected into target programs for testing.
  * They should be exposed with C linkage (declared as extern "C") if target
@@ -549,9 +510,6 @@ extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
        size);
 
   nvsrt->save_store(ptr, size, func, file, line);
-
-  if (size == 8) // TODO: handle other sizes
-    __nvs_store64(ptr);
 }
 
 /**
@@ -624,13 +582,11 @@ extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  __nvs_print_runq();
-  __emulate_crash(sfid);
-  __runq_flush();
+#ifdef NVS_DEBUG
+  nvsrt->print_nvstores(0);
+#endif
 
-  (void)func;
-  (void)file;
-  (void)line;
+  nvsrt->analyze(sfid, func, file, line);
 
   TESTC("NVS-RT: pass over epoch [sfence] #%zu", sfid);
 }
