@@ -12,9 +12,8 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
-const int nvs_init_prio{0}; // __nvs_init priority (runs before main)
-const int nvs_fini_prio{0}; // __nvs_fini priority (runs before termination)
-// const int cache_line_size{64};
+static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
+static const int NVS_FINI_PRIO{0}; // __nvs_fini priority (runs after main)
 
 static uintptr_t cache_addr_of(const void *ptr) {
   return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
@@ -467,11 +466,11 @@ static void __start_forkserver(void) {
   }
 }
 
-/*
+/**
  * Initialize NVS-RT run-time data structures. Runs before the target's main()
  * with the constructor attribute.
  */
-__attribute__((constructor(nvs_init_prio))) void __nvs_init(void) {
+__attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
   if (nvsrt) {
     /**
      * Because we use forkservers, this function should not fire more than once
@@ -490,15 +489,18 @@ __attribute__((constructor(nvs_init_prio))) void __nvs_init(void) {
   __start_forkserver();
 }
 
-__attribute__((destructor(nvs_fini_prio))) void __nvs_fini(void) {
+/**
+ * The destructor will be called with a child process exits.
+ */
+__attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini(void) {
   if (nvsrt)
     nvsrt->child_cleanup();
 }
 
 /**
- * The following functions are injected into target programs for testing.
- * They should be exposed with C linkage (declared as extern "C") if target
- * programs are written in C because C++ names are usually mangled.
+ * The following functions are injected into target programs for testing. They
+ * should be exposed with C linkage (declared as extern "C") if target programs
+ * are written in C because C++ names are usually mangled.
  */
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
