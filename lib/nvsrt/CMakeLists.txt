@@ -3,6 +3,7 @@ set(SRCS nvsrt.cpp)
 # Link statically for performance (inline) and initializations before main().
 add_library(nvsrt STATIC ${SRCS})
 
+# may use -stdlib=libstdc++
 target_compile_options(nvsrt
   PUBLIC -Wall -Wextra -Ofast -funroll-loops -Wno-pointer-sign -masm=intel
 )

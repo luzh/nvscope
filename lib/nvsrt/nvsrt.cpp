@@ -63,12 +63,15 @@ public:
   /* Save CLFLUSHOPT or CLWB operations. */
   void save_clop_nofence(void *ptr, char *func, char *file, int line);
 
-  /* Print content of nvstores (up to limit entries). */
-  void print_nvstores(size_t limit) const;
   /* Generate the next test case. */
   bool next_reorder();
   /* Perform analysis for insights. */
   void analyze(uint64_t sfid, char *func, char *file, int line);
+
+#ifdef NVS_DEBUG
+/* Print content of nvstores (up to limit entries). */
+  void print_nvstores(size_t limit) const;
+#endif
 
   NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf), _rangeid(-1) {
@@ -246,6 +249,7 @@ void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
   (void)line;
 }
 
+#ifdef NVS_DEBUG
 void NVScopeRT::print_nvstores(size_t limit) const {
   size_t n = 0;
 
@@ -259,6 +263,7 @@ void NVScopeRT::print_nvstores(size_t limit) const {
   }
   DBGF(cCYA "--- NVS-RT collected stores (***) ---" cRST);
 }
+#endif
 
 bool NVScopeRT::next_reorder() {
   static size_t caseid = 0;
@@ -587,7 +592,6 @@ extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
 #ifdef NVS_DEBUG
   nvsrt->print_nvstores(0);
 #endif
-
   nvsrt->analyze(sfid, func, file, line);
 
   TESTC("NVS-RT: pass over epoch [sfence] #%zu", sfid);
