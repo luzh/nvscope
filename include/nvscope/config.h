@@ -49,23 +49,19 @@ enum nvs_excode {
   NVS_EXIT_BAD_SHM,
   NVS_EXIT_BAD_MSG,
   NVS_EXIT_BAD_CONFIG,
-  NVS_EXIT_RUNQ_FULL,
   NVS_EXIT_FOUNDBUG
 };
-
-enum nvs_target_stage { ST_NONE, ST_DONTCARE, ST_MAINPROC, ST_RECOVERY };
 
 enum nvs_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
 
 struct nvs_target_config {
-  int enabled;                 // if nvscope run-time is enabled
-  pid_t pid;                   // target process pid
-  int status;                  // target process status
-  pid_t fksv_pid;              // target forkserver pid
-  int read_fd;                 // pipe endpoint to read from nvscope
-  int write_fd;                // pipe endpoint to write to nvscope
-  enum nvs_target_stage stage; // TODO: may remove
-  int reserved[9];             // pack to whole cache lines
+  int enabled;      // if nvscope run-time is enabled
+  pid_t pid;        // target process pid
+  int status;       // target process status
+  pid_t fksv_pid;   // target forkserver pid
+  int read_fd;      // pipe endpoint to read from nvscope
+  int write_fd;     // pipe endpoint to write to nvscope
+  int reserved[10]; // pack to whole cache lines
 } __attribute__((packed));
 
 struct nvs_config {
@@ -75,33 +71,5 @@ struct nvs_config {
   struct nvs_target_config mainproc;
   struct nvs_target_config recovery;
 } __attribute__((packed));
-
-#define NVS_SHM_CONFIG_SIZE ALIGN_UP(sizeof(struct nvs_config), CLSIZE)
-
-struct nvs_runq_entry {
-  union {
-    uint8_t *ptr8;
-    uint16_t *ptr16;
-    uint32_t *ptr32;
-    uint64_t *ptr64;
-  };
-  union {
-    uint8_t val8;
-    uint16_t val16;
-    uint32_t val32;
-    uint64_t val64;
-  };
-};
-
-struct nvs_runq {
-  size_t len;
-  struct nvs_runq_entry entries[];
-};
-
-#define NVS_SHM_RUNQ_OFF (NVS_SHM_CONFIG_SIZE)
-#define NVS_SHM_RUNQ_SIZE (500000)
-#define NVS_SHM_RUNQ_META_SIZE ALIGN_UP(sizeof(struct nvs_runq), CLSIZE)
-#define NVS_SHM_RUNQ_MAX_LEN                                                   \
-  ((NVS_SHM_RUNQ_SIZE - NVS_SHM_RUNQ_META_SIZE) / sizeof(struct nvs_runq_entry))
 
 #endif

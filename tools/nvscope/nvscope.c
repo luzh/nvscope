@@ -350,7 +350,6 @@ static void show_progress(size_t testid) {
 }
 
 int main(int argc, char **argv) {
-  COMPILE_ERROR_ON(MAP_SIZE < NVS_SHM_RUNQ_OFF + NVS_SHM_RUNQ_SIZE);
   COMPILE_ERROR_ON(sizeof(struct nvs_target_config) != CLSIZE);
   COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvs_config, mainproc)));
 

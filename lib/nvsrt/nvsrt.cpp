@@ -37,13 +37,8 @@ public:
 
   /* Set target process PID. */
   void set_target_pid(pid_t pid) { _tgconfig->pid = pid; }
-  /* Set target stage. */
-  void set_target_stage(enum nvs_target_stage stge) { _tgconfig->stage = stge; }
   /* Set target process status. */
   void set_target_status(int st) { _tgconfig->status = st; }
-
-  /* Get target stage. */
-  enum nvs_target_stage get_target_stage() { return _tgconfig->stage; }
 
   /* Communication methods. */
   enum nvs_message read_message() const;
@@ -69,7 +64,7 @@ public:
   void analyze(uint64_t sfid, char *func, char *file, int line);
 
 #ifdef NVS_DEBUG
-/* Print content of nvstores (up to limit entries). */
+  /* Print content of nvstores (up to limit entries). */
   void print_nvstores(size_t limit) const;
 #endif
 
@@ -384,9 +379,6 @@ static void __nvs_setup_shm(void) {
       ERRF("NVS-RT: creating nvscope run-time failed");
       _exit(NVS_EXIT_BAD_CONFIG);
     }
-
-    if (nvsrt->get_target_stage() == ST_NONE)
-      nvsrt->set_target_stage(ST_DONTCARE);
   } else {
     WARNF("NVS-RT: shared memory not found, nvscope run-time disabled");
   }
@@ -545,8 +537,6 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
     return pmap;
 
   nvsrt->add_nvrange(pmap, size, func, file, line);
-
-  nvsrt->set_target_stage(ST_MAINPROC);
 
   return pmap;
 }
