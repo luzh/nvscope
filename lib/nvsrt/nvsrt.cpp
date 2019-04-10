@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -13,7 +14,6 @@
 #include "nvscope/config.h"
 
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
-static const int NVS_FINI_PRIO{0}; // __nvs_fini priority (runs after main)
 
 static uintptr_t cache_addr_of(const void *ptr) {
   return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
@@ -24,9 +24,6 @@ class NVScopeRT {
 public:
   /* Check if NVS-RT is enabled. */
   bool is_enabled() const { return _tgconfig->enabled; }
-
-  /* Create mmap shadow. */
-  uintptr_t create_shadow_map(size_t size);
 
   /**
    * Initialize the store queue. TODO: Currently it's a pre-allocated region in
@@ -46,11 +43,8 @@ public:
   void send_anydata(void *data, ssize_t len) const;
   void close_channels() const;
 
-  /* Cleanup tasks before a child process exits. */
-  void child_cleanup();
-
   /* Add one mmaped range. */
-  void add_nvrange(void *pmap, size_t size, char *func, char *file, int line);
+  void save_nvrange(void *pmap, size_t size, char *func, char *file, int line);
   /* Check if the stored data falls into mmaped ranges. */
   bool store_in_range(void *ptr, size_t size);
   /* Save store information. */
@@ -69,7 +63,7 @@ public:
 #endif
 
   NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
-      : _shm_base(_shm), _tgconfig(tgconf), _rangeid(-1) {
+      : _shm_base(_shm), _tgconfig(tgconf) {
     if (_shm_base) {
       OKF("NVS-RT: nvscope run-time constructed");
     } else {
@@ -80,46 +74,39 @@ public:
 
 private:
   struct StoreInfo {
-    StoreInfo(uintptr_t start, uintptr_t end, uintptr_t shadow, char *func,
-              char *file, int linenr)
-        : _start(start), _end(end), _shadow(shadow), _func(func), _file(file),
-          _linenr(linenr) {}
-    uintptr_t _start;  // start address of this store
-    uintptr_t _end;    // one byte after the stored range
-    uintptr_t _shadow; // shadow data address corresponding to _start
-    char *_func;
-    char *_file;
-    int _linenr;
+    StoreInfo(uintptr_t start, uintptr_t end, const char *func, const char *file,
+              const int linenr)
+        : _func(func), _file(file), _linenr(linenr), _start(start), _end(end),
+          _snapshot(reinterpret_cast<std::byte *>(start),
+                    reinterpret_cast<std::byte *>(end)) {}
+    const char *_func;
+    const char *_file;
+    const int _linenr;
+    uintptr_t _start; // start address of this store
+    uintptr_t _end;   // one byte after the stored range
+    std::vector<std::byte> _snapshot;
   };
 
   struct RangeInfo {
-    RangeInfo(uintptr_t start, uintptr_t end, uintptr_t shadow, char *func,
-              char *file, int linenr)
-        : _start(start), _end(end), _shadow(shadow), _func(func), _file(file),
-          _linenr(linenr) {}
-    uintptr_t _start;  // user's mmap start address
-    uintptr_t _end;    // user's mmap end address
-    uintptr_t _shadow; // shadow mmap address corresponding to _start
-    char *_func;
-    char *_file;
-    int _linenr;
+    RangeInfo(uintptr_t start, uintptr_t end, const char *func, const char *file,
+              const int linenr)
+        : _func(func), _file(file), _linenr(linenr), _start(start), _end(end) {}
+    const char *_func;
+    const char *_file;
+    const int _linenr;
+    uintptr_t _start; // user's mmap start address
+    uintptr_t _end;   // user's mmap end address
   };
 
   void *_shm_base;
   struct nvs_target_config *_tgconfig;
 
   /**
-   * user's map start, user's map end, shadow's map pointer
    * TODO: Using a vector assumes there are only few mappings (less than 10),
    * where a linear search is good enough. But if there are tens or hundreds of
    * mappings we should use a hash map.
    */
   std::vector<RangeInfo> _nvranges;
-  /**
-   * element index of _nvranges corresponding to the current store
-   * TODO: This works only if _nvranges never shrink.
-   */
-  int _rangeid;
 
   std::vector<StoreInfo> _nvstores;
 
@@ -131,30 +118,20 @@ private:
    */
 };
 
-void NVScopeRT::add_nvrange(void *pmap, size_t size, char *func, char *file,
-                            int line) {
+void NVScopeRT::save_nvrange(void *pmap, size_t size, char *func, char *file,
+                             int line) {
   auto addr = reinterpret_cast<uintptr_t>(pmap);
-  auto shadow = create_shadow_map(size);
-
-  OKF("NVS-RT: shadow map %p created for %p size %zu",
-      reinterpret_cast<void *>(shadow), pmap, size);
-
-  _nvranges.emplace_back(addr, addr + size, shadow, func, file, line);
+  _nvranges.emplace_back(addr, addr + size, func, file, line);
 }
 
 bool NVScopeRT::store_in_range(void *ptr, size_t size) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
   auto end = start + size;
 
-  for (auto it = _nvranges.begin(); it != _nvranges.end(); ++it) {
-    /* TODO: May also check if the store overflows the mapped region. */
-    if (it->_start <= start && end < it->_end) {
-      _rangeid = std::distance(_nvranges.begin(), it);
-      return true;
-    }
-  }
-
-  return false;
+  return std::any_of(_nvranges.begin(), _nvranges.end(),
+                     [start, end](auto &range) {
+                       return range._start <= start && end < range._end;
+                     });
 }
 
 enum nvs_message NVScopeRT::read_message() const {
@@ -180,19 +157,6 @@ void NVScopeRT::send_anydata(void *data, ssize_t len) const {
   }
 }
 
-uintptr_t NVScopeRT::create_shadow_map(size_t size) {
-  /* Mapped region should be zeroed according to MAP_ANONYMOUS semantics. */
-  void *shadow = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-
-  if (shadow == MAP_FAILED) {
-    ERRF("NVS-RT: Creating shadow mmap failed");
-    _exit(NVS_EXIT_BAD_CONFIG);
-  }
-
-  return reinterpret_cast<uintptr_t>(shadow);
-}
-
 void NVScopeRT::close_channels() const {
   if (_tgconfig->read_fd > 0)
     close(_tgconfig->read_fd);
@@ -200,37 +164,12 @@ void NVScopeRT::close_channels() const {
     close(_tgconfig->write_fd);
 }
 
-void NVScopeRT::child_cleanup() {
-  for (auto &range : _nvranges) {
-    assert(range._start && range._start < range._end);
-    size_t size = range._end - range._start;
-    void *shadow = reinterpret_cast<void *>(range._shadow);
-    assert(shadow != nullptr);
-    if (munmap(shadow, size) != -1) {
-      OKF("NVS-RT: shadow %p size %zu unmapped", shadow, size);
-    } else {
-      ERRF("NVS-RT: shadow %p size %zu unmap failed!", shadow, size);
-    }
-  }
-}
-
 void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
                            int line) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
   auto end = static_cast<uintptr_t>(start + size);
 
-  RangeInfo &nvrange = _nvranges[_rangeid];
-
-  assert(nvrange._start <= reinterpret_cast<uintptr_t>(ptr));
-  assert(reinterpret_cast<uintptr_t>(ptr) + size < nvrange._end);
-
-  uintptr_t offset = reinterpret_cast<uintptr_t>(ptr) - nvrange._start;
-  uintptr_t shadow = nvrange._shadow + offset;
-  void *shadowptr = reinterpret_cast<void *>(shadow);
-
-  memcpy(shadowptr, ptr, size);
-
-  _nvstores.emplace_back(start, end, shadow, func, file, line);
+  _nvstores.emplace_back(start, end, func, file, line);
 }
 
 void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
@@ -271,11 +210,11 @@ bool NVScopeRT::next_reorder() {
 
   if (caseid > 1) {
     StoreInfo &store = _nvstores[caseid - 2];
-    char *start = reinterpret_cast<char *>(store._start);
-    char *end = reinterpret_cast<char *>(store._end);
-    char *shadow = reinterpret_cast<char *>(store._shadow);
+    auto *start = reinterpret_cast<std::byte *>(store._start);
+    auto *end = reinterpret_cast<std::byte *>(store._end);
+    auto *newdata = store._snapshot.data();
 
-    std::swap_ranges(start, end, shadow);
+    std::swap_ranges(start, end, newdata);
 
     TESTC("NVS-RT: pass over test case #%zu: redo store to %p size %zu",
           caseid - 1, start, end - start);
@@ -287,15 +226,16 @@ bool NVScopeRT::next_reorder() {
   }
 
   StoreInfo &store = _nvstores[caseid - 1];
-  char *start = reinterpret_cast<char *>(store._start);
-  char *end = reinterpret_cast<char *>(store._end);
-  char *shadow = reinterpret_cast<char *>(store._shadow);
+  auto *start = reinterpret_cast<std::byte *>(store._start);
+  auto *end = reinterpret_cast<std::byte *>(store._end);
+  auto *olddata = store._snapshot.data();
 
   /**
-   * TODO: Need to check the efficiency of this library function. Does it
-   * allocate a temporaty buffer to do the swap?
+   * TODO: std::swap_ranges() seems to work at granularity determined by the
+   * iterator, so for std::byte* iterators it swaps byte-by-byte. We will need
+   * a more efficient swapping method at certain point.
    */
-  std::swap_ranges(start, end, shadow);
+  std::swap_ranges(start, end, olddata);
 
   TESTC("NVS-RT: make test case #%zu: undo store to %p size %zu", caseid, start,
         end - start);
@@ -488,11 +428,9 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
 
 /**
  * The destructor will be called with a child process exits.
+ * __attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini(void) {
+ * }
  */
-__attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini(void) {
-  if (nvsrt)
-    nvsrt->child_cleanup();
-}
 
 /**
  * The following functions are injected into target programs for testing. They
@@ -536,7 +474,7 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   if (!nvsrt || !nvsrt->is_enabled())
     return pmap;
 
-  nvsrt->add_nvrange(pmap, size, func, file, line);
+  nvsrt->save_nvrange(pmap, size, func, file, line);
 
   return pmap;
 }
