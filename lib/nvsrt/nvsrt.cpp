@@ -15,9 +15,9 @@
 
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
 
-static uintptr_t cache_addr_of(const void *ptr) {
-  return reinterpret_cast<uintptr_t>(ptr) & (~uintptr_t(0) << 6);
-}
+enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
+
+static uintptr_t cache_addr_of(const uintptr_t addr) { return addr & ~63UL; }
 
 class NVScopeRT {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
@@ -44,13 +44,16 @@ public:
   void close_channels() const;
 
   /* Add one mmaped range. */
-  void save_nvrange(void *pmap, size_t size, char *func, char *file, int line);
+  void save_range(uintptr_t addr, size_t size, char *func, char *file,
+                  int line);
   /* Check if the stored data falls into mmaped ranges. */
   bool store_in_range(void *ptr, size_t size);
   /* Save store information. */
-  void save_store(void *ptr, size_t size, char *func, char *file, int line);
+  void save_store(uintptr_t addr, size_t size, char *func, char *file,
+                  int line);
   /* Save CLFLUSHOPT or CLWB operations. */
-  void save_clop_nofence(void *ptr, char *func, char *file, int line);
+  void save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
+                 int line);
 
   /* Generate the next test case. */
   bool next_reorder();
@@ -73,9 +76,20 @@ public:
   }
 
 private:
+  struct RangeInfo {
+    RangeInfo(uintptr_t start, uintptr_t end, const char *func,
+              const char *file, const int linenr)
+        : _func(func), _file(file), _linenr(linenr), _start(start), _end(end) {}
+    const char *_func;
+    const char *_file;
+    const int _linenr;
+    const uintptr_t _start; // user's mmap start address
+    const uintptr_t _end;   // one byte after user's mmap end address
+  };
+
   struct StoreInfo {
-    StoreInfo(uintptr_t start, uintptr_t end, const char *func, const char *file,
-              const int linenr)
+    StoreInfo(uintptr_t start, uintptr_t end, const char *func,
+              const char *file, const int linenr)
         : _func(func), _file(file), _linenr(linenr), _start(start), _end(end),
           _snapshot(reinterpret_cast<std::byte *>(start),
                     reinterpret_cast<std::byte *>(end)) {}
@@ -87,15 +101,17 @@ private:
     std::vector<std::byte> _snapshot;
   };
 
-  struct RangeInfo {
-    RangeInfo(uintptr_t start, uintptr_t end, const char *func, const char *file,
-              const int linenr)
-        : _func(func), _file(file), _linenr(linenr), _start(start), _end(end) {}
+  struct CLOPInfo {
+    CLOPInfo(uintptr_t addr, const CLOPType type, const char *func,
+             const char *file, const int linenr)
+        : _func(func), _file(file), _linenr(linenr), _addr(addr),
+          _claddr(cache_addr_of(addr)), _type(type) {}
     const char *_func;
     const char *_file;
     const int _linenr;
-    uintptr_t _start; // user's mmap start address
-    uintptr_t _end;   // user's mmap end address
+    const uintptr_t _addr;   // user-provided address of this cache line op
+    const uintptr_t _claddr; // cache-line address for _addr
+    const CLOPType _type;
   };
 
   void *_shm_base;
@@ -107,8 +123,8 @@ private:
    * mappings we should use a hash map.
    */
   std::vector<RangeInfo> _nvranges;
-
   std::vector<StoreInfo> _nvstores;
+  std::vector<CLOPInfo> _nvclops;
 
   /**
    * A collection of store operations. Each operation is placed in a vector
@@ -118,9 +134,8 @@ private:
    */
 };
 
-void NVScopeRT::save_nvrange(void *pmap, size_t size, char *func, char *file,
-                             int line) {
-  auto addr = reinterpret_cast<uintptr_t>(pmap);
+void NVScopeRT::save_range(uintptr_t addr, size_t size, char *func, char *file,
+                           int line) {
   _nvranges.emplace_back(addr, addr + size, func, file, line);
 }
 
@@ -164,23 +179,14 @@ void NVScopeRT::close_channels() const {
     close(_tgconfig->write_fd);
 }
 
-void NVScopeRT::save_store(void *ptr, size_t size, char *func, char *file,
+void NVScopeRT::save_store(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
-  auto start = reinterpret_cast<uintptr_t>(ptr);
-  auto end = static_cast<uintptr_t>(start + size);
-
-  _nvstores.emplace_back(start, end, func, file, line);
+  _nvstores.emplace_back(addr, addr + size, func, file, line);
 }
 
-void NVScopeRT::save_clop_nofence(void *ptr, char *func, char *file, int line) {
-  // uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
-  void *pcl = reinterpret_cast<void *>(cache_addr_of(ptr));
-
-  (void)ptr;
-  (void)pcl;
-  (void)func;
-  (void)file;
-  (void)line;
+void NVScopeRT::save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
+                          int line) {
+  _nvclops.emplace_back(addr, type, func, file, line);
 }
 
 #ifdef NVS_DEBUG
@@ -233,7 +239,7 @@ bool NVScopeRT::next_reorder() {
   /**
    * TODO: std::swap_ranges() seems to work at granularity determined by the
    * iterator, so for std::byte* iterators it swaps byte-by-byte. We will need
-   * a more efficient swapping method at certain point.
+   * a more efficient swapping method.
    */
   std::swap_ranges(start, end, olddata);
 
@@ -247,6 +253,10 @@ bool NVScopeRT::next_reorder() {
 void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
   if (_nvstores.empty())
     return;
+
+#ifdef NVS_DEBUG
+  print_nvstores(0);
+#endif
 
   DBGF("NVS-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", sfid, func,
        file, line);
@@ -268,13 +278,14 @@ void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
     }
   }
 
-  /*
+  /**
    * TODO: Only remove flushed (clflushopt, clwb) stores, since they should be
    * persistent after the sfence and not be affected by reordering. Now assume
    * clflush(opt) or clwb is complete, and we simply set the queue length to
    * zero to flush it.
    */
   _nvstores.clear();
+  _nvclops.clear();
 }
 
 static NVScopeRT *nvsrt;
@@ -440,13 +451,13 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->store_in_range(ptr, size))
-    return;
-
   DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
        size);
 
-  nvsrt->save_store(ptr, size, func, file, line);
+  if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->store_in_range(ptr, size))
+    return;
+
+  nvsrt->save_store(reinterpret_cast<uint64_t>(ptr), size, func, file, line);
 }
 
 /**
@@ -474,41 +485,48 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
   if (!nvsrt || !nvsrt->is_enabled())
     return pmap;
 
-  nvsrt->save_nvrange(pmap, size, func, file, line);
+  nvsrt->save_range(reinterpret_cast<uint64_t>(pmap), size, func, file, line);
 
   return pmap;
 }
 
 extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
+  auto addr = reinterpret_cast<uintptr_t>(ptr);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
+       ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
+
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
-       ptr, reinterpret_cast<void *>(cache_addr_of(ptr)));
-
-  nvsrt->save_clop_nofence(ptr, func, file, line);
+  nvsrt->save_clop(addr, CLWB, func, file, line);
 }
 
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
+  auto addr = reinterpret_cast<uintptr_t>(ptr);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
+       line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
+
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
-       line, ptr, reinterpret_cast<void *>(cache_addr_of(ptr)));
-
-  nvsrt->save_clop_nofence(ptr, func, file, line);
+  nvsrt->save_clop(addr, CLFLUSHOPT, func, file, line);
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
+  auto addr = reinterpret_cast<uintptr_t>(ptr);
+
+  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
+       line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
+
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
-       line, ptr, reinterpret_cast<void *>(cache_addr_of(ptr)));
+  nvsrt->save_clop(addr, CLFLUSH, func, file, line);
+  nvsrt->analyze(0, func, file, line); // TODO: need an sfid
 
-  nvsrt->save_clop_nofence(ptr, func, file, line);
-
-  /* TODO: should also handle sfence here. */
+  TESTC("NVS-RT: pass over epoch [clflush] X");
 }
 
 extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
@@ -517,9 +535,6 @@ extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-#ifdef NVS_DEBUG
-  nvsrt->print_nvstores(0);
-#endif
   nvsrt->analyze(sfid, func, file, line);
 
   TESTC("NVS-RT: pass over epoch [sfence] #%zu", sfid);
