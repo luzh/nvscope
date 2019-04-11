@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -58,7 +59,8 @@ public:
   /* Generate the next test case. */
   bool next_reorder();
   /* Perform analysis for insights. */
-  void analyze(uint64_t sfid, char *func, char *file, int line);
+  void check_reorder(uint64_t sfid, char *func, char *file, int line);
+  void check_dirty_stores(uint64_t sfid, char *func, char *file, int line);
 
 #ifdef NVS_DEBUG
   /* Print content of nvstores (up to limit entries). */
@@ -76,6 +78,8 @@ public:
   }
 
 private:
+  static std::atomic_uint64_t timestamp; // event timestamp
+
   struct RangeInfo {
     RangeInfo(uintptr_t start, uintptr_t end, const char *func,
               const char *file, const int linenr)
@@ -88,27 +92,29 @@ private:
   };
 
   struct StoreInfo {
-    StoreInfo(uintptr_t start, uintptr_t end, const char *func,
+    StoreInfo(uint64_t time, uintptr_t start, uintptr_t end, const char *func,
               const char *file, const int linenr)
-        : _func(func), _file(file), _linenr(linenr), _start(start), _end(end),
-          _snapshot(reinterpret_cast<std::byte *>(start),
-                    reinterpret_cast<std::byte *>(end)) {}
+        : _func(func), _file(file), _linenr(linenr), _time(time), _start(start),
+          _end(end), _snapshot(reinterpret_cast<std::byte *>(start),
+                               reinterpret_cast<std::byte *>(end)) {}
     const char *_func;
     const char *_file;
     const int _linenr;
-    uintptr_t _start; // start address of this store
-    uintptr_t _end;   // one byte after the stored range
-    std::vector<std::byte> _snapshot;
+    const uint64_t _time;
+    uintptr_t _start;                 // start address of this store
+    uintptr_t _end;                   // one byte after the stored range
+    std::vector<std::byte> _snapshot; // snapshot of the range's old data
   };
 
   struct CLOPInfo {
-    CLOPInfo(uintptr_t addr, const CLOPType type, const char *func,
-             const char *file, const int linenr)
-        : _func(func), _file(file), _linenr(linenr), _addr(addr),
+    CLOPInfo(uint64_t time, uintptr_t addr, const CLOPType type,
+             const char *func, const char *file, const int linenr)
+        : _func(func), _file(file), _linenr(linenr), _time(time), _addr(addr),
           _claddr(cache_addr_of(addr)), _type(type) {}
     const char *_func;
     const char *_file;
     const int _linenr;
+    const uint64_t _time;
     const uintptr_t _addr;   // user-provided address of this cache line op
     const uintptr_t _claddr; // cache-line address for _addr
     const CLOPType _type;
@@ -125,6 +131,8 @@ private:
   std::vector<RangeInfo> _nvranges;
   std::vector<StoreInfo> _nvstores;
   std::vector<CLOPInfo> _nvclops;
+
+  std::vector<StoreInfo> _dirty_stores;
 
   /**
    * A collection of store operations. Each operation is placed in a vector
@@ -165,12 +173,14 @@ void NVScopeRT::send_message(enum nvs_message msg) const {
   }
 }
 
+/*
 void NVScopeRT::send_anydata(void *data, ssize_t len) const {
   if (write(_tgconfig->write_fd, data, len) != len) {
     ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
     _exit(EXIT_FAILURE);
   }
 }
+*/
 
 void NVScopeRT::close_channels() const {
   if (_tgconfig->read_fd > 0)
@@ -181,12 +191,14 @@ void NVScopeRT::close_channels() const {
 
 void NVScopeRT::save_store(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
-  _nvstores.emplace_back(addr, addr + size, func, file, line);
+  auto time = ++timestamp;
+  _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
 void NVScopeRT::save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
                           int line) {
-  _nvclops.emplace_back(addr, type, func, file, line);
+  auto time = ++timestamp;
+  _nvclops.emplace_back(time, addr, type, func, file, line);
 }
 
 #ifdef NVS_DEBUG
@@ -250,7 +262,7 @@ bool NVScopeRT::next_reorder() {
   return true;
 }
 
-void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
+void NVScopeRT::check_reorder(uint64_t sfid, char *func, char *file, int line) {
   if (_nvstores.empty())
     return;
 
@@ -277,16 +289,27 @@ void NVScopeRT::analyze(uint64_t sfid, char *func, char *file, int line) {
       _exit(NVS_EXIT_BAD_MSG);
     }
   }
+}
+
+void NVScopeRT::check_dirty_stores(uint64_t sfid, char *func, char *file,
+                                   int line) {
+  if (_nvstores.empty())
+    return;
+
+  (void)sfid;
+  (void)func;
+  (void)file;
+  (void)line;
 
   /**
    * TODO: Only remove flushed (clflushopt, clwb) stores, since they should be
-   * persistent after the sfence and not be affected by reordering. Now assume
-   * clflush(opt) or clwb is complete, and we simply set the queue length to
-   * zero to flush it.
+   * persistent after the sfence and not be affected by reordering.
    */
   _nvstores.clear();
   _nvclops.clear();
 }
+
+std::atomic_uint64_t NVScopeRT::timestamp{0};
 
 static NVScopeRT *nvsrt;
 
@@ -295,17 +318,17 @@ static NVScopeRT *nvsrt;
 /**
  * Shared memory setup
  */
-static void __nvs_setup_shm(void) {
+static void __nvs_setup_shm() {
   char *shmid_str = getenv(NVS_ENV_SHM);
 
   if (shmid_str) {
-    uint32_t shmid = atoi(shmid_str);
+    uint32_t shmid = strtoul(shmid_str, nullptr, 0);
 
-    void *shm_base = shmat(shmid, NULL, 0);
+    void *shm_base = shmat(shmid, nullptr, 0);
     if (shm_base == reinterpret_cast<void *>(-1))
       _exit(NVS_EXIT_BAD_SHM);
 
-    struct nvs_config *config = (struct nvs_config *)(shm_base);
+    auto *config = (struct nvs_config *)(shm_base);
 
     /* should be initialized by parent (nvscope) */
     if (!config->initialized) {
@@ -338,7 +361,7 @@ static void __nvs_setup_shm(void) {
 /**
  * Forkserver logic (see nvscope.c for the other part)
  */
-static void __start_forkserver(void) {
+static void __start_forkserver() {
   /* initial communication with nvscope */
   nvsrt->send_message(MSG_FORKSERVER_HELLO);
 
@@ -524,7 +547,8 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
     return;
 
   nvsrt->save_clop(addr, CLFLUSH, func, file, line);
-  nvsrt->analyze(0, func, file, line); // TODO: need an sfid
+  nvsrt->check_reorder(0, func, file, line);      // TODO: need an sfid
+  nvsrt->check_dirty_stores(0, func, file, line); // TODO: need an sfid
 
   TESTC("NVS-RT: pass over epoch [clflush] X");
 }
@@ -535,7 +559,8 @@ extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->analyze(sfid, func, file, line);
+  nvsrt->check_reorder(sfid, func, file, line);
+  nvsrt->check_dirty_stores(sfid, func, file, line);
 
   TESTC("NVS-RT: pass over epoch [sfence] #%zu", sfid);
 }
