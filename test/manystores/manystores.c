@@ -10,7 +10,7 @@
  * evaluation.
  */
 static int case1(void *pmem) {
-  if (((uint64_t)pmem & 4095) != 0) {
+  if (((uint64_t)pmem & 4095UL) != 0) {
     printf("Error: pmem %p is not 4K-aligned!\n", pmem);
     return 1;
   }
@@ -36,7 +36,7 @@ static int case1(void *pmem) {
 static int check1(void *pmem) { return (pmem == NULL); }
 
 static int check2(void *pmem) {
-  if (((uint64_t)pmem & 4095) != 0) {
+  if (((uint64_t)pmem & 4095UL) != 0) {
     printf("Error: pmem %p is not 4K-aligned!\n", pmem);
     return 1;
   }
