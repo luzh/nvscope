@@ -47,12 +47,15 @@ function(nvs_set_pass_properties PASS_TARGET)
   target_include_directories(${PASS_TARGET} PRIVATE ${LLVM_INCLUDE_DIRS})
 endfunction()
 
+# Properties set by this function apply to both normal and instrumented targets.
 function(nvs_set_sources_properties PROFILE)
 # set(options)
 # set(oneValueArgs PROFILE)
 # set(multiValueArgs FILES)
 # cmake_parse_arguments(
 #   NVS_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  # Our target application will be C sources.
   set(VALID_PROFILES "C_Default")
   if(NOT PROFILE IN_LIST VALID_PROFILES)
     nvs_fatal("Invalid source profile: ${PROFILE}")
@@ -61,31 +64,20 @@ function(nvs_set_sources_properties PROFILE)
   set(SRCS ${ARGN})
 
   nvs_print("Using ${PROFILE} properties for ${SRCS}")
+
+  set_property(
+    SOURCE
+      ${SRCS}
+    PROPERTY COMPILE_DEFINITIONS
+      _GNU_SOURCE MESSAGES_TO_STDOUT
+  )
+
   set_property(
     SOURCE
       ${SRCS}
     PROPERTY INCLUDE_DIRECTORIES
       ${CMAKE_SOURCE_DIR}/include
   )
-
-  set_property(
-    SOURCE
-      ${SRCS}
-    PROPERTY COMPILE_DEFINITIONS
-      _GNU_SOURCE
-      MESSAGES_TO_STDOUT
-  )
-
-  set(EXTRA_COMPILE_FLAGS "")
-  string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_CHECK)
-  if(BUILD_TYPE_CHECK STREQUAL "DEBUG")
-    nvs_print("Setting EXTRA_COMPILE_FLAGS for DEBUG build")
-    set(EXTRA_COMPILE_FLAGS -ggdb)
-  elseif(BUILD_TYPE_CHECK STREQUAL "RELEASE")
-    nvs_print("Setting EXTRA_COMPILE_FLAGS for RELEASE build")
-    # need -ggdb for debugging information
-    set(EXTRA_COMPILE_FLAGS -O3 -ggdb -DNDEBUG)
-  endif()
 
   # Specify -march for clflushopt/clwb to compile.
   # Skylake server processors (-march=skx) support both clflushopt and clwb.
@@ -95,11 +87,12 @@ function(nvs_set_sources_properties PROFILE)
   set_property(
     SOURCE
       ${SRCS}
-    PROPERTY COMPILE_FLAGS
-      -Wall -Wextra -march=native -std=gnu99 ${EXTRA_COMPILE_FLAGS} -emit-llvm
+    PROPERTY COMPILE_OPTIONS
+      -Wall -Wextra -march=native
   )
 endfunction()
 
+# Emulates CMake's default add_executable() and applies multiple LLVM passes.
 function(nvs_add_executable)
   list(LENGTH ARGV ARGS_LEN)
   if(ARGS_LEN LESS "2")
@@ -123,8 +116,15 @@ function(nvs_add_executable)
     string(REGEX MATCHALL "\.([a-z]+)$" SRC_NAME_EXT ${SRC_NAME})
     string(TOUPPER ${CMAKE_MATCH_1} SRC_NAME_EXT) # last file extension
     if(SRC_NAME_EXT IN_LIST CXX_SRC_EXTS)
+      separate_arguments(DEBUG_OPTS UNIX_COMMAND ${CMAKE_CXX_FLAGS_DEBUG})
+      separate_arguments(RELEASE_OPTS UNIX_COMMAND ${CMAKE_CXX_FLAGS_RELEASE})
+      nvs_warning("Need to set proper C++ compile flags!")
       set(LINKER_LANG "CXX")
     elseif(SRC_NAME_EXT IN_LIST C_SRC_EXTS)
+      separate_arguments(DEBUG_OPTS UNIX_COMMAND ${CMAKE_C_FLAGS_DEBUG})
+      separate_arguments(RELEASE_OPTS UNIX_COMMAND ${CMAKE_C_FLAGS_RELEASE})
+      list(APPEND DEBUG_OPTS "-std=gnu99")
+      list(APPEND RELEASE_OPTS "-std=gnu99")
       if(NOT LINKER_LANG STREQUAL "CXX")
         set(LINKER_LANG "C")
       endif()
@@ -149,15 +149,6 @@ function(nvs_add_executable)
     set(LLVM_IR_FILE "${LLVM_OUT_DIR}/${LLVM_IR_NAME}")
     set(LLVM_AS_FILE "${LLVM_OUT_DIR}/${LLVM_AS_NAME}")
 
-    get_source_file_property(INCLUDE_DIRS ${SRC_FILE} INCLUDE_DIRECTORIES)
-    if(INCLUDE_DIRS STREQUAL "NOTFOUND")
-      set(INCLUDE_DIRS_ARGS "")
-    else()
-      list(JOIN INCLUDE_DIRS " -I" INCLUDE_DIRS_ARGS)
-      set(INCLUDE_DIRS_ARGS "-I${INCLUDE_DIRS_ARGS}")
-    endif()
-    separate_arguments(INCLUDE_DIRS_ARGS UNIX_COMMAND ${INCLUDE_DIRS_ARGS})
-
     get_source_file_property(COMPILE_DEFS ${SRC_FILE} COMPILE_DEFINITIONS)
     if(COMPILE_DEFS STREQUAL "NOTFOUND")
       set(COMPILE_DEFS_ARGS "")
@@ -167,14 +158,34 @@ function(nvs_add_executable)
     endif()
     separate_arguments(COMPILE_DEFS_ARGS UNIX_COMMAND ${COMPILE_DEFS_ARGS})
 
-    get_source_file_property(COMPILE_FLAGS_ARGS ${SRC_FILE} COMPILE_FLAGS)
-    if(COMPILE_FLAGS_ARGS STREQUAL "NOTFOUND")
-      set(COMPILE_FLAGS_ARGS "")
+    get_source_file_property(INCLUDE_DIRS ${SRC_FILE} INCLUDE_DIRECTORIES)
+    if(INCLUDE_DIRS STREQUAL "NOTFOUND")
+      set(INCLUDE_DIRS_ARGS "")
+    else()
+      list(JOIN INCLUDE_DIRS " -I" INCLUDE_DIRS_ARGS)
+      set(INCLUDE_DIRS_ARGS "-I${INCLUDE_DIRS_ARGS}")
+    endif()
+    separate_arguments(INCLUDE_DIRS_ARGS UNIX_COMMAND ${INCLUDE_DIRS_ARGS})
+
+    get_source_file_property(COMPILE_OPTS_ARGS ${SRC_FILE} COMPILE_OPTIONS)
+    if(COMPILE_OPTS_ARGS STREQUAL "NOTFOUND")
+      set(COMPILE_OPTS_ARGS "")
     endif()
 
-    # This applies user-defined COMPILE_FLAGS_ARGS to the source file, which may
-    # contain clang's built-in optimizations, e.g. -O2, -O3. Therefore, other
-    # user-specified passes will apply after them.
+    # Add options according to what CMake does (default) for add_executable().
+    string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_CHECK)
+    if(BUILD_TYPE_CHECK STREQUAL "DEBUG")
+      nvs_print("Adding compile options for DEBUG build")
+      list(APPEND COMPILE_OPTS_ARGS ${DEBUG_OPTS} -emit-llvm)
+    elseif(BUILD_TYPE_CHECK STREQUAL "RELEASE")
+      nvs_print("Adding compile options for RELEASE build")
+      # For Release builds we also need -ggdb to obtain debug information.
+      list(APPEND COMPILE_OPTS_ARGS ${RELEASE_OPTS} -emit-llvm -ggdb)
+    endif()
+
+    # This applies user-defined COMPILE_OPTS_ARGS to the source file, which
+    # may contain clang's built-in optimizations, e.g. -O2, -O3. Therefore,
+    # other user-specified passes will apply after them.
     add_custom_command(
       OUTPUT
         ${LLVM_BC_FILE} ${LLVM_IR_FILE} ${LLVM_AS_FILE}
@@ -183,7 +194,7 @@ function(nvs_add_executable)
       COMMENT
         "Generating ${LLVM_BC_NAME}, ${LLVM_IR_NAME}, and ${LLVM_AS_NAME}"
       COMMAND
-        ${CMAKE_C_COMPILER} ${INCLUDE_DIRS_ARGS} ${COMPILE_DEFS_ARGS} ${COMPILE_FLAGS_ARGS} -c ${SRC_FILE} -o ${LLVM_BC_FILE}
+        ${CMAKE_C_COMPILER} ${COMPILE_DEFS_ARGS} ${INCLUDE_DIRS_ARGS} ${COMPILE_OPTS_ARGS} -o ${LLVM_BC_FILE} -c ${SRC_FILE}
       COMMAND
         ${LLVM_TOOLS_BINARY_DIR}/llvm-dis ${LLVM_BC_FILE}
       COMMAND
@@ -302,6 +313,7 @@ function(nvs_add_executable)
 
   add_custom_command(
     TARGET ${EXE_TARGET} POST_BUILD
+    BYPRODUCTS ${EXE_TARGET}.s
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMAND
       objdump -M intel -S --disassemble ${EXE_TARGET} > ${EXE_TARGET}.s
