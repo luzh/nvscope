@@ -72,12 +72,12 @@ function(nvs_set_sources_properties PROFILE)
       _GNU_SOURCE MESSAGES_TO_STDOUT
   )
 
-  set_property(
-    SOURCE
-      ${SRCS}
-    PROPERTY INCLUDE_DIRECTORIES
-      ${CMAKE_SOURCE_DIR}/include
-  )
+# set_property(
+#   SOURCE
+#     ${SRCS}
+#   PROPERTY INCLUDE_DIRECTORIES
+#     ${CMAKE_SOURCE_DIR}/include
+# )
 
   # Specify -march for clflushopt/clwb to compile.
   # Skylake server processors (-march=skx) support both clflushopt and clwb.
@@ -160,10 +160,10 @@ function(nvs_add_executable)
 
     get_source_file_property(INCLUDE_DIRS ${SRC_FILE} INCLUDE_DIRECTORIES)
     if(INCLUDE_DIRS STREQUAL "NOTFOUND")
-      set(INCLUDE_DIRS_ARGS "")
+      set(INCLUDE_DIRS_ARGS "-I${CMAKE_SOURCE_DIR}/include")
     else()
       list(JOIN INCLUDE_DIRS " -I" INCLUDE_DIRS_ARGS)
-      set(INCLUDE_DIRS_ARGS "-I${INCLUDE_DIRS_ARGS}")
+      set(INCLUDE_DIRS_ARGS "-I${CMAKE_SOURCE_DIR}/include -I${INCLUDE_DIRS_ARGS}")
     endif()
     separate_arguments(INCLUDE_DIRS_ARGS UNIX_COMMAND ${INCLUDE_DIRS_ARGS})
 
