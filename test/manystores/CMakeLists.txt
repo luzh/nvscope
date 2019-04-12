@@ -1,7 +1,15 @@
-set(PROG manystores)
-set(SRCS manystores.c)
+set(NORMAL manystores)
+set(NVSBIN x-manystores)
 
+set(SRCS manystores.c)
 nvs_set_sources_properties(C_Default ${SRCS})
+
+# --- Normal binary without instrumentation (ignoring NVScopePasses) --- #
+
+add_executable(${NORMAL} ${SRCS})
+target_include_directories(${NORMAL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
+
+# --- NVScopePasses instrumented binary --- #
 
 set_property(
   SOURCE
@@ -10,21 +18,30 @@ set_property(
     "-load ${NVS_PASSES_DIR}/NVScope/NVScopePasses.so -probes"
 )
 
-nvs_add_executable(${PROG} ${SRCS})
-add_dependencies(${PROG} NVScopePasses)
-target_link_libraries(${PROG} nvsrt)
+nvs_add_executable(${NVSBIN} ${SRCS})
+add_dependencies(${NVSBIN} NVScopePasses)
+target_link_libraries(${NVSBIN} nvsrt)
 
-set(RUNPROG ${CMAKE_CURRENT_BINARY_DIR}/${PROG})
+# --- Non-NVScope tests --- #
 
-add_test(NAME ${PROG}-case1  COMMAND ${RUNPROG} case1 casefile1)
-add_test(NAME ${PROG}-check1 COMMAND ${RUNPROG} check1 casefile1)
+set(NORMAL_PATH ${CMAKE_CURRENT_BINARY_DIR}/${NORMAL})
 
-add_test(NAME ${PROG}-case2  COMMAND ${RUNPROG} case2 casefile2)
-add_test(NAME ${PROG}-check2 COMMAND ${RUNPROG} check2 casefile2)
+add_test(NAME ${NORMAL}-case1  COMMAND ${NORMAL_PATH} case1 casefile1)
+add_test(NAME ${NORMAL}-check1 COMMAND ${NORMAL_PATH} check1 casefile1)
+
+set(NVSBIN_PATH ${CMAKE_CURRENT_BINARY_DIR}/${NVSBIN})
+
+add_test(NAME ${NVSBIN}-case1  COMMAND ${NVSBIN_PATH} case1 casefile1)
+add_test(NAME ${NVSBIN}-check1 COMMAND ${NVSBIN_PATH} check1 casefile1)
+
+add_test(NAME ${NVSBIN}-case2  COMMAND ${NVSBIN_PATH} case2 casefile2)
+add_test(NAME ${NVSBIN}-check2 COMMAND ${NVSBIN_PATH} check2 casefile2)
+
+# --- NVScope tests --- #
 
 add_custom_target(
-  scope-${PROG}-1 DEPENDS ${PROG} COMMENT "Testing ${PROG} with nvscope ..."
+  scope-${NVSBIN}-1 DEPENDS ${NVSBIN} COMMENT "Testing ${NVSBIN} with nvscope ..."
   DEPENDS nvscope
   COMMAND
-    ${NVS_TOOLS_DIR}/nvscope --nvs-mainproc ${RUNPROG} case1 pmemfile1 --nvs-recovery ${RUNPROG} check1 pmemfile1
+    ${NVS_TOOLS_DIR}/nvscope --nvs-mainproc ${NVSBIN_PATH} case1 pmemfile1 --nvs-recovery ${NVSBIN_PATH} check1 pmemfile1
 )

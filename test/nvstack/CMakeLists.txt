@@ -1,9 +1,15 @@
 set(NORMAL nvstack)
-set(NVSBIN nvstack-nvs)
+set(NVSBIN x-nvstack)
 
 set(SRCS nvstack.c)
-
 nvs_set_sources_properties(C_Default ${SRCS})
+
+# --- Normal binary without instrumentation (ignoring NVScopePasses) --- #
+
+add_executable(${NORMAL} ${SRCS})
+target_include_directories(${NORMAL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
+
+# --- NVScopePasses instrumented binary --- #
 
 set_property(
   SOURCE
@@ -12,12 +18,11 @@ set_property(
     "-load ${NVS_PASSES_DIR}/NVScope/NVScopePasses.so -probes"
 )
 
-add_executable(${NORMAL} ${SRCS})
-target_include_directories(${NORMAL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
-
 nvs_add_executable(${NVSBIN} ${SRCS})
 add_dependencies(${NVSBIN} NVScopePasses)
 target_link_libraries(${NVSBIN} nvsrt)
+
+# --- Non-NVScope tests --- #
 
 # Note newer tests depend on older ones because the stackfile is stateful.
 
@@ -38,6 +43,8 @@ add_test(NAME ${NVSBIN}-push3  COMMAND ${NVSBIN_PATH} push stackfile)
 add_test(NAME ${NVSBIN}-push4  COMMAND ${NVSBIN_PATH} push stackfile)
 add_test(NAME ${NVSBIN}-show3  COMMAND ${NVSBIN_PATH} show stackfile)
 add_test(NAME ${NVSBIN}-check1 COMMAND ${NVSBIN_PATH} check stackfile)
+
+# --- NVScope tests --- #
 
 add_custom_target(
   scope-${NVSBIN}-push DEPENDS ${NVSBIN} COMMENT "Testing ${NVSBIN} (push) ..."
