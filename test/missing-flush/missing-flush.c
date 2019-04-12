@@ -5,32 +5,27 @@
 #define OPEN_FLAGS (O_CREAT | O_RDWR | O_SYNC)
 #define OPEN_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
 
-struct nvobj {
-  int value;
-  int valid;
-};
-
 static int case1(void *pmem) {
-  struct nvobj *pobj = (struct nvobj *)pmem;
-
-  pobj->value = 9;
-  pobj->valid = 1;
-
-  clwb(pmem);
+  uint64_t *ptr = (uint64_t *)pmem;
+  *ptr = 123;
+  clwb(ptr);
   sfence();
+  return 0;
+}
 
+static int case2(void *pmem) {
+  uint64_t *ptr = (uint64_t *)pmem;
+  *ptr = 123;
+  sfence();
   return 0;
 }
 
 static int check(void *pmem) {
-  struct nvobj *pobj = (struct nvobj *)pmem;
+  /* cases are for missing flushes so this does not really check anything */
+  if (pmem)
+    return 0;
 
-  if (pobj->valid && pobj->value != 9) {
-    printf("Consistency check failed!\n");
-    return 1;
-  }
-
-  return 0;
+  return 1;
 }
 
 int main(int argc, char **argv) {
@@ -43,7 +38,7 @@ int main(int argc, char **argv) {
   char *filename = argv[2];
 
   typedef int (*casefunc)(void *);
-  casefunc cases[] = {case1};
+  casefunc cases[] = {case1, case2};
   casefunc runcase = NULL;
 
   typedef int (*checkfunc)(void *);
