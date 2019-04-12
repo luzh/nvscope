@@ -13,6 +13,7 @@ set_property(
 )
 
 add_executable(${NORMAL} ${SRCS})
+target_include_directories(${NORMAL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
 
 nvs_add_executable(${NVSBIN} ${SRCS})
 add_dependencies(${NVSBIN} NVScopePasses)
