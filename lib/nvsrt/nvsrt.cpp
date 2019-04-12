@@ -341,7 +341,7 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
     // _dirty_stores.push_back(store);
 
     if (!dirty_ranges.empty()) {
-      SAYF("\n" cLRD "[-] NVS-RT: epoch %zu: [%s() at %s:%4d]\n" cRST, epoch,
+      SAYF("\n" cLRD "[-] NVS-RT: epoch #%zu [%s() at %s:%4d]\n" cRST, epoch,
            func, file, line);
       ERRF("store size %zu made by [%s() at %s:%4d] has unflushed ranges:",
            store._end - store._start, store._func, store._file, store._linenr);
@@ -409,7 +409,7 @@ static void __nvs_setup_shm() {
       _exit(NVS_EXIT_BAD_CONFIG);
     }
   } else {
-    WARNF("NVS-RT: shared memory not found, nvscope run-time disabled");
+    WARNF("NVS-RT: running instrumented binary but nvscope run-time disabled");
   }
 }
 
@@ -605,7 +605,7 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
   nvsrt->check_reorder(0, func, file, line);      // TODO: need an epoch id
   nvsrt->check_dirty_stores(0, func, file, line); // TODO: need an epoch id
 
-  TESTC("NVS-RT: pass over epoch [clflush] X");
+  TESTC("NVS-RT: pass over epoch X [clflush]");
 }
 
 extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
@@ -617,5 +617,5 @@ extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
   nvsrt->check_reorder(sfid, func, file, line);
   nvsrt->check_dirty_stores(sfid, func, file, line);
 
-  TESTC("NVS-RT: pass over epoch [sfence] #%zu", sfid);
+  TESTC("NVS-RT: pass over epoch #%zu [sfence]", sfid);
 }
