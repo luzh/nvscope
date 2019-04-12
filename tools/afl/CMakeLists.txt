@@ -5,7 +5,6 @@ add_executable(${TOOL} ${SRCS})
 
 # Check afl-2.52b/Makefile for compile flags, options, and definitions.
 
-target_compile_features(${TOOL} PUBLIC c_std_99)
 target_compile_options(${TOOL}
   PUBLIC -Wall -funroll-loops -Wno-pointer-sign -masm=intel
 )

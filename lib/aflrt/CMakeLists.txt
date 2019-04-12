@@ -6,7 +6,6 @@ add_library(aflrt STATIC ${SRCS})
 
 # Check afl-2.52b/llvm_mode/Makefile for compile flags, options, and definitions.
 
-target_compile_features(aflrt PUBLIC c_std_99)
 target_compile_options(aflrt
   PUBLIC -Wall -Wextra -funroll-loops -Wno-pointer-sign -masm=intel
 )
