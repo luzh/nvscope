@@ -26,12 +26,25 @@ target_link_libraries(${NVSBIN} nvsrt)
 
 set(NORMAL_PATH ${CMAKE_CURRENT_BINARY_DIR}/${NORMAL})
 
-add_test(NAME ${NORMAL}-case1  COMMAND ${NORMAL_PATH} case1 casefile1)
+add_test(NAME ${NORMAL}-case1 COMMAND ${NORMAL_PATH} case1 casefile1)
 
 set(NVSBIN_PATH ${CMAKE_CURRENT_BINARY_DIR}/${NVSBIN})
 
-add_test(NAME ${NVSBIN}-case1  COMMAND ${NVSBIN_PATH} case1 casefile1)
+add_test(NAME ${NVSBIN}-case1 COMMAND ${NVSBIN_PATH} case1 casefile1)
 
 # --- NVScope tests --- #
 
-# To be added
+function(add_nvscope_case)
+  foreach(N ${ARGV})
+    add_custom_target(scope-${NVSBIN}-case${N}
+      DEPENDS
+        ${NVSBIN} nvscope
+      COMMAND
+        ${NVS_TOOLS_DIR}/nvscope
+          --nvs-mainproc ${NVSBIN_PATH} case${N} casefile
+          --nvs-recovery ${NVSBIN_PATH} check1 casefile
+    )
+  endforeach()
+endfunction()
+
+add_nvscope_case(1 2 3 4 5)

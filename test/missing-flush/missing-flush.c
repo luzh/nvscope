@@ -16,11 +16,68 @@ static int case1(void *pmem) {
 static int case2(void *pmem) {
   uint64_t *ptr = (uint64_t *)pmem;
   *ptr = 123;
+  /* Unflushed range (in-page hex offset): [000, 008). */
   sfence();
   return 0;
 }
 
-static int check(void *pmem) {
+static int case3(void *pmem) {
+  char *ptr = (char *)pmem;
+
+  memcpy(ptr, ptr + 500, 100);
+  clflushopt(ptr);
+  /* Unflushed range (in-page hex offset): [040, 064). */
+
+  memset(ptr + 100, 0x03, 100);
+  clwb(ptr + 128);
+  /* Unflushed range (in-page hex offset): [064, 080), [0c0, 0c8). */
+
+  sfence();
+
+  return 0;
+}
+
+static int case4(void *pmem) {
+  char *ptr = (char *)pmem;
+
+  memset(ptr + 500, 0x04, 500);
+  for (int offset = 0; offset < 900; offset += 64) {
+    if (offset == 256 || offset == 448 || offset == 640 || offset == 704)
+      continue;
+    clflushopt(ptr + offset);
+  }
+  /* Unflushed range (in-page hex offset): [1f4, 200), [280, 300), [3c0, 3e8) */
+
+  sfence();
+
+  return 0;
+}
+
+void callee5(uint64_t *value) {
+  value[0] = 0xC;
+  value[3] = 0xD;
+}
+
+static int case5(void *pmem) {
+  callee5(pmem);
+
+  char *ptr = (char *)pmem;
+
+  clwb(ptr + 200);
+  memset(ptr + 200, 0xE, 300);
+  clwb(ptr + 256);
+
+  /**
+   * Unflushed range (in-page hex offset):
+   * [0, 008), [018, 020), [0c8, 100), [140, 1f4)
+   */
+
+  sfence();
+
+  return 0;
+}
+
+static int nocheck(void *pmem) {
   /* cases are for missing flushes so this does not really check anything */
   if (pmem)
     return 0;
@@ -38,11 +95,11 @@ int main(int argc, char **argv) {
   char *filename = argv[2];
 
   typedef int (*casefunc)(void *);
-  casefunc cases[] = {case1, case2};
+  casefunc cases[] = {case1, case2, case3, case4, case5};
   casefunc runcase = NULL;
 
   typedef int (*checkfunc)(void *);
-  checkfunc checkers[] = {check};
+  checkfunc checkers[] = {nocheck};
   checkfunc runchecker = NULL;
 
   if (strncmp(command, "case", 4) == 0) {
