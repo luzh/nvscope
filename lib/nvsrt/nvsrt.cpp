@@ -20,6 +20,11 @@ enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
 
 static uintptr_t cache_addr_of(const uintptr_t addr) { return addr & ~63UL; }
 
+/* epoch id, shared between thresds */
+static std::atomic_uint64_t epochid{0};
+/* event timestamp, shared between thresds */
+static std::atomic_uint64_t timestamp{0};
+
 class NVScopeRT {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
 public:
@@ -78,9 +83,6 @@ public:
   }
 
 private:
-  /* event timestamp, shared between thresds */
-  static std::atomic_uint64_t timestamp;
-
   struct RangeInfo {
     RangeInfo(uintptr_t start, uintptr_t end, char *func, char *file,
               int linenr)
@@ -200,13 +202,13 @@ void NVScopeRT::close_channels() const {
 
 void NVScopeRT::save_store(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
-  auto time = ++timestamp;
+  uint64_t time = ++timestamp;
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
 void NVScopeRT::save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
                           int line) {
-  auto time = ++timestamp;
+  uint64_t time = ++timestamp;
   _nvclops.emplace_back(time, addr, type, func, file, line);
 }
 
@@ -320,6 +322,7 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   // for (auto &store : _dirty_stores) {
   // }
 
+  bool report = false;
   for (auto &store : _nvstores) {
     uintptr_t dirty_start = store._start;
     std::vector<std::pair<uintptr_t, uintptr_t>> dirty_ranges;
@@ -341,6 +344,7 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
     // _dirty_stores.push_back(store);
 
     if (!dirty_ranges.empty()) {
+      report = true;
       SAYF("\n" cLRD "[-] NVS-RT: epoch #%zu [%s() at %s:%4d]\n" cRST, epoch,
            func, file, line);
       ERRF("store size %zu made by [%s() at %s:%4d] has unflushed ranges:",
@@ -351,10 +355,8 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
       SAYF("    [%p, %p)\n", reinterpret_cast<void *>(range.first),
            reinterpret_cast<void *>(range.second));
     }
-
-    if (!dirty_ranges.empty())
-      SAYF("\n");
   }
+  SAYF("%s", report ? "\n" : "");
 
   /**
    * TODO: Only remove flushed (clflushopt, clwb) stores, since they should be
@@ -363,8 +365,6 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   _nvstores.clear();
   _nvclops.clear();
 }
-
-std::atomic_uint64_t NVScopeRT::timestamp{0};
 
 static NVScopeRT *nvsrt;
 
@@ -593,29 +593,32 @@ extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
+  uint64_t epoch = ++epochid;
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", func, file,
-       line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
+  DBGF("NVS-RT: epoch %zu [%s() at %s:%4d]: CLFLUSH addr %p cache line %p",
+       epoch, func, file, line, ptr,
+       reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
   nvsrt->save_clop(addr, CLFLUSH, func, file, line);
-  nvsrt->check_reorder(0, func, file, line);      // TODO: need an epoch id
-  nvsrt->check_dirty_stores(0, func, file, line); // TODO: need an epoch id
+  nvsrt->check_reorder(epoch, func, file, line);
+  nvsrt->check_dirty_stores(epoch, func, file, line);
 
-  TESTC("NVS-RT: pass over epoch X [clflush]");
+  TESTC("NVS-RT: pass over epoch #%zu [clflush]", epoch);
 }
 
-extern "C" void __nvs_sfence(uint64_t sfid, char *func, char *file, int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: SFENCE #%lu", func, file, line, sfid);
+extern "C" void __nvs_sfence(char *func, char *file, int line) {
+  uint64_t epoch = ++epochid;
+  DBGF("NVS-RT: epoch %zu [%s() at %s:%4d]: SFENCE", epoch, func, file, line);
 
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->check_reorder(sfid, func, file, line);
-  nvsrt->check_dirty_stores(sfid, func, file, line);
+  nvsrt->check_reorder(epoch, func, file, line);
+  nvsrt->check_dirty_stores(epoch, func, file, line);
 
-  TESTC("NVS-RT: pass over epoch #%zu [sfence]", sfid);
+  TESTC("NVS-RT: pass over epoch #%zu [sfence]", epoch);
 }

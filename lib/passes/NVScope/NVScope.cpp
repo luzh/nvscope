@@ -55,15 +55,15 @@ struct NVScopeProbes : public FunctionPass {
 private:
   void collectStackVariables(Function &F);
   void printInstrumentedCall(const StringRef &func, const StringRef &file,
-                             const int line);
+                             int line);
 
   bool instrumentMmap(Function &F);
-  bool instrumentCLOp(Function &F, CallInst *CI, const StringRef ProbeName);
+  bool instrumentCLOp(Function &F, CallInst *CI, const StringRef &ProbeName);
   bool instrumentCall(Function &F, CallInst *CI);
   bool instrumentStore(Function &F, StoreInst *StI);
   bool instrumentMemIntrinsic(Function &F, MemIntrinsic *MI);
 
-  Value *findName(IRBuilder<> &irb, const StringRef name,
+  Value *findName(IRBuilder<> &irb, const StringRef &name,
                   std::unordered_map<std::string, Value *> &map);
   void getDebugInfo(Instruction *I, StringRef &func, StringRef &file,
                     int &line);
@@ -110,7 +110,7 @@ void NVScopeProbes::printInstrumentedCall(const StringRef &func,
   errs().write_escaped(file) << ":" << line << " CALLED " << func << "\n";
 }
 
-Value *NVScopeProbes::findName(IRBuilder<> &irb, const StringRef name,
+Value *NVScopeProbes::findName(IRBuilder<> &irb, const StringRef &name,
                                std::unordered_map<std::string, Value *> &map) {
   auto pair = map.find(name.str());
   if (pair == map.end()) {
@@ -198,7 +198,7 @@ bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
 }
 
 bool NVScopeProbes::instrumentCLOp(Function &F, CallInst *CI,
-                                   const StringRef ProbeName) {
+                                   const StringRef &ProbeName) {
   int line = -1;
   StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
@@ -316,15 +316,15 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       Modified = instrumentCLOp(F, CI, "__nvs_clflush");
 
     } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
-      std::vector<Type *> Params = {Int64Ty, Int8PtrTy, Int8PtrTy, Int32Ty};
+      ++NVScopeSFenceOps;
+      std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int32Ty};
       IRBuilder<> IRB(CI);
       getDebugInfo(CI, func, file, line);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
 
       IRB.CreateCall(
           F.getParent()->getOrInsertFunction("__nvs_sfence", ProbeTy),
-          {ConstantInt::get(Int64Ty, ++NVScopeSFenceOps, false),
-           findName(IRB, func, _funcs), findName(IRB, file, _files),
+          {findName(IRB, func, _funcs), findName(IRB, file, _files),
            ConstantInt::get(Int32Ty, line, false)});
 
       Modified = true;
