@@ -446,6 +446,7 @@ int main(int argc, char **argv) {
       DBGF("NVScope: mainproc requested to run recovery and checking");
 
       ++testcases;
+      show_progress(testcases);
 
       reco_info = read_message(reco_info_fd);
       if (reco_info != MSG_FORKSERVER_READY) {
@@ -474,10 +475,10 @@ int main(int argc, char **argv) {
       bug = check_status(tgconf_reco->status, tgconf_reco->pid, "recovery");
       main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
       send_message(main_ctrl_fd, main_ctrl);
-      show_progress(testcases);
       break;
     case MSG_TARGET_EXITED:
-      SAYF("\n");
+      if (testcases > 0)
+        SAYF("\n");
       check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
       ACTF("NVScope: terminiating the mainproc forkserver...");
       send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
