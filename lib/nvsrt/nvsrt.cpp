@@ -60,6 +60,7 @@ public:
   /* Perform analysis for insights. */
   void check_reorder(uint64_t epoch, char *func, char *file, int line);
   void check_dirty_stores(uint64_t epoch, char *func, char *file, int line);
+  void check_missing_fence(uint64_t epoch, char *func, char *file, int line);
 
 #ifdef NVS_DEBUG
   /* Print content of nvstores (up to limit entries). */
@@ -291,8 +292,11 @@ void NVScopeRT::check_reorder(uint64_t epoch, char *func, char *file,
     enum nvs_message command = read_message();
 
     if (command == MSG_SHOW_BUG_AND_EXIT) {
-      ERRF("NVS-RT: found bug at sfence #%zu [%s() at %s:%4d], test case #?",
+      SAYF("\n" cLRD "[-] Store Races:" cRST
+           " in epoch #%zu [%s() at %s:%4d]\n",
            epoch, func, file, line);
+      ERRF("NVS-RT needs a patch to report details of this store race due to "
+           "possible missing sfences. ");
       _exit(NVS_EXIT_FOUNDBUG);
     }
 
@@ -345,8 +349,9 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
 
     if (!dirty_ranges.empty()) {
       report = true;
-      SAYF("\n" cLRD "[-] NVS-RT: epoch #%zu [%s() at %s:%4d]\n" cRST, epoch,
-           func, file, line);
+      SAYF("\n" cLRD "[-] Dirty Stores:" cRST " in epoch #%zu [%s() at "
+           "%s:%4d]\n",
+           epoch, func, file, line);
       ERRF("store size %zu made by [%s() at %s:%4d] has unflushed ranges:",
            store._end - store._start, store._func, store._file, store._linenr);
     }
@@ -364,6 +369,21 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
    */
   _nvstores.clear();
   _nvclops.clear();
+}
+
+void NVScopeRT::check_missing_fence(uint64_t epoch, char *func, char *file,
+                                    int line) {
+  /* TODO: Also check _dirty_stores. */
+  if (_nvstores.empty())
+    return;
+
+  SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s:%4d]\n",
+       epoch, func, file, line);
+
+  ERRF("Probably an sfence is missing because there are pending stores that "
+       "cannot be guaranteed persistent.");
+
+  /* Do not print dirty stores here. Let the caller call check_dirty_stores. */
 }
 
 static NVScopeRT *nvsrt;
@@ -516,31 +536,6 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init() {
 }
 
 /**
- * The destructor will be called with a child process exits and also when a
- * forkserver exits.
- */
-__attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini() {
-  DBGF("NVS-RT: process %d exit", getpid());
-
-  if (!nvsrt || !nvsrt->is_enabled())
-    return;
-
-  uint64_t epoch = ++epochid;
-  int linenr = 0;
-  char *file = const_cast<char *>("Program");
-  char *func = const_cast<char *>("Program exit");
-  /*
-   * TODO: It may not be safe to perform reordering tests at this point because
-   * the mapped memory could be already unmapped. We should instrument program
-   * munmap() calls, or make reordering tests independent of the previous mmaped
-   * region.
-   *
-   * check_reorder(epoch, func, file, linenr);
-   */
-  nvsrt->check_dirty_stores(epoch, func, file, linenr);
-}
-
-/**
  * The following functions are injected into target programs for testing. They
  * should be exposed with C linkage (declared as extern "C") if target programs
  * are written in C because C++ names are usually mangled.
@@ -640,4 +635,30 @@ extern "C" void __nvs_sfence(char *func, char *file, int line) {
   nvsrt->check_dirty_stores(epoch, func, file, line);
 
   TESTC("NVS-RT: pass over epoch #%zu [sfence]", epoch);
+}
+
+/**
+ * The destructor will be called with a child process exits and also when a
+ * forkserver exits.
+ */
+__attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini() {
+  DBGF("NVS-RT: process %d exit", getpid());
+
+  if (!nvsrt || !nvsrt->is_enabled())
+    return;
+
+  uint64_t epoch = ++epochid;
+  int linenr = 0;
+  char *file = const_cast<char *>("Program");
+  char *func = const_cast<char *>("Program exit");
+  /*
+   * TODO: It may not be safe to perform reordering tests at this point because
+   * the mapped memory could be already unmapped. We should instrument program
+   * munmap() calls, or make reordering tests independent of the previous mmaped
+   * region.
+   *
+   * check_reorder(epoch, func, file, linenr);
+   */
+  nvsrt->check_missing_fence(epoch, func, file, linenr);
+  nvsrt->check_dirty_stores(epoch, func, file, linenr);
 }
