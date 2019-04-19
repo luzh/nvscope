@@ -15,6 +15,7 @@
 #include "nvscope/config.h"
 
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
+static const int NVS_FINI_PRIO{0}; // __nvs_init priority (runs after main)
 
 enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
 
@@ -30,13 +31,6 @@ class NVScopeRT {
 public:
   /* Check if NVS-RT is enabled. */
   bool is_enabled() const { return _tgconfig->enabled; }
-
-  /**
-   * Initialize the store queue. TODO: Currently it's a pre-allocated region in
-   * the shared memory. We need a more flexible data structure to save the
-   * stored data.
-   */
-  // void init_store_queue(void *stq) { _store_queue = stq; }
 
   /* Set target process PID. */
   void set_target_pid(pid_t pid) { _tgconfig->pid = pid; }
@@ -81,6 +75,12 @@ public:
       _exit(NVS_EXIT_BAD_SHM);
     }
   }
+
+  /**
+   * If NVScopeRT is constructed in the forkserver process, the destructor
+   * will only run when the forkserver exits.
+   */
+  ~NVScopeRT() = default;
 
 private:
   struct RangeInfo {
@@ -496,7 +496,7 @@ static void __start_forkserver() {
  * Initialize NVS-RT run-time data structures. Runs before the target's main()
  * with the constructor attribute.
  */
-__attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
+__attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init() {
   if (nvsrt) {
     /**
      * Because we use forkservers, this function should not fire more than once
@@ -516,10 +516,29 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init(void) {
 }
 
 /**
- * The destructor will be called with a child process exits.
- * __attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini(void) {
- * }
+ * The destructor will be called with a child process exits and also when a
+ * forkserver exits.
  */
+__attribute__((destructor(NVS_FINI_PRIO))) void __nvs_fini() {
+  DBGF("NVS-RT: process %d exit", getpid());
+
+  if (!nvsrt || !nvsrt->is_enabled())
+    return;
+
+  uint64_t epoch = ++epochid;
+  int linenr = 0;
+  char *file = const_cast<char *>("Program");
+  char *func = const_cast<char *>("Program exit");
+  /*
+   * TODO: It may not be safe to perform reordering tests at this point because
+   * the mapped memory could be already unmapped. We should instrument program
+   * munmap() calls, or make reordering tests independent of the previous mmaped
+   * region.
+   *
+   * check_reorder(epoch, func, file, linenr);
+   */
+  nvsrt->check_dirty_stores(epoch, func, file, linenr);
+}
 
 /**
  * The following functions are injected into target programs for testing. They
