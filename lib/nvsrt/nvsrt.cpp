@@ -143,6 +143,9 @@ private:
            _size, _spth);
     }
 
+    /* no copy construction */
+    StoreData(const StoreData &other) = delete;
+
     ~StoreData() {
       delete[] _data;
       DBGF(cGRN "NVS-RT: StoreData for size %zu destructed" cRST, _size);
@@ -157,14 +160,15 @@ private:
 
       static_assert(STBUF_INTERNAL_SIZE < STBUF_SPLIT_THRESHOLD);
 
-      DBGF(cBRN "NVS-RT: StoreInfo constructed with size %zu (%s)" cRST,
-           _end - _start, _extbuf ? "External" : "Internal" );
+      DBGF(cBRN "NVS-RT: StoreInfo constructed for %p size %zu (%s)" cRST,
+           reinterpret_cast<void *>(_start), _end - _start,
+           _extbuf ? "External" : "Internal");
     }
 
 #ifdef NVS_DEBUG
     ~StoreInfo() {
-      DBGF(cGRN "NVS-RT: StoreInfo for size %zu destructed" cRST,
-           _end - _start);
+      DBGF(cGRN "NVS-RT: StoreInfo destructed for [%p +: %zu)" cRST,
+           reinterpret_cast<void *>(_start), _end - _start);
     }
 #endif
 
@@ -197,24 +201,28 @@ private:
           std::memcpy(_intbuf, src, end - start);
           _offset = 0;
           _extbuf = nullptr;
-          DBGF("NVS-RT: Internalize an external store buffer, size %zu",
-               end - start);
+          DBGF(cBRN
+               "NVS-RT: [%p +: %zu) internalize an external store buffer" cRST,
+               reinterpret_cast<void *>(start), end - start);
         } else if (dirty_size <= _extbuf->_spth) {
           void *src = _extbuf->_data + _offset + (start - _start);
           auto xstart = reinterpret_cast<uintptr_t>(src);
           auto xend = xstart + end - start;
           _offset = 0;
           _extbuf = make_snapshot(xstart, xend);
-          DBGF("NVS-RT: Splits from an external store buffer, size %zu",
-               end - start);
+          DBGF(cBRN
+               "NVS-RT: [%p +: %zu) splits from an external store buffer" cRST,
+               reinterpret_cast<void *>(start), end - start);
         } else {
           /* Update offset into the existing store buffer without splitting. */
           _offset += start - _start;
-          DBGF("NVS-RT: Reuse an external store buffer, offset adjusted");
+          DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an external store buffer" cRST,
+               reinterpret_cast<void *>(start), end - start);
         }
       } else {
         _offset += start - _start;
-        DBGF("NVS-RT: Reuse an internal store buffer, offset adjusted");
+        DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an internal store buffer" cRST,
+             reinterpret_cast<void *>(start), end - start);
       }
 
       _start = start;
@@ -506,7 +514,7 @@ void NVScopeRT::check_missing_fence(uint64_t epoch, char *func, char *file,
   /* Do not print dirty stores here. Let the caller call check_dirty_stores. */
 }
 
-static NVScopeRT *nvsrt;
+static std::unique_ptr<NVScopeRT> nvsrt;
 
 /*--------------------- End of NVScopeRT Implementation ---------------------*/
 
@@ -543,7 +551,7 @@ static void __nvs_setup_shm() {
       _exit(NVS_EXIT_BAD_CONFIG);
     }
 
-    nvsrt = new NVScopeRT(shm_base, tgconf);
+    nvsrt = std::make_unique<NVScopeRT>(shm_base, tgconf);
     if (!nvsrt) {
       ERRF("NVS-RT: creating nvscope run-time failed");
       _exit(NVS_EXIT_BAD_CONFIG);
@@ -568,7 +576,6 @@ static void __start_forkserver() {
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVS-RT: forkserver received command to exit");
       nvsrt->close_channels();
-      delete nvsrt;
       _exit(EXIT_SUCCESS);
     }
 
