@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -14,16 +15,36 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
+/* TODO: Consider std::byte? */
+using byte_t = uint8_t;
+enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
+
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
 static const int NVS_FINI_PRIO{0}; // __nvs_init priority (runs after main)
-
-enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
+/**
+ * If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
+ * resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
+ * the store's data.
+ */
+static const uint32_t STBUF_INTERNAL_SIZE{32};
+/**
+ * Content saved in StoreData becomes persistent due to cache line flushes or
+ * write-backs. But incomplete flushes may break a StoreData into small pieces.
+ * A dirty store splits off from a StoreData if
+ * StoreData._size >= STBUF_SPLIT_THRESHOLD and the dirty store size is less
+ * than or equal to (StoreData._size >> STBUF_SPTH_RATIO_SHIFT).
+ *
+ * A split store may become a new StoreData or internalized by StoreInfo,
+ * depending on the store's size.
+ */
+static const uint32_t STBUF_SPLIT_THRESHOLD{4096};
+static const uint32_t STBUF_SPTH_SHIFT{8};
 
 static uintptr_t cache_addr_of(const uintptr_t addr) { return addr & ~63UL; }
 
-/* epoch id, shared between thresds */
+/* epoch id, shared between threads */
 static std::atomic_uint64_t epochid{0};
-/* event timestamp, shared between thresds */
+/* event timestamp, shared between threads */
 static std::atomic_uint64_t timestamp{0};
 
 class NVScopeRT {
@@ -78,8 +99,8 @@ public:
   }
 
   /**
-   * If NVScopeRT is constructed in the forkserver process, the destructor
-   * will only run when the forkserver exits.
+   * If NVScopeRT is constructed in the forkserver process, its destructor will
+   * only run when the forkserver exits.
    */
   ~NVScopeRT() = default;
 
@@ -95,19 +116,122 @@ private:
     uintptr_t _end;   // one byte after user's mmap end address
   };
 
+  struct StoreData {
+    size_t _size;
+    size_t _spth;
+    byte_t *_data;
+
+    StoreData(uintptr_t start, uintptr_t end)
+        : _size(start < end ? end - start : 0),
+          /* A zero value of _spth prevents splitting. */
+          _spth(_size < STBUF_SPLIT_THRESHOLD ? 0 : _size >> STBUF_SPTH_SHIFT),
+          _data(_size ? new byte_t[_size] : nullptr) {
+
+      static_assert(sizeof(byte_t) == 1);
+      if (!_size) {
+        ERRF("NVS-RT: Invalid data size!");
+        _exit(EXIT_FAILURE);
+      }
+      if (!_data) {
+        ERRF("NVS-RT: Invalid data buffer!");
+        _exit(EXIT_FAILURE);
+      }
+
+      /* TODO: Consider std::copy()? */
+      std::memcpy(_data, reinterpret_cast<void *>(start), _size);
+      DBGF("NVS-RT: StoreData for size %zu constructed, split threshold %zu",
+           _size, _spth);
+    }
+
+    ~StoreData() {
+      delete[] _data;
+      DBGF(cGRN "NVS-RT: StoreData for size %zu destructed" cRST, _size);
+    }
+  };
+
   struct StoreInfo {
     StoreInfo(uint64_t time, uintptr_t start, uintptr_t end, char *func,
               char *file, int linenr)
         : _func(func), _file(file), _linenr(linenr), _time(time), _start(start),
-          _end(end), _snapshot(reinterpret_cast<std::byte *>(start),
-                               reinterpret_cast<std::byte *>(end)) {}
+          _end(end), _offset(0), _extbuf(make_snapshot(start, end)) {
+
+      static_assert(STBUF_INTERNAL_SIZE < STBUF_SPLIT_THRESHOLD);
+
+      DBGF(cBRN "NVS-RT: StoreInfo constructed with size %zu (%s)" cRST,
+           _end - _start, _extbuf ? "External" : "Internal" );
+    }
+
+#ifdef NVS_DEBUG
+    ~StoreInfo() {
+      DBGF(cGRN "NVS-RT: StoreInfo for size %zu destructed" cRST,
+           _end - _start);
+    }
+#endif
+
     char *_func;
     char *_file;
     int _linenr;
-    uint64_t _time;
-    uintptr_t _start;                 // start address of this store
-    uintptr_t _end;                   // one byte after the stored range
-    std::vector<std::byte> _snapshot; // snapshot of the range's old data
+    uint64_t _time;   // logical timestamp
+    uintptr_t _start; // pmem address starting this store
+    uintptr_t _end;   // pmem address ending this store (one byte off)
+    size_t _offset;   // byte offset relative to _intbuf or _extbuf._data
+    byte_t _intbuf[STBUF_INTERNAL_SIZE];
+    std::shared_ptr<StoreData> _extbuf;
+
+    std::shared_ptr<StoreData> make_snapshot(uintptr_t start, uintptr_t end) {
+      if (STBUF_INTERNAL_SIZE < end - start) {
+        return std::make_shared<StoreData>(start, end);
+      }
+
+      std::memcpy(_intbuf, reinterpret_cast<void *>(start), end - start);
+      return nullptr;
+    }
+
+    void resize_store_data(uintptr_t start, uintptr_t end) {
+      assert(_start <= start && start < end && end <= _end);
+
+      if (_extbuf) {
+        size_t dirty_size = end - start;
+        if (dirty_size <= STBUF_INTERNAL_SIZE) {
+          void *src = _extbuf->_data + _offset + (start - _start);
+          std::memcpy(_intbuf, src, end - start);
+          _offset = 0;
+          _extbuf = nullptr;
+          DBGF("NVS-RT: Internalize an external store buffer, size %zu",
+               end - start);
+        } else if (dirty_size <= _extbuf->_spth) {
+          void *src = _extbuf->_data + _offset + (start - _start);
+          auto xstart = reinterpret_cast<uintptr_t>(src);
+          auto xend = xstart + end - start;
+          _offset = 0;
+          _extbuf = make_snapshot(xstart, xend);
+          DBGF("NVS-RT: Splits from an external store buffer, size %zu",
+               end - start);
+        } else {
+          /* Update offset into the existing store buffer without splitting. */
+          _offset += start - _start;
+          DBGF("NVS-RT: Reuse an external store buffer, offset adjusted");
+        }
+      } else {
+        _offset += start - _start;
+        DBGF("NVS-RT: Reuse an internal store buffer, offset adjusted");
+      }
+
+      _start = start;
+      _end = end;
+    }
+
+    void swap_data() {
+      auto *start = reinterpret_cast<byte_t *>(_start); // pmem start address
+      auto *end = reinterpret_cast<byte_t *>(_end);     // pmem end address
+      auto *bufdata = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
+      /**
+       * TODO: std::swap_ranges() seems to work at granularity determined by the
+       * iterator, so for byte_t* iterators it swaps byte-by-byte. We will need
+       * a more efficient swapping method.
+       */
+      std::swap_ranges(start, end, bufdata);
+    }
   };
 
   struct CLOPInfo {
@@ -121,8 +245,8 @@ private:
     int _linenr;
     uint64_t _time;
     uintptr_t _addr;  // user-provided address of this cache line op
-    uintptr_t _start; // cache-line address for _addr
-    uintptr_t _end;   // cache-line address + CACHELINE_SIZE for _addr
+    uintptr_t _start; // pmem cache-line address for _addr
+    uintptr_t _end;   // pmem cache-line address + CACHELINE_SIZE for _addr
     CLOPType _type;
 
     // bool operator<(const CLOPInfo &other) {
@@ -145,13 +269,6 @@ private:
   std::vector<CLOPInfo> _nvclops;
 
   std::vector<StoreInfo> _dirty_stores;
-
-  /**
-   * A collection of store operations. Each operation is placed in a vector
-   * that corresponds to a cache line this store is writing to.
-   * std::unordered_map<uintptr_t, std::vector<std::shared_ptr<StoreInfo>>>
-   * _clstores;
-   */
 };
 
 void NVScopeRT::save_range(uintptr_t addr, size_t size, char *func, char *file,
@@ -240,14 +357,11 @@ bool NVScopeRT::next_reorder() {
 
   if (caseid > 1) {
     StoreInfo &store = _nvstores[caseid - 2];
-    auto *start = reinterpret_cast<std::byte *>(store._start);
-    auto *end = reinterpret_cast<std::byte *>(store._end);
-    auto *newdata = store._snapshot.data();
-
-    std::swap_ranges(start, end, newdata);
+    store.swap_data();
 
     TESTC("NVS-RT: pass over test case #%zu: redo store to %p size %zu",
-          caseid - 1, start, end - start);
+          caseid - 1, reinterpret_cast<void *>(store._start),
+          store._end - store._start);
   }
 
   if (_nvstores.size() < caseid) {
@@ -256,19 +370,10 @@ bool NVScopeRT::next_reorder() {
   }
 
   StoreInfo &store = _nvstores[caseid - 1];
-  auto *start = reinterpret_cast<std::byte *>(store._start);
-  auto *end = reinterpret_cast<std::byte *>(store._end);
-  auto *olddata = store._snapshot.data();
+  store.swap_data();
 
-  /**
-   * TODO: std::swap_ranges() seems to work at granularity determined by the
-   * iterator, so for std::byte* iterators it swaps byte-by-byte. We will need
-   * a more efficient swapping method.
-   */
-  std::swap_ranges(start, end, olddata);
-
-  TESTC("NVS-RT: make test case #%zu: undo store to %p size %zu", caseid, start,
-        end - start);
+  TESTC("NVS-RT: make test case #%zu: undo store to %p size %zu", caseid,
+        reinterpret_cast<void *>(store._start), store._end - store._start);
   caseid++;
 
   return true;
@@ -327,38 +432,52 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   // }
 
   bool report = false;
-  for (auto &store : _nvstores) {
-    uintptr_t dirty_start = store._start;
+  for (auto sti = _nvstores.begin(); sti != _nvstores.end(); ++sti) {
+    uintptr_t dirty_start = sti->_start;
     std::vector<std::pair<uintptr_t, uintptr_t>> dirty_ranges;
     for (auto &clop : _nvclops) {
-      assert(clop._time != store._time);
-      if (store._end <= clop._start)
+      assert(clop._time != sti->_time);
+      if (sti->_end <= clop._start)
         break; // remaining clops can be skipped
-      if (clop._time < store._time || clop._end <= store._start)
+      if (clop._time < sti->_time || clop._end <= sti->_start)
         continue;
       if (dirty_start < clop._start) {
         dirty_ranges.emplace_back(dirty_start, clop._start);
       }
       dirty_start = clop._end;
     }
-    if (dirty_start < store._end) {
-      dirty_ranges.emplace_back(dirty_start, store._end);
+    if (dirty_start < sti->_end) {
+      dirty_ranges.emplace_back(dirty_start, sti->_end);
     }
-
-    // _dirty_stores.push_back(store);
 
     if (!dirty_ranges.empty()) {
       report = true;
-      SAYF("\n" cLRD "[-] Dirty Stores:" cRST " in epoch #%zu [%s() at "
-           "%s:%4d]\n",
+      SAYF("\n" cLRD "[-] Dirty Stores:" cRST
+           " in epoch #%zu [%s() at %s:%4d]\n",
            epoch, func, file, line);
       ERRF("store size %zu made by [%s() at %s:%4d] has unflushed ranges:",
-           store._end - store._start, store._func, store._file, store._linenr);
+           sti->_end - sti->_start, sti->_func, sti->_file, sti->_linenr);
     }
 
-    for (auto &range : dirty_ranges) {
-      SAYF("    [%p, %p)\n", reinterpret_cast<void *>(range.first),
-           reinterpret_cast<void *>(range.second));
+    for (auto dti = dirty_ranges.begin(); dti != dirty_ranges.end(); ++dti) {
+      /**
+       * If store data is internally saved, its size must be no larger than
+       * STBUF_INTERNAL_SIZE, that is no more than a cache line size. Thus, if a
+       * cache flush/write-back (at lease a cache line size) does not clear this
+       * internal store buffer, only ONE part of it can remain dirty (either at
+       * head or tail). With this setting, it should never happen that a cache
+       * flush/write-back operation can break an internal store buffer into
+       * more than one dirty ranges.
+       */
+      static_assert(STBUF_INTERNAL_SIZE < CACHELINE_SIZE);
+      assert(sti->_extbuf || dirty_ranges.size() == 1);
+
+      SAYF("    [%p, %p)\n", reinterpret_cast<void *>(dti->first),
+           reinterpret_cast<void *>(dti->second));
+
+      _dirty_stores.push_back(*sti);
+      StoreInfo &stx = _dirty_stores.back();
+      stx.resize_store_data(dti->first, dti->second);
     }
   }
   SAYF("%s", report ? "\n" : "");
@@ -367,8 +486,9 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
    * TODO: Only remove flushed (clflushopt, clwb) stores, since they should be
    * persistent after the sfence and not be affected by reordering.
    */
-  _nvstores.clear();
   _nvclops.clear();
+  _nvstores.clear();
+  _dirty_stores.clear();
 }
 
 void NVScopeRT::check_missing_fence(uint64_t epoch, char *func, char *file,
