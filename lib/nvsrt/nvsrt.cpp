@@ -127,6 +127,15 @@ private:
           _spth(_size < STBUF_SPLIT_THRESHOLD ? 0 : _size >> STBUF_SPTH_SHIFT),
           _data(_size ? new byte_t[_size] : nullptr) {
 
+      /**
+       * If store data is internally saved, its size must be no larger than
+       * STBUF_INTERNAL_SIZE, that is no more than a cache line size. Thus, if a
+       * cache flush/write-back (at lease a cache line size) does not clear this
+       * internal store buffer, only ONE part of it can remain dirty (either at
+       * head or tail). With this setting, it should never happen that a cache
+       * flush/write-back operation can break an internal store buffer into
+       * more than one dirty ranges.
+       */
       static_assert(sizeof(byte_t) == 1);
       if (!_size) {
         ERRF("NVS-RT: Invalid data size!");
@@ -139,7 +148,8 @@ private:
 
       /* TODO: Consider std::copy()? */
       std::memcpy(_data, reinterpret_cast<void *>(start), _size);
-      DBGF("NVS-RT: StoreData for size %zu constructed, split threshold %zu",
+      DBGF(cBRN "NVS-RT: StoreData for size %zu constructed, split threshold "
+                "%zu" cRST,
            _size, _spth);
     }
 
@@ -158,19 +168,9 @@ private:
         : _func(func), _file(file), _linenr(linenr), _time(time), _start(start),
           _end(end), _offset(0), _extbuf(make_snapshot(start, end)) {
 
+      static_assert(STBUF_INTERNAL_SIZE < CACHELINE_SIZE);
       static_assert(STBUF_INTERNAL_SIZE < STBUF_SPLIT_THRESHOLD);
-
-      DBGF(cBRN "NVS-RT: StoreInfo constructed for %p size %zu (%s)" cRST,
-           reinterpret_cast<void *>(_start), _end - _start,
-           _extbuf ? "External" : "Internal");
     }
-
-#ifdef NVS_DEBUG
-    ~StoreInfo() {
-      DBGF(cGRN "NVS-RT: StoreInfo destructed for [%p +: %zu)" cRST,
-           reinterpret_cast<void *>(_start), _end - _start);
-    }
-#endif
 
     char *_func;
     char *_file;
@@ -468,16 +468,6 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
     }
 
     for (auto dti = dirty_ranges.begin(); dti != dirty_ranges.end(); ++dti) {
-      /**
-       * If store data is internally saved, its size must be no larger than
-       * STBUF_INTERNAL_SIZE, that is no more than a cache line size. Thus, if a
-       * cache flush/write-back (at lease a cache line size) does not clear this
-       * internal store buffer, only ONE part of it can remain dirty (either at
-       * head or tail). With this setting, it should never happen that a cache
-       * flush/write-back operation can break an internal store buffer into
-       * more than one dirty ranges.
-       */
-      static_assert(STBUF_INTERNAL_SIZE < CACHELINE_SIZE);
       assert(sti->_extbuf || dirty_ranges.size() == 1);
 
       SAYF("    [%p, %p)\n", reinterpret_cast<void *>(dti->first),
