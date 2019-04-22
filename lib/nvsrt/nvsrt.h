@@ -20,6 +20,8 @@
 
 /* TODO: Consider std::byte? */
 using byte_t = uint8_t;
+using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
+
 enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
 
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
@@ -231,6 +233,9 @@ public:
   /* Save CLFLUSHOPT or CLWB operations. */
   void save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
                  int line);
+
+  /* Fill unflushed store ranges and save them in dirty_ranges. */
+  void find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges);
 
   /* Generate the next test case. */
   bool next_reorder();

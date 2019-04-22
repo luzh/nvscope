@@ -5,11 +5,11 @@ static std::atomic_uint64_t epochid{0};
 /* event timestamp, shared between threads */
 static std::atomic_uint64_t timestamp{0};
 /**
- * NVScope run-time handle. If forserver is enabled, the forkserver process
- * will construct nvsrt, and destruct it when the forkserver process exits.
- * Child process will inherit nvsrt via forking, but nvsrt does not destruct
- * when a child process exits. Changes to nvsrt made by a child process all
- * disappear when the child process exits due to copy-on-write of fork().
+ * NVScopeRT handle. If forserver is enabled, the forkserver process will
+ * construct nvsrt, and destruct it when the forkserver process exits. Child
+ * process will inherit nvsrt via forking, but nvsrt does not destruct when a
+ * child process exits. Changes to nvsrt made by a child process all disappear
+ * when the child process exits due to copy-on-write of fork().
  */
 static std::unique_ptr<NVScopeRT> nvsrt;
 
@@ -87,6 +87,29 @@ void NVScopeRT::print_nvstores(size_t limit) const {
   DBGF(cCYA "--- NVS-RT collected stores (***) ---" cRST);
 }
 #endif
+
+void NVScopeRT::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
+  /* initially the full range is dirty */
+  uintptr_t dirty_start = store._start;
+  /**
+   * NOTE: This algorithm works only if _nvclops is already sorted by _start
+   * or by _time if _start equals.
+   */
+  for (auto &clop : _nvclops) {
+    assert(clop._time != store._time);
+    if (store._end <= clop._start)
+      break; // remaining clops can be skipped
+    if (clop._time < store._time || clop._end <= store._start)
+      continue;
+    if (dirty_start < clop._start) {
+      dirty_ranges.emplace_back(dirty_start, clop._start);
+    }
+    dirty_start = clop._end;
+  }
+  if (dirty_start < store._end) {
+    dirty_ranges.emplace_back(dirty_start, store._end);
+  }
+}
 
 bool NVScopeRT::next_reorder() {
   static size_t caseid = 0;
@@ -170,27 +193,58 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
               return lhs._time > rhs._time;
             });
 
-  // for (auto &store : _dirty_stores) {
-  // }
+  DirtyRanges dirty_ranges;
+
+  std::vector<StoreInfo> new_dirty_stores;
+  for (auto sti = _dirty_stores.begin(); sti != _dirty_stores.end(); ++sti) {
+    dirty_ranges.clear();
+    find_dirty_ranges(*sti, dirty_ranges);
+    /**
+     * TODO: Previous calls of check_dirty_stores() should have reported
+     * StoreInfo stored in _dirty_stores, so do not report it again here. But
+     * probably we can report changed dirty ranges.
+     */
+    for (auto dti = dirty_ranges.begin(); dti != dirty_ranges.end(); ++dti) {
+      /**
+       * If store data is internally saved, its size must be no larger than
+       * STBUF_INTERNAL_SIZE (by definition no more than a cache line size).
+       * Thus, if a cache flush/write-back (at lease a cache line size) does not
+       * clear this internal store buffer, only ONE part of it can remain dirty
+       * (either at head or tail). It should never happen that a cache operation
+       * can break an internal store buffer into more than one dirty ranges.
+       */
+      assert(sti->_extbuf || dirty_ranges.size() == 1);
+
+      /**
+       * If a StoreInfo of _dirty_stores is fragmented due to partial flushing,
+       * we inplace-update the existing StoreInfo object in _dirty_stores for
+       * the last member of dirty_ranges, and append new StoreInfo objects to
+       * the end of _dirty_stores.
+       */
+      if (dti == dirty_ranges.end() - 1) {
+        sti->resize_store_data(dti->first, dti->second);
+      } else {
+        new_dirty_stores.push_back(*sti);
+        new_dirty_stores.back().resize_store_data(dti->first, dti->second);
+      }
+    }
+
+    sti = dirty_ranges.empty() ? _dirty_stores.erase(sti) : sti + 1;
+  }
+
+  /**
+   * TODO: Create StoreInfo objects in new_dirty_stores and then insert them
+   * into _dirty_stores cause extra copy of these objects. Perhaps there is a
+   * more efficient way to do this task.
+   */
+  _dirty_stores.insert(_dirty_stores.end(), new_dirty_stores.begin(),
+                       new_dirty_stores.end());
+
 
   bool report = false;
   for (auto sti = _nvstores.begin(); sti != _nvstores.end(); ++sti) {
-    uintptr_t dirty_start = sti->_start;
-    std::vector<std::pair<uintptr_t, uintptr_t>> dirty_ranges;
-    for (auto &clop : _nvclops) {
-      assert(clop._time != sti->_time);
-      if (sti->_end <= clop._start)
-        break; // remaining clops can be skipped
-      if (clop._time < sti->_time || clop._end <= sti->_start)
-        continue;
-      if (dirty_start < clop._start) {
-        dirty_ranges.emplace_back(dirty_start, clop._start);
-      }
-      dirty_start = clop._end;
-    }
-    if (dirty_start < sti->_end) {
-      dirty_ranges.emplace_back(dirty_start, sti->_end);
-    }
+    dirty_ranges.clear();
+    find_dirty_ranges(*sti, dirty_ranges);
 
     if (!dirty_ranges.empty()) {
       report = true;
@@ -214,13 +268,9 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   }
   SAYF("%s", report ? "\n" : "");
 
-  /**
-   * TODO: Only remove flushed (clflushopt, clwb) stores, since they should be
-   * persistent after the sfence and not be affected by reordering.
-   */
+  /* Vector _dirty_stores will track any unflushed stored ranges. */
   _nvclops.clear();
   _nvstores.clear();
-  _dirty_stores.clear();
 }
 
 void NVScopeRT::check_missing_fence(uint64_t epoch, char *func, char *file,
