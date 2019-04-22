@@ -68,16 +68,8 @@ struct StoreData {
         _spth(_size < STBUF_SPLIT_THRESHOLD ? 0 : _size >> STBUF_SPTH_SHIFT),
         _data(_size ? new byte_t[_size] : nullptr) {
 
-    /**
-     * If store data is internally saved, its size must be no larger than
-     * STBUF_INTERNAL_SIZE, that is no more than a cache line size. Thus, if a
-     * cache flush/write-back (at lease a cache line size) does not clear this
-     * internal store buffer, only ONE part of it can remain dirty (either at
-     * head or tail). With this setting, it should never happen that a cache
-     * flush/write-back operation can break an internal store buffer into
-     * more than one dirty ranges.
-     */
     static_assert(sizeof(byte_t) == 1);
+
     if (!_size) {
       ERRF("NVS-RT: Invalid data size!");
       _exit(EXIT_FAILURE);
@@ -132,55 +124,9 @@ struct StoreInfo {
     return nullptr;
   }
 
-  void resize_store_data(uintptr_t start, uintptr_t end) {
-    assert(_start <= start && start < end && end <= _end);
+  void resize_store_data(uintptr_t start, uintptr_t end);
 
-    if (_extbuf) {
-      size_t dirty_size = end - start;
-      if (dirty_size <= STBUF_INTERNAL_SIZE) {
-        void *src = _extbuf->_data + _offset + (start - _start);
-        std::memcpy(_intbuf, src, end - start);
-        _offset = 0;
-        _extbuf = nullptr;
-        DBGF(cBRN
-             "NVS-RT: [%p +: %zu) internalize an external store buffer" cRST,
-             reinterpret_cast<void *>(start), end - start);
-      } else if (dirty_size <= _extbuf->_spth) {
-        void *src = _extbuf->_data + _offset + (start - _start);
-        auto xstart = reinterpret_cast<uintptr_t>(src);
-        auto xend = xstart + end - start;
-        _offset = 0;
-        _extbuf = make_snapshot(xstart, xend);
-        DBGF(cBRN
-             "NVS-RT: [%p +: %zu) splits from an external store buffer" cRST,
-             reinterpret_cast<void *>(start), end - start);
-      } else {
-        /* Update offset into the existing store buffer without splitting. */
-        _offset += start - _start;
-        DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an external store buffer" cRST,
-             reinterpret_cast<void *>(start), end - start);
-      }
-    } else {
-      _offset += start - _start;
-      DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an internal store buffer" cRST,
-           reinterpret_cast<void *>(start), end - start);
-    }
-
-    _start = start;
-    _end = end;
-  }
-
-  void swap_data() {
-    auto *start = reinterpret_cast<byte_t *>(_start); // pmem start address
-    auto *end = reinterpret_cast<byte_t *>(_end);     // pmem end address
-    auto *bufdata = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
-    /**
-     * TODO: std::swap_ranges() seems to work at granularity determined by the
-     * iterator, so for byte_t* iterators it swaps byte-by-byte. We will need
-     * a more efficient swapping method.
-     */
-    std::swap_ranges(start, end, bufdata);
-  }
+  void swap_data();
 };
 
 struct CLOPInfo {
@@ -277,7 +223,6 @@ private:
   std::vector<RangeInfo> _nvranges;
   std::vector<StoreInfo> _nvstores;
   std::vector<CLOPInfo> _nvclops;
-
   std::vector<StoreInfo> _dirty_stores;
 };
 

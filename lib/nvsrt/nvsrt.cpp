@@ -13,6 +13,58 @@ static std::atomic_uint64_t timestamp{0};
  */
 static std::unique_ptr<NVScopeRT> nvsrt;
 
+void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
+  assert(_start <= start && start < end && end <= _end);
+
+  if (_extbuf) {
+    size_t dirty_size = end - start;
+    if (dirty_size <= STBUF_INTERNAL_SIZE) {
+      void *src = _extbuf->_data + _offset + (start - _start);
+      std::memcpy(_intbuf, src, end - start);
+      _offset = 0;
+      _extbuf = nullptr;
+      DBGF(cBRN
+               "NVS-RT: [%p +: %zu) internalize an external store buffer" cRST,
+           reinterpret_cast<void *>(start), end - start);
+    } else if (dirty_size <= _extbuf->_spth) {
+      void *src = _extbuf->_data + _offset + (start - _start);
+      auto xstart = reinterpret_cast<uintptr_t>(src);
+      auto xend = xstart + end - start;
+      _offset = 0;
+      _extbuf = make_snapshot(xstart, xend);
+      DBGF(cBRN
+               "NVS-RT: [%p +: %zu) splits from an external store buffer" cRST,
+           reinterpret_cast<void *>(start), end - start);
+    } else {
+      /* Update offset into the existing store buffer without splitting. */
+      _offset += start - _start;
+      DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an external store buffer" cRST,
+           reinterpret_cast<void *>(start), end - start);
+    }
+  } else {
+    _offset += start - _start;
+    DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an internal store buffer" cRST,
+         reinterpret_cast<void *>(start), end - start);
+  }
+
+  _start = start;
+  _end = end;
+}
+
+void StoreInfo::swap_data() {
+  auto *start = reinterpret_cast<byte_t *>(_start); // pmem start address
+  auto *end = reinterpret_cast<byte_t *>(_end);     // pmem end address
+  auto *bufdata = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
+  /**
+   * TODO: std::swap_ranges() seems to work at granularity determined by the
+   * iterator, so for byte_t* iterators it swaps byte-by-byte. We will need
+   * a more efficient swapping method.
+   */
+  std::swap_ranges(start, end, bufdata);
+}
+
+/*--------------------- End of StoreInfo Implementation ---------------------*/
+
 void NVScopeRT::save_range(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
   _nvranges.emplace_back(addr, addr + size, func, file, line);
