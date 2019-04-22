@@ -22,8 +22,6 @@
 using byte_t = uint8_t;
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
-enum CLfwbType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
-
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
 static const int NVS_FINI_PRIO{0}; // __nvs_init priority (runs after main)
 /**
@@ -124,17 +122,17 @@ struct StoreInfo {
     return nullptr;
   }
 
-  void resize_store_data(uintptr_t start, uintptr_t end);
-
+  /* Swap data between [_start, _end) and this store's data buffer. */
   void swap_data();
+  /* Resize this store's data buffer (consequence of partial flushing). */
+  void resize_store_data(uintptr_t start, uintptr_t end);
 };
 
 struct CLfwbInfo {
-  CLfwbInfo(uint64_t time, uintptr_t addr, CLfwbType type, char *func,
-            char *file, int linenr)
+  CLfwbInfo(uint64_t time, uintptr_t addr, char *func, char *file, int linenr)
       : _func(func), _file(file), _linenr(linenr), _time(time), _addr(addr),
-        _start(cache_addr_of(addr)), _end(cache_addr_of(addr) + CACHELINE_SIZE),
-        _type(type) {}
+        _start(cache_addr_of(addr)),
+        _end(cache_addr_of(addr) + CACHELINE_SIZE) {}
   char *_func;
   char *_file;
   int _linenr;
@@ -142,7 +140,6 @@ struct CLfwbInfo {
   uintptr_t _addr;  // user-provided address of this cache line op
   uintptr_t _start; // pmem cache-line address for _addr
   uintptr_t _end;   // pmem cache-line address + CACHELINE_SIZE for _addr
-  CLfwbType _type;
 
   // bool operator<(const CLfwbInfo &other) {
   //  if (_claddr != other._claddr)
@@ -176,9 +173,8 @@ public:
   /* Save store information. */
   void save_store(uintptr_t addr, size_t size, char *func, char *file,
                   int line);
-  /* Save CLFLUSHOPT or CLWB operations. */
-  void save_clfwb(uintptr_t addr, CLfwbType type, char *func, char *file,
-                  int line);
+  /* Save CLFLUSH(OPT) or CLWB operations. */
+  void save_clfwb(uintptr_t addr, char *func, char *file, int line);
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */
   void find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges);

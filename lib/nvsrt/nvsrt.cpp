@@ -23,8 +23,7 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
       std::memcpy(_intbuf, src, end - start);
       _offset = 0;
       _extbuf = nullptr;
-      DBGF(cBRN
-               "NVS-RT: [%p +: %zu) internalize an external store buffer" cRST,
+      DBGF(cBRN "NVS-RT: [%p +: %zu) internalize an external store buffer" cRST,
            reinterpret_cast<void *>(start), end - start);
     } else if (dirty_size <= _extbuf->_spth) {
       void *src = _extbuf->_data + _offset + (start - _start);
@@ -32,8 +31,7 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
       auto xend = xstart + end - start;
       _offset = 0;
       _extbuf = make_snapshot(xstart, xend);
-      DBGF(cBRN
-               "NVS-RT: [%p +: %zu) splits from an external store buffer" cRST,
+      DBGF(cBRN "NVS-RT: [%p +: %zu) splits from an external store buffer" cRST,
            reinterpret_cast<void *>(start), end - start);
     } else {
       /* Update offset into the existing store buffer without splitting. */
@@ -118,10 +116,9 @@ void NVScopeRT::save_store(uintptr_t addr, size_t size, char *func, char *file,
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
-void NVScopeRT::save_clfwb(uintptr_t addr, CLfwbType type, char *func,
-                           char *file, int line) {
+void NVScopeRT::save_clfwb(uintptr_t addr, char *func, char *file, int line) {
   uint64_t time = ++timestamp;
-  _nvclfwbs.emplace_back(time, addr, type, func, file, line);
+  _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
 #ifdef NVS_DEBUG
@@ -291,7 +288,6 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
    */
   _dirty_stores.insert(_dirty_stores.end(), new_dirty_stores.begin(),
                        new_dirty_stores.end());
-
 
   bool report = false;
   for (auto sti = _nvstores.begin(); sti != _nvstores.end(); ++sti) {
@@ -542,7 +538,7 @@ extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->save_clfwb(addr, CLWB, func, file, line);
+  nvsrt->save_clfwb(addr, func, file, line);
 }
 
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
@@ -554,7 +550,7 @@ extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->save_clfwb(addr, CLFLUSHOPT, func, file, line);
+  nvsrt->save_clfwb(addr, func, file, line);
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
@@ -568,7 +564,7 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->save_clfwb(addr, CLFLUSH, func, file, line);
+  nvsrt->save_clfwb(addr, func, file, line);
   nvsrt->check_reorder(epoch, func, file, line);
   nvsrt->check_dirty_stores(epoch, func, file, line);
 
