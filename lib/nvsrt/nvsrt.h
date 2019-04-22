@@ -22,7 +22,7 @@
 using byte_t = uint8_t;
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
-enum CLOPType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
+enum CLfwbType { CLFLUSH = 0, CLFLUSHOPT, CLWB };
 
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
 static const int NVS_FINI_PRIO{0}; // __nvs_init priority (runs after main)
@@ -129,9 +129,9 @@ struct StoreInfo {
   void swap_data();
 };
 
-struct CLOPInfo {
-  CLOPInfo(uint64_t time, uintptr_t addr, CLOPType type, char *func, char *file,
-           int linenr)
+struct CLfwbInfo {
+  CLfwbInfo(uint64_t time, uintptr_t addr, CLfwbType type, char *func,
+            char *file, int linenr)
       : _func(func), _file(file), _linenr(linenr), _time(time), _addr(addr),
         _start(cache_addr_of(addr)), _end(cache_addr_of(addr) + CACHELINE_SIZE),
         _type(type) {}
@@ -142,9 +142,9 @@ struct CLOPInfo {
   uintptr_t _addr;  // user-provided address of this cache line op
   uintptr_t _start; // pmem cache-line address for _addr
   uintptr_t _end;   // pmem cache-line address + CACHELINE_SIZE for _addr
-  CLOPType _type;
+  CLfwbType _type;
 
-  // bool operator<(const CLOPInfo &other) {
+  // bool operator<(const CLfwbInfo &other) {
   //  if (_claddr != other._claddr)
   //    return _claddr < other._claddr;
   //  return _time < other._time;
@@ -177,8 +177,8 @@ public:
   void save_store(uintptr_t addr, size_t size, char *func, char *file,
                   int line);
   /* Save CLFLUSHOPT or CLWB operations. */
-  void save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
-                 int line);
+  void save_clfwb(uintptr_t addr, CLfwbType type, char *func, char *file,
+                  int line);
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */
   void find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges);
@@ -222,7 +222,7 @@ private:
    */
   std::vector<RangeInfo> _nvranges;
   std::vector<StoreInfo> _nvstores;
-  std::vector<CLOPInfo> _nvclops;
+  std::vector<CLfwbInfo> _nvclfwbs;
   std::vector<StoreInfo> _dirty_stores;
 };
 

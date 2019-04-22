@@ -118,10 +118,10 @@ void NVScopeRT::save_store(uintptr_t addr, size_t size, char *func, char *file,
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
-void NVScopeRT::save_clop(uintptr_t addr, CLOPType type, char *func, char *file,
-                          int line) {
+void NVScopeRT::save_clfwb(uintptr_t addr, CLfwbType type, char *func,
+                           char *file, int line) {
   uint64_t time = ++timestamp;
-  _nvclops.emplace_back(time, addr, type, func, file, line);
+  _nvclfwbs.emplace_back(time, addr, type, func, file, line);
 }
 
 #ifdef NVS_DEBUG
@@ -144,19 +144,19 @@ void NVScopeRT::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
   /* initially the full range is dirty */
   uintptr_t dirty_start = store._start;
   /**
-   * NOTE: This algorithm works only if _nvclops is already sorted by _start
+   * NOTE: This algorithm works only if _nvclfwbs is already sorted by _start
    * or by _time if _start equals.
    */
-  for (auto &clop : _nvclops) {
-    assert(clop._time != store._time);
-    if (store._end <= clop._start)
-      break; // remaining clops can be skipped
-    if (clop._time < store._time || clop._end <= store._start)
+  for (auto &clfwb : _nvclfwbs) {
+    assert(clfwb._time != store._time);
+    if (store._end <= clfwb._start)
+      break; // remaining clfwbs can be skipped
+    if (clfwb._time < store._time || clfwb._end <= store._start)
       continue;
-    if (dirty_start < clop._start) {
-      dirty_ranges.emplace_back(dirty_start, clop._start);
+    if (dirty_start < clfwb._start) {
+      dirty_ranges.emplace_back(dirty_start, clfwb._start);
     }
-    dirty_start = clop._end;
+    dirty_start = clfwb._end;
   }
   if (dirty_start < store._end) {
     dirty_ranges.emplace_back(dirty_start, store._end);
@@ -232,14 +232,14 @@ void NVScopeRT::check_reorder(uint64_t epoch, char *func, char *file,
 void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
                                    int line) {
   if (_nvstores.empty() && _dirty_stores.empty()) {
-    /* TODO: Should report redundant flushes before clearing _nvclops. */
-    _nvclops.clear();
+    /* TODO: Should report redundant flushes before clearing _nvclfwbs. */
+    _nvclfwbs.clear();
     return;
   }
 
   /* Sort by cache-line address, or timestamp if that equals. */
-  std::sort(_nvclops.begin(), _nvclops.end(),
-            [](const CLOPInfo &lhs, const CLOPInfo &rhs) {
+  std::sort(_nvclfwbs.begin(), _nvclfwbs.end(),
+            [](const CLfwbInfo &lhs, const CLfwbInfo &rhs) {
               if (lhs._start != rhs._start)
                 return lhs._start < rhs._start;
               return lhs._time > rhs._time;
@@ -321,7 +321,7 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   SAYF("%s", report ? "\n" : "");
 
   /* Vector _dirty_stores will track any unflushed stored ranges. */
-  _nvclops.clear();
+  _nvclfwbs.clear();
   _nvstores.clear();
 }
 
@@ -542,7 +542,7 @@ extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->save_clop(addr, CLWB, func, file, line);
+  nvsrt->save_clfwb(addr, CLWB, func, file, line);
 }
 
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
@@ -554,7 +554,7 @@ extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->save_clop(addr, CLFLUSHOPT, func, file, line);
+  nvsrt->save_clfwb(addr, CLFLUSHOPT, func, file, line);
 }
 
 extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
@@ -568,7 +568,7 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
   if (!nvsrt || !nvsrt->is_enabled())
     return;
 
-  nvsrt->save_clop(addr, CLFLUSH, func, file, line);
+  nvsrt->save_clfwb(addr, CLFLUSH, func, file, line);
   nvsrt->check_reorder(epoch, func, file, line);
   nvsrt->check_dirty_stores(epoch, func, file, line);
 
