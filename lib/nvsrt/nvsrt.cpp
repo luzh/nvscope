@@ -264,7 +264,7 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   DirtyRanges dirty_ranges;
 
   std::vector<StoreInfo> new_dirty_stores;
-  for (auto sti = _dirty_stores.begin(); sti != _dirty_stores.end(); ++sti) {
+  for (auto sti = _dirty_stores.begin(); sti != _dirty_stores.end();) {
     dirty_ranges.clear();
     find_dirty_ranges(*sti, dirty_ranges);
     /**
