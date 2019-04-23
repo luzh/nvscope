@@ -13,22 +13,38 @@ static std::atomic_uint64_t timestamp{0};
  */
 static std::unique_ptr<NVScopeRT> nvsrt;
 
-void StoreInfo::print_bytes(size_t bytes) {
-  if (bytes == 0)
-    return;
-
+void StoreInfo::print_bytes(size_t limit) {
   if (!_extbuf)
     assert(_end - _start <= STBUF_INTERNAL_SIZE);
   else
     assert(_end - _start > STBUF_INTERNAL_SIZE);
 
   auto data = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
-  auto size = bytes > 0 && _end - _start < bytes ? _end - _start : bytes;
+  auto size = limit > 0 && limit < _end - _start ? limit : _end - _start;
 
-  for (size_t i = 0; i < size; ++i) {
-    SAYF("%02x%s", data[i] & 0xFFU, ((i + 1) % 16 ? ", " : "\n"));
+  auto lineaddr = _start & ~(16UL - 1);
+  auto skip = _start - lineaddr;
+
+  SAYF(cBLU "%17s 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n" cRST, "|");
+  SAYF("-----------------------------------------------------------------\n");
+
+  if (skip > 0) {
+    SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
+    for (size_t i = 0; i < skip; ++i) {
+      SAYF("   ");
+    }
+    lineaddr += 16;
   }
-  if (size % 16 != 0)
+
+  for (size_t i = skip; i < size + skip; ++i) {
+    if (i % 16 == 0) {
+      SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
+      lineaddr += 16;
+    }
+    SAYF(" %02x%s", data[i - skip] & 0xFFU, ((i + 1) % 16 ? "" : "\n"));
+  }
+
+  if ((size + skip) % 16 != 0)
     SAYF("\n");
 }
 
@@ -140,16 +156,16 @@ void NVScopeRT::save_clfwb(uintptr_t addr, char *func, char *file, int line) {
   _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
-void NVScopeRT::print_stores(std::vector<StoreInfo> &stores, size_t nstores,
-                             size_t bytes = 0) const {
+void NVScopeRT::print_stores(std::vector<StoreInfo> &stores, size_t limit,
+                             size_t byteslimit = 0) const {
   size_t count = 0;
 
   for (auto &store : stores) {
     DBGF("StoreInfo[%zu]: [%s() at %s:%4d], start from %p size %zu", count,
          store._func, store._file, store._linenr,
          reinterpret_cast<void *>(store._start), store._end - store._start);
-    store.print_bytes(bytes);
-    if (0 < nstores && nstores <= ++count)
+    store.print_bytes(byteslimit);
+    if (0 < limit && limit <= ++count)
       break;
   }
 }
