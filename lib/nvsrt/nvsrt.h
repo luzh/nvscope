@@ -18,8 +18,7 @@
 #include "headers.h"
 #include "nvscope/config.h"
 
-/* TODO: Consider std::byte? */
-using byte_t = uint8_t;
+using byte_t = uint8_t; /* TODO: Consider std::byte? */
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
 static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
@@ -41,7 +40,7 @@ static const uint32_t STBUF_INTERNAL_SIZE{32};
  * depending on the store's size.
  */
 static const uint32_t STBUF_SPLIT_THRESHOLD{4096};
-static const uint32_t STBUF_SPTH_SHIFT{8};
+static const uint32_t STBUF_SPTH_SHIFT{3}; // one eigth of STBUF_SPLIT_THRESHOLD
 
 static uintptr_t cache_addr_of(const uintptr_t addr) { return addr & ~63UL; }
 
@@ -122,6 +121,8 @@ struct StoreInfo {
     return nullptr;
   }
 
+  /* Print byte content. */
+  void print_bytes(size_t bytes);
   /* Swap data between [_start, _end) and this store's data buffer. */
   void swap_data();
   /* Resize this store's data buffer (consequence of partial flushing). */
@@ -162,7 +163,7 @@ public:
   /* Communication methods. */
   enum nvs_message read_message() const;
   void send_message(enum nvs_message msg) const;
-  // void send_anydata(void *data, ssize_t len) const;
+  void send_anydata(void *data, ssize_t len) const;
   void close_channels() const;
 
   /* Add one mmaped range. */
@@ -186,10 +187,9 @@ public:
   void check_dirty_stores(uint64_t epoch, char *func, char *file, int line);
   void check_missing_fence(uint64_t epoch, char *func, char *file, int line);
 
-#ifdef NVS_DEBUG
-  /* Print content of nvstores (up to limit entries). */
-  void print_nvstores(size_t limit) const;
-#endif
+  /* Print content of a StoreInfo vector (up to limit entries). */
+  void print_stores(std::vector<StoreInfo> &stores, size_t nstores,
+                    size_t bytes) const;
 
   NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf) {

@@ -13,40 +13,23 @@ static std::atomic_uint64_t timestamp{0};
  */
 static std::unique_ptr<NVScopeRT> nvsrt;
 
-void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
-  assert(_start <= start && start < end && end <= _end);
+void StoreInfo::print_bytes(size_t bytes) {
+  if (bytes == 0)
+    return;
 
-  if (_extbuf) {
-    size_t dirty_size = end - start;
-    if (dirty_size <= STBUF_INTERNAL_SIZE) {
-      void *src = _extbuf->_data + _offset + (start - _start);
-      std::memcpy(_intbuf, src, end - start);
-      _offset = 0;
-      _extbuf = nullptr;
-      DBGF(cBRN "NVS-RT: [%p +: %zu) internalize an external store buffer" cRST,
-           reinterpret_cast<void *>(start), end - start);
-    } else if (dirty_size <= _extbuf->_spth) {
-      void *src = _extbuf->_data + _offset + (start - _start);
-      auto xstart = reinterpret_cast<uintptr_t>(src);
-      auto xend = xstart + end - start;
-      _offset = 0;
-      _extbuf = make_snapshot(xstart, xend);
-      DBGF(cBRN "NVS-RT: [%p +: %zu) splits from an external store buffer" cRST,
-           reinterpret_cast<void *>(start), end - start);
-    } else {
-      /* Update offset into the existing store buffer without splitting. */
-      _offset += start - _start;
-      DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an external store buffer" cRST,
-           reinterpret_cast<void *>(start), end - start);
-    }
-  } else {
-    _offset += start - _start;
-    DBGF(cBRN "NVS-RT: [%p +: %zu) Reuse an internal store buffer" cRST,
-         reinterpret_cast<void *>(start), end - start);
+  if (!_extbuf)
+    assert(_end - _start <= STBUF_INTERNAL_SIZE);
+  else
+    assert(_end - _start > STBUF_INTERNAL_SIZE);
+
+  auto data = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
+  auto size = bytes > 0 && _end - _start < bytes ? _end - _start : bytes;
+
+  for (size_t i = 0; i < size; ++i) {
+    SAYF("%02x%s", data[i] & 0xFFU, ((i + 1) % 16 ? ", " : "\n"));
   }
-
-  _start = start;
-  _end = end;
+  if (size % 16 != 0)
+    SAYF("\n");
 }
 
 void StoreInfo::swap_data() {
@@ -59,6 +42,44 @@ void StoreInfo::swap_data() {
    * a more efficient swapping method.
    */
   std::swap_ranges(start, end, bufdata);
+}
+
+void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
+  assert(_start <= start && start < end && end <= _end);
+
+  if (_extbuf) {
+    size_t dirty_size = end - start;
+    if (dirty_size <= STBUF_INTERNAL_SIZE) {
+      void *src = _extbuf->_data + _offset + (start - _start);
+      std::memcpy(_intbuf, src, end - start);
+      _offset = 0;
+      _extbuf = nullptr;
+      DBGF(cBRN
+           "NVS-RT: [%p +: %02zu) Internalize an external store buffer" cRST,
+           reinterpret_cast<void *>(start), end - start);
+    } else if (dirty_size <= _extbuf->_spth) {
+      void *src = _extbuf->_data + _offset + (start - _start);
+      auto xstart = reinterpret_cast<uintptr_t>(src);
+      auto xend = xstart + end - start;
+      _offset = 0;
+      _extbuf = make_snapshot(xstart, xend);
+      DBGF(cBRN
+           "NVS-RT: [%p +: %02zu) Splits from an external store buffer" cRST,
+           reinterpret_cast<void *>(start), end - start);
+    } else {
+      /* Update offset into the existing store buffer without splitting. */
+      _offset += start - _start;
+      DBGF(cBRN "NVS-RT: [%p +: %02zu) Reuse an external store buffer" cRST,
+           reinterpret_cast<void *>(start), end - start);
+    }
+  } else {
+    _offset += start - _start;
+    DBGF(cBRN "NVS-RT: [%p +: %02zu) Reuse an internal store buffer" cRST,
+         reinterpret_cast<void *>(start), end - start);
+  }
+
+  _start = start;
+  _end = end;
 }
 
 /*--------------------- End of StoreInfo Implementation ---------------------*/
@@ -94,14 +115,12 @@ void NVScopeRT::send_message(enum nvs_message msg) const {
   }
 }
 
-/*
 void NVScopeRT::send_anydata(void *data, ssize_t len) const {
   if (write(_tgconfig->write_fd, data, len) != len) {
     ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
     _exit(EXIT_FAILURE);
   }
 }
-*/
 
 void NVScopeRT::close_channels() const {
   if (_tgconfig->read_fd > 0)
@@ -121,21 +140,19 @@ void NVScopeRT::save_clfwb(uintptr_t addr, char *func, char *file, int line) {
   _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
-#ifdef NVS_DEBUG
-void NVScopeRT::print_nvstores(size_t limit) const {
-  size_t n = 0;
+void NVScopeRT::print_stores(std::vector<StoreInfo> &stores, size_t nstores,
+                             size_t bytes = 0) const {
+  size_t count = 0;
 
-  DBGF(cCYA "--- NVS-RT collected stores (...) ---" cRST);
-  for (auto &store : _nvstores) {
-    DBGF("Entry[%zu]: [%s() at %s:%4d], store to %p size %zu", n, store._func,
-         store._file, store._linenr, reinterpret_cast<void *>(store._start),
-         store._end - store._start);
-    if (0 < limit && limit <= ++n)
+  for (auto &store : stores) {
+    DBGF("StoreInfo[%zu]: [%s() at %s:%4d], start from %p size %zu", count,
+         store._func, store._file, store._linenr,
+         reinterpret_cast<void *>(store._start), store._end - store._start);
+    store.print_bytes(bytes);
+    if (0 < nstores && nstores <= ++count)
       break;
   }
-  DBGF(cCYA "--- NVS-RT collected stores (***) ---" cRST);
 }
-#endif
 
 void NVScopeRT::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
   /* initially the full range is dirty */
@@ -199,7 +216,9 @@ void NVScopeRT::check_reorder(uint64_t epoch, char *func, char *file,
     return;
 
 #ifdef NVS_DEBUG
-  print_nvstores(0);
+  DBGF(cCYA "--- NVS-RT collected stores (...) in epoch #%zu ---" cRST, epoch);
+  print_stores(_nvstores, _nvstores.size(), 32);
+  DBGF(cCYA "--- NVS-RT collected stores (***) in epoch #%zu ---" cRST, epoch);
 #endif
 
   DBGF("NVS-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", epoch, func,
