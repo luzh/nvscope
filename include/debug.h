@@ -174,6 +174,9 @@
 #define TESTC(x...)
 #endif
 
+/* Disable a print statement. */
+#define MUTEF(x...)
+
 /* Show a prefixed "doing something" message. */
 
 #define ACTF(x...)                                                             \

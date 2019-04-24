@@ -525,8 +525,8 @@ __attribute__((constructor(NVS_INIT_PRIO))) void __nvs_init() {
 
 extern "C" void __nvs_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  DBGF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
-       size);
+  MUTEF("NVS-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
+        size);
 
   if (!nvsrt || !nvsrt->is_enabled() || !nvsrt->store_in_range(ptr, size))
     return;
@@ -567,8 +567,8 @@ extern "C" void *__nvs_mmap(void *addr, size_t size, int prot, int flags,
 extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file, line,
-       ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
+  MUTEF("NVS-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file,
+        line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvsrt || !nvsrt->is_enabled())
     return;
@@ -579,8 +579,8 @@ extern "C" void __nvs_clwb(void *ptr, char *func, char *file, int line) {
 extern "C" void __nvs_clflushopt(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  DBGF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func, file,
-       line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
+  MUTEF("NVS-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func,
+        file, line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvsrt || !nvsrt->is_enabled())
     return;
@@ -592,9 +592,9 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
   uint64_t epoch = ++epochid;
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  DBGF("NVS-RT: epoch %zu [%s() at %s:%4d]: CLFLUSH addr %p cache line %p",
-       epoch, func, file, line, ptr,
-       reinterpret_cast<void *>(cache_addr_of(addr)));
+  MUTEF("NVS-RT: epoch %zu [%s() at %s:%4d]: CLFLUSH addr %p cache line %p",
+        epoch, func, file, line, ptr,
+        reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvsrt || !nvsrt->is_enabled())
     return;
@@ -608,7 +608,8 @@ extern "C" void __nvs_clflush(void *ptr, char *func, char *file, int line) {
 
 extern "C" void __nvs_sfence(char *func, char *file, int line) {
   uint64_t epoch = ++epochid;
-  DBGF("NVS-RT: epoch %zu [%s() at %s:%4d]: SFENCE", epoch, func, file, line);
+
+  MUTEF("NVS-RT: epoch %zu [%s() at %s:%4d]: SFENCE", epoch, func, file, line);
 
   if (!nvsrt || !nvsrt->is_enabled())
     return;
