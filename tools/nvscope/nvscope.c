@@ -473,7 +473,11 @@ int main(int argc, char **argv) {
       }
 
       bug = check_status(tgconf_reco->status, tgconf_reco->pid, "recovery");
-      main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
+      /**
+       * TODO: Add an environment variable to control whether to exit or not.
+       * main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
+       */
+      main_ctrl = bug ? MSG_SHOW_BUG_AND_CONTINUE : MSG_CONTINUE_TO_RUN;
       send_message(main_ctrl_fd, main_ctrl);
       break;
     case MSG_TARGET_EXITED:

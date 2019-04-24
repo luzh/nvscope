@@ -13,39 +13,48 @@ static std::atomic_uint64_t timestamp{0};
  */
 static std::unique_ptr<NVScopeRT> nvsrt;
 
-void StoreInfo::print_bytes(size_t limit) {
+void StoreInfo::print_data(size_t limit) {
   if (!_extbuf)
     assert(_end - _start <= STBUF_INTERNAL_SIZE);
   else
     assert(_end - _start > STBUF_INTERNAL_SIZE);
 
-  auto data = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
-  auto size = limit > 0 && limit < _end - _start ? limit : _end - _start;
-
   auto lineaddr = _start & ~(16UL - 1);
   auto skip = _start - lineaddr;
 
-  SAYF(cBLU "%17s 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n" cRST, "|");
-  SAYF("-----------------------------------------------------------------\n");
+  auto size = limit > 0 && limit < _end - _start ? limit : _end - _start;
 
-  if (skip > 0) {
-    SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
-    for (size_t i = 0; i < skip; ++i) {
-      SAYF("   ");
-    }
-    lineaddr += 16;
-  }
-
-  for (size_t i = skip; i < size + skip; ++i) {
-    if (i % 16 == 0) {
+  auto print_bytes = [size, skip, &lineaddr](const byte_t *data,
+                                             const std::string &title) {
+    SAYF(cBLU "-- %8s ---.\n" cRST, title.c_str());
+    SAYF(cBLU "%s 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n" cRST,
+         "    Address     |");
+    if (skip > 0) {
       SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
+      for (size_t i = 0; i < skip; ++i) {
+        SAYF("   ");
+      }
       lineaddr += 16;
     }
-    SAYF(" %02x%s", data[i - skip] & 0xFFU, ((i + 1) % 16 ? "" : "\n"));
-  }
+    for (size_t i = skip; i < size + skip; ++i) {
+      if (i % 16 == 0) {
+        SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
+        lineaddr += 16;
+      }
+      SAYF(" %02X%s", data[i - skip] & 0xFFU, ((i + 1) % 16 ? "" : "\n"));
+    }
 
-  if ((size + skip) % 16 != 0)
-    SAYF("\n");
+    if ((size + skip) % 16 != 0)
+      SAYF("\n");
+  };
+
+  auto olddata = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
+  print_bytes(olddata, "Old Bytes");
+
+  auto newdata = reinterpret_cast<byte_t *>(_start);
+  print_bytes(newdata, "New Bytes");
+
+  SAYF("-----------------------------------------------------------------\n");
 }
 
 void StoreInfo::swap_data() {
@@ -164,7 +173,7 @@ void NVScopeRT::print_stores(std::vector<StoreInfo> &stores, size_t limit,
     DBGF("StoreInfo[%zu]: [%s() at %s:%4d], start from %p size %zu", count,
          store._func, store._file, store._linenr,
          reinterpret_cast<void *>(store._start), store._end - store._start);
-    store.print_bytes(byteslimit);
+    store.print_data(byteslimit);
     if (0 < limit && limit <= ++count)
       break;
   }
@@ -228,6 +237,7 @@ bool NVScopeRT::next_reorder() {
 
 void NVScopeRT::check_reorder(uint64_t epoch, char *func, char *file,
                               int line) {
+  /* TODO: Consider reverting all _dirty_stores. */
   if (_nvstores.empty())
     return;
 
@@ -245,16 +255,18 @@ void NVScopeRT::check_reorder(uint64_t epoch, char *func, char *file,
 
     enum nvs_message command = read_message();
 
-    if (command == MSG_SHOW_BUG_AND_EXIT) {
+    if (command == MSG_SHOW_BUG_AND_CONTINUE ||
+        command == MSG_SHOW_BUG_AND_EXIT) {
       SAYF("\n" cLRD "[-] Store Races:" cRST
            " in epoch #%zu [%s() at %s:%4d]\n",
            epoch, func, file, line);
       ERRF("NVS-RT needs a patch to report details of this store race due to "
-           "possible missing sfences. ");
-      _exit(NVS_EXIT_FOUNDBUG);
-    }
+           "possible missing sfences.\n");
 
-    if (command != MSG_CONTINUE_TO_RUN) {
+      if (command == MSG_SHOW_BUG_AND_EXIT)
+        _exit(NVS_EXIT_FOUNDBUG);
+
+    } else if (command != MSG_CONTINUE_TO_RUN) {
       ERRF("NVS-RT: received inappropriate message %d", command);
       _exit(NVS_EXIT_BAD_MSG);
     }
@@ -359,7 +371,7 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
 void NVScopeRT::check_missing_fence(uint64_t epoch, char *func, char *file,
                                     int line) {
   /* TODO: Also check _dirty_stores. */
-  if (_nvstores.empty())
+  if (_nvstores.empty() && _dirty_stores.empty())
     return;
 
   SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s:%4d]\n",

@@ -122,7 +122,7 @@ struct StoreInfo {
   }
 
   /* Print byte content. */
-  void print_bytes(size_t bytes);
+  void print_data(size_t bytes);
   /* Swap data between [_start, _end) and this store's data buffer. */
   void swap_data();
   /* Resize this store's data buffer (consequence of partial flushing). */

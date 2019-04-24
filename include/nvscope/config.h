@@ -31,6 +31,7 @@ enum nvs_message {
   MSG_FORK_AND_RUN,
   MSG_CONTINUE_TO_RUN,
   MSG_SHOW_BUG_AND_EXIT,
+  MSG_SHOW_BUG_AND_CONTINUE,
   MSG_EXIT_FORKSERVER,
 
   /* Information: target telling nvscope */
