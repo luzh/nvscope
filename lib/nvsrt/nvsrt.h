@@ -13,7 +13,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "afl/config.h"
 #include "debug.h"
 #include "headers.h"
 #include "nvscope/config.h"
@@ -172,10 +171,11 @@ public:
   /* Check if the stored data falls into mmaped ranges. */
   bool store_in_range(void *ptr, size_t size);
   /* Save store information. */
-  void save_store(uintptr_t addr, size_t size, char *func, char *file,
-                  int line);
+  void save_store(uint64_t time, uintptr_t addr, size_t size, char *func,
+                  char *file, int line);
   /* Save CLFLUSH(OPT) or CLWB operations. */
-  void save_clfwb(uintptr_t addr, char *func, char *file, int line);
+  void save_clfwb(uint64_t time, uintptr_t addr, char *func, char *file,
+                  int line);
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */
   void find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges);

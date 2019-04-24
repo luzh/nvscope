@@ -1,4 +1,4 @@
-set(SRCS nvsrt.cpp)
+set(SRCS nvsrt.cpp probes.cpp)
 
 # Link statically for performance (inline) and initializations before main().
 add_library(nvsrt STATIC ${SRCS})
