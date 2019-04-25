@@ -22,13 +22,13 @@ static char clockchars[4] = {'|', '/', '-', '\\'};
  *
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
-static inline void send_message(int channel, enum nvs_message msg) {
+static inline void send_message(int channel, enum nvx_message msg) {
   if (write(channel, &msg, sizeof(msg)) != sizeof(msg))
     PFATAL("NVScope: write() to channel %d failed", channel);
 }
 
-static inline enum nvs_message read_message(int channel) {
-  enum nvs_message msg;
+static inline enum nvx_message read_message(int channel) {
+  enum nvx_message msg;
   if (read(channel, &msg, sizeof(msg)) != sizeof(msg))
     PFATAL("NVScope: read() from channel %d failed", channel);
   return msg;
@@ -99,7 +99,7 @@ static void check_binary(char *fname, char *target) {
       FATAL("NVScope: '%s' not found or not executable", fname);
   }
 
-  if (getenv("NVS_SKIP_BIN_CHECK"))
+  if (getenv("NVX_SKIP_BIN_CHECK"))
     return;
 
   if (target == NULL)
@@ -145,11 +145,11 @@ static void check_binary(char *fname, char *target) {
   if (f_data[0] != 0x7f || memcmp(f_data + 1, "ELF", 3))
     FATAL("NVScope: '%s' is not an ELF binary", target);
 
-  if (!memmem(f_data, f_len, NVS_ENV_SHM, strlen(NVS_ENV_SHM) + 1)) {
+  if (!memmem(f_data, f_len, NVX_ENV_SHM, strlen(NVX_ENV_SHM) + 1)) {
     SAYF("\n" cLRD "[-] " cRST
          "Looks like the target binary is not instrumented: %s\n",
          target);
-    FATAL("NVScope: no instrumentation detected - '%s' not found", NVS_ENV_SHM);
+    FATAL("NVScope: no instrumentation detected - '%s' not found", NVX_ENV_SHM);
   }
 
 #if 0
@@ -239,7 +239,7 @@ static void setup_shm(void) {
   atexit(cleanup);
 
   shm_str = alloc_printf("%d", shm_id);
-  setenv(NVS_ENV_SHM, shm_str, 1);
+  setenv(NVX_ENV_SHM, shm_str, 1);
 
   ck_free(shm_str);
 
@@ -259,7 +259,7 @@ static void setup_shm(void) {
  * through a pipe. The other part of this logic is in lib/nvxrt/nvxrt.c.
  */
 static pid_t start_forkserver(char *target, char **target_argv,
-                              struct nvs_target_config *target_conf,
+                              struct nvx_target_config *target_conf,
                               int *parent_read_fd, int *parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
@@ -350,8 +350,8 @@ static void show_progress(size_t testid) {
 }
 
 int main(int argc, char **argv) {
-  COMPILE_ERROR_ON(sizeof(struct nvs_target_config) != CLSIZE);
-  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvs_config, mainproc)));
+  COMPILE_ERROR_ON(sizeof(struct nvx_target_config) != CLSIZE);
+  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvx_config, mainproc)));
 
   if (argc < 5)
     FATAL("NVSope usage: %s --nvs-mainproc <mainproc and args> --nvs-recovery "
@@ -394,11 +394,11 @@ int main(int argc, char **argv) {
 
   setup_shm();
 
-  struct nvs_config *config = (struct nvs_config *)(shm_base);
+  struct nvx_config *config = (struct nvx_config *)(shm_base);
   config->initialized = 1;
 
-  struct nvs_target_config *tgconf_main = &config->mainproc;
-  struct nvs_target_config *tgconf_reco = &config->recovery;
+  struct nvx_target_config *tgconf_main = &config->mainproc;
+  struct nvx_target_config *tgconf_reco = &config->recovery;
 
   int main_ctrl_fd, main_info_fd; // mainproc control pipes
   int reco_ctrl_fd, reco_info_fd; // recovery control pipes
@@ -420,7 +420,7 @@ int main(int argc, char **argv) {
   int fatal = 0, stop = 0;
   int status, bug = 0;
   uint64_t testcases = 0;
-  enum nvs_message main_info, main_ctrl, reco_info;
+  enum nvx_message main_info, main_ctrl, reco_info;
 
   /* testing mainproc but not recovery */
   tgconf_main->enabled = 1;
