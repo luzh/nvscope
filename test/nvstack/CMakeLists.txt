@@ -4,22 +4,22 @@ set(NVXBIN x-nvstack)
 set(SRCS nvstack.c)
 nvx_set_sources_properties(C_Default ${SRCS})
 
-# --- Normal binary without instrumentation (ignoring NVXPasses) --- #
+# --- Normal binary without instrumentation (ignoring NVXProfiling) --- #
 
 add_executable(${NORMAL} ${SRCS})
 target_include_directories(${NORMAL} PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
 
-# --- NVXPasses instrumented binary --- #
+# --- NVXProfiling instrumented binary --- #
 
 set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVX_PASSES_DIR}/NVX/NVXPasses.so -probes"
+    "-load ${NVX_PASSES_DIR}/NVX/NVXProfiling.so -probes"
 )
 
 nvx_add_executable(${NVXBIN} ${SRCS})
-add_dependencies(${NVXBIN} NVXPasses)
+add_dependencies(${NVXBIN} NVXProfiling)
 target_link_libraries(${NVXBIN} clang_rt.nvx)
 
 # --- Non-NVScope tests --- #

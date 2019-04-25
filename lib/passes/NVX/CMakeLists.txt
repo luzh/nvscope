@@ -1,5 +1,5 @@
-add_llvm_loadable_module(NVXPasses NVX.cpp)
+add_llvm_loadable_module(NVXProfiling NVXProfiling.cpp)
 
-nvx_set_pass_properties(NVXPasses)
+nvx_set_pass_properties(NVXProfiling)
 
-install(TARGETS NVXPasses DESTINATION lib)
+install(TARGETS NVXProfiling DESTINATION lib)
