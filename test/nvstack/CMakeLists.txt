@@ -15,7 +15,7 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVX_PASSES_DIR}/NVX/NVXProfiling.so -probes"
+    "-load ${NVX_PASSES_DIR}/NVX/NVXProfiling.so -instrument"
 )
 
 nvx_add_executable(${NVXBIN} ${SRCS})
