@@ -20,7 +20,7 @@ set_property(
 
 nvs_add_executable(${NVSBIN} ${SRCS})
 add_dependencies(${NVSBIN} NVScopePasses)
-target_link_libraries(${NVSBIN} nvsrt)
+target_link_libraries(${NVSBIN} clang_rt.nvx)
 
 # --- Non-NVScope tests --- #
 
