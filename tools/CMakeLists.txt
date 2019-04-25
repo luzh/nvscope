@@ -1,2 +1,2 @@
 add_subdirectory(afl)
-add_subdirectory(nvscope)
+add_subdirectory(nvx)
