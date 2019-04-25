@@ -2,7 +2,7 @@ set(NORMAL hello)
 set(INSBIN x-hello)
 
 set(SRCS hello.c)
-nvs_set_sources_properties(C_Default ${SRCS})
+nvx_set_sources_properties(C_Default ${SRCS})
 
 # --- Normal binary without instrumentation (ignoring HelloPasses) --- #
 
@@ -15,12 +15,12 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVS_PASSES_DIR}/Hello/HelloPasses.so -hello"
-    "-load ${NVS_PASSES_DIR}/Hello/HelloPasses.so -hello2"
-    "-load ${NVS_PASSES_DIR}/Hello/HelloPasses.so -bin2mul"
+    "-load ${NVX_PASSES_DIR}/Hello/HelloPasses.so -hello"
+    "-load ${NVX_PASSES_DIR}/Hello/HelloPasses.so -hello2"
+    "-load ${NVX_PASSES_DIR}/Hello/HelloPasses.so -bin2mul"
 )
 
-nvs_add_executable(${INSBIN} ${SRCS})
+nvx_add_executable(${INSBIN} ${SRCS})
 add_dependencies(${INSBIN} HelloPasses)
 
 # --- Normal tests --- #

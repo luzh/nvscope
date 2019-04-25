@@ -20,23 +20,23 @@ if(NOT WIN32)
   set(BoldWhite   "${Esc}[1;37m")
 endif()
 
-function(nvs_print MSGSTR)
-  message(STATUS "${Blue}[NVS-INFO]:${ColorReset} ${MSGSTR}")
+function(nvx_print MSGSTR)
+  message(STATUS "${Blue}[NVX-INFO]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvs_warning MSGSTR)
-  message(STATUS "${Yellow}[NVS-Warning]:${ColorReset} ${MSGSTR}")
+function(nvx_warning MSGSTR)
+  message(STATUS "${Yellow}[NVX-Warning]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvs_debug MSGSTR)
-  message(STATUS "${Magenta}[NVS-Debug]:${ColorReset} ${MSGSTR}")
+function(nvx_debug MSGSTR)
+  message(STATUS "${Magenta}[NVX-Debug]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvs_fatal MSGSTR)
-  message(FATAL_ERROR "${BoldRed}[NVS-Fatal]:${ColorReset} ${MSGSTR}")
+function(nvx_fatal MSGSTR)
+  message(FATAL_ERROR "${BoldRed}[NVX-Fatal]:${ColorReset} ${MSGSTR}")
 endfunction()
 
-function(nvs_set_pass_properties PASS_TARGET)
+function(nvx_set_pass_properties PASS_TARGET)
 # if(NOT ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
 #   # On non-Debug builds cmake automatically defines NDEBUG. Explicitly
 #   # undefine it to enable opt's -stats and -debug output. See more details
@@ -48,22 +48,22 @@ function(nvs_set_pass_properties PASS_TARGET)
 endfunction()
 
 # Properties set by this function apply to both normal and instrumented targets.
-function(nvs_set_sources_properties PROFILE)
+function(nvx_set_sources_properties PROFILE)
 # set(options)
 # set(oneValueArgs PROFILE)
 # set(multiValueArgs FILES)
 # cmake_parse_arguments(
-#   NVS_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+#   NVX_SOURCE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   # Our target application will be C sources.
   set(VALID_PROFILES "C_Default")
   if(NOT PROFILE IN_LIST VALID_PROFILES)
-    nvs_fatal("Invalid source profile: ${PROFILE}")
+    nvx_fatal("Invalid source profile: ${PROFILE}")
   endif()
 
   set(SRCS ${ARGN})
 
-  nvs_print("Using ${PROFILE} properties for ${SRCS}")
+  nvx_print("Using ${PROFILE} properties for ${SRCS}")
 
   set_property(
     SOURCE
@@ -93,17 +93,17 @@ function(nvs_set_sources_properties PROFILE)
 endfunction()
 
 # Emulates CMake's default add_executable() and applies multiple LLVM passes.
-function(nvs_add_executable)
+function(nvx_add_executable)
   list(LENGTH ARGV ARGS_LEN)
   if(ARGS_LEN LESS "2")
-    nvs_fatal("Required arguments: <target> <source1> [source2...]")
+    nvx_fatal("Required arguments: <target> <source1> [source2...]")
   endif()
 
   list(GET ARGV 0 EXE_TARGET)
   math(EXPR SRCS_LEN "${ARGS_LEN} - 1")
   list(SUBLIST ARGV 1 ${SRCS_LEN} SRC_NAMES)
 
-  nvs_print("Sources for target ${EXE_TARGET}: ${SRC_NAMES}")
+  nvx_print("Sources for target ${EXE_TARGET}: ${SRC_NAMES}")
 
   set(C_SRC_EXTS "H;C")
   set(CXX_SRC_EXTS "HPP;CC;CPP")
@@ -118,7 +118,7 @@ function(nvs_add_executable)
     if(SRC_NAME_EXT IN_LIST CXX_SRC_EXTS)
       separate_arguments(DEBUG_OPTS UNIX_COMMAND ${CMAKE_CXX_FLAGS_DEBUG})
       separate_arguments(RELEASE_OPTS UNIX_COMMAND ${CMAKE_CXX_FLAGS_RELEASE})
-      nvs_warning("Need to set proper C++ compile flags!")
+      nvx_warning("Need to set proper C++ compile flags!")
       set(LINKER_LANG "CXX")
     elseif(SRC_NAME_EXT IN_LIST C_SRC_EXTS)
       separate_arguments(DEBUG_OPTS UNIX_COMMAND ${CMAKE_C_FLAGS_DEBUG})
@@ -129,7 +129,7 @@ function(nvs_add_executable)
         set(LINKER_LANG "C")
       endif()
     else()
-      nvs_fatal("Unsupported source type: ${SRC_NAME}")
+      nvx_fatal("Unsupported source type: ${SRC_NAME}")
     endif()
 
     if(SRC_NAME_EXT IN_LIST SRC_HEADER_EXTS)
@@ -175,10 +175,10 @@ function(nvs_add_executable)
     # Add options according to what CMake does (default) for add_executable().
     string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE_CHECK)
     if(BUILD_TYPE_CHECK STREQUAL "DEBUG")
-      nvs_print("Adding compile options for DEBUG build")
+      nvx_print("Adding compile options for DEBUG build")
       list(APPEND COMPILE_OPTS_ARGS ${DEBUG_OPTS} -emit-llvm)
     elseif(BUILD_TYPE_CHECK STREQUAL "RELEASE")
-      nvs_print("Adding compile options for RELEASE build")
+      nvx_print("Adding compile options for RELEASE build")
       # For Release builds we also need -ggdb to obtain debug information.
       list(APPEND COMPILE_OPTS_ARGS ${RELEASE_OPTS} -emit-llvm -ggdb)
     endif()
@@ -235,7 +235,7 @@ function(nvs_add_executable)
 
       # Convert string to list to remove quotes.
       separate_arguments(PASS_ARGS UNIX_COMMAND ${LLVM_OPT_PASS})
-      nvs_print("Will apply LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}")
+      nvx_print("Will apply LLVM pass '${LLVM_OPT_PASS}': ${LLVM_BC_NAME} -> ${LLVM_OPT_BC_NAME}")
 
       # Extract dependent pass modules from the arguments.
       set(LLVM_OPT_DEPS "")
@@ -304,7 +304,7 @@ function(nvs_add_executable)
 
   add_executable(${EXE_TARGET} ${LLVM_BC_FILES})
 
-  nvs_print("Linker language for executable '${EXE_TARGET}': ${LINKER_LANG}")
+  nvx_print("Linker language for executable '${EXE_TARGET}': ${LINKER_LANG}")
   set_target_properties(
     ${EXE_TARGET}
     PROPERTIES

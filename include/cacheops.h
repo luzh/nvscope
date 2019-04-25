@@ -1,16 +1,16 @@
-#ifndef _NVS_CACHEOPS_H_
-#define _NVS_CACHEOPS_H_
+#ifndef _NVX_CACHEOPS_H_
+#define _NVX_CACHEOPS_H_
 
 #include <immintrin.h>
 
 /**
- * These are fake functions for NVScope to identify corresponding cache
- * operations. The reason for doing this is that not every development machine
- * has CLFLUSHOPT and CLWB instructions, so directly calling _mm_clflushopt() or
+ * These are fake functions for NVX to identify corresponding cache operations.
+ * The reason for doing this is that not every development machine has
+ * CLFLUSHOPT and CLWB instructions, so directly calling _mm_clflushopt() or
  * _mm_clwb() may often fail to compile.
  *
- * NVScope can still identify real _mm_clflushopt() or _mm_clwb() calls if they
- * are supported on a target machine.
+ * NVX can still identify real _mm_clflushopt() or _mm_clwb() calls if they are
+ * supported on a target machine.
  *
  * Do not use the faked operations for performance evaluation.
  *

@@ -1,5 +1,5 @@
-#ifndef _NVS_UTILS_H
-#define _NVS_UTILS_H
+#ifndef _NVX_UTILS_H
+#define _NVX_UTILS_H
 
 #define NSECPSEC 1000000000
 

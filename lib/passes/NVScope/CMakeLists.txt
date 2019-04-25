@@ -1,5 +1,5 @@
-add_llvm_loadable_module(NVScopePasses NVScope.cpp)
+add_llvm_loadable_module(NVXPasses NVScope.cpp)
 
-nvs_set_pass_properties(NVScopePasses)
+nvx_set_pass_properties(NVXPasses)
 
-install(TARGETS NVScopePasses DESTINATION lib)
+install(TARGETS NVXPasses DESTINATION lib)

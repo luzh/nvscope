@@ -2,7 +2,7 @@ set(NORMAL aflhello)
 set(AFLBIN x-aflhello)
 
 set(SRCS aflhello.c)
-nvs_set_sources_properties(C_Default ${SRCS})
+nvx_set_sources_properties(C_Default ${SRCS})
 
 # --- Normal binary without instrumentation (ignoring AFLPasses) --- #
 
@@ -15,10 +15,10 @@ set_property(
   SOURCE
     ${SRCS}
   PROPERTY LLVM_OPT_PASSES
-    "-load ${NVS_PASSES_DIR}/AFL/AFLPasses.so -aflcov"
+    "-load ${NVX_PASSES_DIR}/AFL/AFLPasses.so -aflcov"
 )
 
-nvs_add_executable(${AFLBIN} ${SRCS})
+nvx_add_executable(${AFLBIN} ${SRCS})
 add_dependencies(${AFLBIN} AFLPasses)
 target_link_libraries(${AFLBIN} aflrt)
 
