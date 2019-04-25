@@ -11,7 +11,7 @@ target_compile_options(clang_rt.nvx
 target_compile_definitions(clang_rt.nvx
   PUBLIC
     _GNU_SOURCE _FORTIFY_SOURCE=2
-    $<$<BOOL:${NVS_DEBUG}>:NVS_DEBUG>
+    $<$<BOOL:${NVX_DEBUG}>:NVX_DEBUG>
     $<$<BOOL:${COLORPRINT}>:COLORPRINT>
 )
 target_include_directories(clang_rt.nvx PUBLIC ${CMAKE_HOME_DIRECTORY}/include)

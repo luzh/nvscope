@@ -64,9 +64,9 @@ set(NVS_TOOLS_DIR ${CMAKE_BINARY_DIR}/tools/nvscope)
 
 # Options
 option(COLORPRINT "Print messages with color" ON)
-option(NVS_DEBUG "Print NVScope debug messages" OFF)
-if (NVS_DEBUG)
-  nvs_warning("NVS_DEBUG set, may impact performance")
+option(NVX_DEBUG "Print NVScope debug messages" OFF)
+if (NVX_DEBUG)
+  nvs_warning("NVX_DEBUG set, may impact performance")
 endif()
 
 # Add directories.
