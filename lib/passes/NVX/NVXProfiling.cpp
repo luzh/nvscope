@@ -46,10 +46,10 @@ STATISTIC(NVXCLFlushOps, "CLFLUSH operations");
 STATISTIC(NVXSFenceOps, "SFENCE operations");
 
 namespace {
-// NVXFunctionPass
-struct NVXFunctionPass : public FunctionPass {
+// NVXProfiling
+struct NVXProfiling : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
-  NVXFunctionPass() : FunctionPass(ID) {}
+  NVXProfiling() : FunctionPass(ID) {}
   bool runOnFunction(Function &F) override;
 
 private:
@@ -58,7 +58,7 @@ private:
                              int line);
 
   bool instrumentMmap(Function &F);
-  bool instrumentCLfwb(Function &F, CallInst *CI, const StringRef &ProbeName);
+  bool instrumentCLfwb(Function &F, CallInst *CI, const StringRef &FuncName);
   bool instrumentCall(Function &F, CallInst *CI);
   bool instrumentStore(Function &F, StoreInst *StI);
   bool instrumentMemIntrinsic(Function &F, MemIntrinsic *MI);
@@ -80,16 +80,16 @@ private:
 
 /**
  */
-const std::unordered_set<std::string> NVXFunctionPass::_clfwbs = {
+const std::unordered_set<std::string> NVXProfiling::_clfwbs = {
     "clwb",    "llvm.x86.sse2.clwb",   "clflushopt", "llvm.x86.sse2.clflushopt",
     "clflush", "llvm.x86.sse2.clflush"};
-const std::unordered_set<std::string> NVXFunctionPass::_excluded = {
+const std::unordered_set<std::string> NVXProfiling::_excluded = {
     "clflush", "clflushopt", "clwb", "sfence"};
 
 /**
  * Collect values that are allocated on the function stack.
  */
-void NVXFunctionPass::collectStackVariables(Function &F) {
+void NVXProfiling::collectStackVariables(Function &F) {
   _stackvars.clear();
   for (auto &B : F) {
     for (auto &I : B) {
@@ -103,16 +103,15 @@ void NVXFunctionPass::collectStackVariables(Function &F) {
 /**
  * Print source code information about instrumented locations.
  */
-void NVXFunctionPass::printInstrumentedCall(const StringRef &func,
-                                            const StringRef &file,
-                                            const int line) {
+void NVXProfiling::printInstrumentedCall(const StringRef &func,
+                                         const StringRef &file,
+                                         const int line) {
   errs() << "NVX-Pass:   ";
   errs().write_escaped(file) << ":" << line << " CALLED " << func << "\n";
 }
 
-Value *
-NVXFunctionPass::findName(IRBuilder<> &irb, const StringRef &name,
-                          std::unordered_map<std::string, Value *> &map) {
+Value *NVXProfiling::findName(IRBuilder<> &irb, const StringRef &name,
+                              std::unordered_map<std::string, Value *> &map) {
   auto pair = map.find(name.str());
   if (pair == map.end()) {
     auto value = irb.CreateGlobalStringPtr(name);
@@ -122,8 +121,8 @@ NVXFunctionPass::findName(IRBuilder<> &irb, const StringRef &name,
   return pair->second;
 }
 
-void NVXFunctionPass::getDebugInfo(Instruction *I, StringRef &func,
-                                   StringRef &file, int &line) {
+void NVXProfiling::getDebugInfo(Instruction *I, StringRef &func,
+                                StringRef &file, int &line) {
   if (DILocation *Loc = I->getDebugLoc()) {
     line = Loc->getLine();
     file = Loc->getFilename();
@@ -137,7 +136,7 @@ void NVXFunctionPass::getDebugInfo(Instruction *I, StringRef &func,
  * Instruments store instructions. Inserts a call to a run-time function that
  * records information about the store, before the store is executed.
  */
-bool NVXFunctionPass::instrumentStore(Function &F, StoreInst *StI) {
+bool NVXProfiling::instrumentStore(Function &F, StoreInst *StI) {
   Value *Ptr = StI->getPointerOperand();
   // ignore stores to the function stack.
   auto it = _stackvars.find(Ptr);
@@ -157,8 +156,8 @@ bool NVXFunctionPass::instrumentStore(Function &F, StoreInst *StI) {
   std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt64Ty(),
                                 IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                 IRB.getInt32Ty()};
-  FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-  IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", ProbeTy),
+  FunctionType *FuncType = FunctionType::get(IRB.getVoidTy(), Params, false);
+  IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", FuncType),
                  {Ptr->getType() == IRB.getInt8PtrTy()
                       ? Ptr
                       : IRB.CreatePointerCast(Ptr, IRB.getInt8PtrTy()),
@@ -176,7 +175,7 @@ bool NVXFunctionPass::instrumentStore(Function &F, StoreInst *StI) {
 /**
  * Instrumentation to the memory intrinsic functions: memset/memcpy/memmove.
  */
-bool NVXFunctionPass::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
+bool NVXProfiling::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
   IRBuilder<> IRB(MI);
   if (isa<MemTransferInst>(MI) || isa<MemSetInst>(MI)) {
     ++NVXStoreInsts;
@@ -188,8 +187,8 @@ bool NVXFunctionPass::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
     std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt64Ty(),
                                   IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                   IRB.getInt32Ty()};
-    FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-    IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", ProbeTy),
+    FunctionType *FuncType = FunctionType::get(IRB.getVoidTy(), Params, false);
+    IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", FuncType),
                    {MI->getOperand(0), MI->getOperand(2),
                     findName(IRB, func, _funcs), findName(IRB, file, _files),
                     ConstantInt::get(IRB.getInt32Ty(), line, false)});
@@ -198,8 +197,8 @@ bool NVXFunctionPass::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
   return false;
 }
 
-bool NVXFunctionPass::instrumentCLfwb(Function &F, CallInst *CI,
-                                      const StringRef &ProbeName) {
+bool NVXProfiling::instrumentCLfwb(Function &F, CallInst *CI,
+                                   const StringRef &FuncName) {
   int line = -1;
   StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
@@ -208,8 +207,8 @@ bool NVXFunctionPass::instrumentCLfwb(Function &F, CallInst *CI,
   IRBuilder<> IRB(CI);
   std::vector<Type *> Params = {IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                 IRB.getInt8PtrTy(), IRB.getInt32Ty()};
-  FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-  IRB.CreateCall(F.getParent()->getOrInsertFunction(ProbeName, ProbeTy),
+  FunctionType *FuncType = FunctionType::get(IRB.getVoidTy(), Params, false);
+  IRB.CreateCall(F.getParent()->getOrInsertFunction(FuncName, FuncType),
                  {CI->getOperand(0), findName(IRB, func, _funcs),
                   findName(IRB, file, _files),
                   ConstantInt::get(IRB.getInt32Ty(), line, false)});
@@ -223,7 +222,7 @@ bool NVXFunctionPass::instrumentCLfwb(Function &F, CallInst *CI,
  * Replaces calls to standard mmap functions with a warpper function, where
  * mapping flags could be manipulated and the mapped region is recorded.
  */
-bool NVXFunctionPass::instrumentMmap(Function &F) {
+bool NVXProfiling::instrumentMmap(Function &F) {
   int line = -1;
   StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
@@ -242,8 +241,8 @@ bool NVXFunctionPass::instrumentMmap(Function &F) {
     Args.push_back(findName(IRB, func, _funcs));
     Args.push_back(findName(IRB, file, _files));
     Args.push_back(ConstantInt::get(IRB.getInt32Ty(), line, false));
-    auto ProbeTy = FunctionType::get(FT->getReturnType(), Params, false);
-    auto Callee = F.getParent()->getOrInsertFunction("__nvx_mmap", ProbeTy);
+    auto FuncType = FunctionType::get(FT->getReturnType(), Params, false);
+    auto Callee = F.getParent()->getOrInsertFunction("__nvx_mmap", FuncType);
     ReplaceInstWithInst(CI, CallInst::Create(Callee, Args));
 
     Modified = true;
@@ -258,7 +257,7 @@ bool NVXFunctionPass::instrumentMmap(Function &F) {
  * Instrument interesting function calls:
  *   mmap(), clflush(), clflushopt(), clwb(), sfence(), and similar ones.
  */
-bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
+bool NVXProfiling::instrumentCall(Function &F, CallInst *CI) {
   LLVMContext &Ctx = F.getContext();
   Type *Int64Ty = Type::getInt64Ty(Ctx);
   Type *Int32Ty = Type::getInt32Ty(Ctx);
@@ -295,11 +294,13 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
                                     Int32Ty};
       IRBuilder<> IRB(CI);
       getDebugInfo(CI, func, file, line);
-      FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-      IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", ProbeTy),
-                     {CI->getOperand(0), CI->getOperand(2),
-                      findName(IRB, func, _funcs), findName(IRB, file, _files),
-                      ConstantInt::get(Int32Ty, line, false)});
+      FunctionType *FuncType =
+          FunctionType::get(IRB.getVoidTy(), Params, false);
+      IRB.CreateCall(
+          F.getParent()->getOrInsertFunction("__nvx_store", FuncType),
+          {CI->getOperand(0), CI->getOperand(2), findName(IRB, func, _funcs),
+           findName(IRB, file, _files),
+           ConstantInt::get(Int32Ty, line, false)});
 
       Modified = true;
       printInstrumentedCall(callee, file, line);
@@ -321,10 +322,11 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
       std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int32Ty};
       IRBuilder<> IRB(CI);
       getDebugInfo(CI, func, file, line);
-      FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
+      FunctionType *FuncType =
+          FunctionType::get(IRB.getVoidTy(), Params, false);
 
       IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvx_sfence", ProbeTy),
+          F.getParent()->getOrInsertFunction("__nvx_sfence", FuncType),
           {findName(IRB, func, _funcs), findName(IRB, file, _files),
            ConstantInt::get(Int32Ty, line, false)});
 
@@ -347,7 +349,7 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
  * Iterates over each function's instructions and adds instrumentation to the
  * instructions of interest.
  */
-bool NVXFunctionPass::runOnFunction(Function &F) {
+bool NVXProfiling::runOnFunction(Function &F) {
   ++NVXFunctions;
 
   if (auto fname = _excluded.find(F.getName()) != _excluded.end()) {
@@ -380,6 +382,6 @@ bool NVXFunctionPass::runOnFunction(Function &F) {
 
 } // namespace
 
-char NVXFunctionPass::ID = 0;
-static RegisterPass<NVXFunctionPass>
-    NVXFunctionPassPass("probes", "NVX Probes Insertion Pass");
+char NVXProfiling::ID = 0;
+static RegisterPass<NVXProfiling> NVXProfilingPass("instrument",
+                                                   "NVX Instrumentation Pass");
