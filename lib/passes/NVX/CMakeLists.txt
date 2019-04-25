@@ -1,4 +1,4 @@
-add_llvm_loadable_module(NVXPasses NVScope.cpp)
+add_llvm_loadable_module(NVXPasses NVX.cpp)
 
 nvx_set_pass_properties(NVXPasses)
 
