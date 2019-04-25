@@ -55,7 +55,7 @@ nvx_print("Project build type: ${CMAKE_BUILD_TYPE}")
 # set(CMAKE_VERBOSE_MAKEFILE ON)
 
 # Set install prefix.
-set(CMAKE_INSTALL_PREFIX /tmp/nvx
+set(CMAKE_INSTALL_PREFIX /tmp/nvx)
 nvx_print("CMAKE_INSTALL_PREFIX: ${CMAKE_INSTALL_PREFIX}")
 
 # This is for test and tools to find the latest build of NVX passes.
