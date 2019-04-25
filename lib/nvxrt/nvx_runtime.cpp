@@ -357,7 +357,6 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
 
 void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
                                      int line) {
-  /* TODO: Also check _dirty_stores. */
   if (_nvstores.empty() && _dirty_stores.empty())
     return;
 
@@ -365,7 +364,7 @@ void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
        epoch, func, file, line);
 
   ERRF("Probably an sfence is missing because there are pending stores that "
-       "cannot be guaranteed persistent.");
+       "cannot be guaranteed persistent.\n");
 
   /* Do not print dirty stores here. Let the caller call check_dirty_stores. */
 }

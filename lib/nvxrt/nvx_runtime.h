@@ -21,7 +21,7 @@ using byte_t = uint8_t; /* TODO: Consider std::byte? */
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
 static const int NVX_INIT_PRIO{0}; // __nvx_init priority (runs before main)
-static const int NVX_FINI_PRIO{0}; // __nvx_init priority (runs after main)
+static const int NVX_FINI_PRIO{0}; // __nvx_fini priority (runs after main)
 /**
  * If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
  * resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
@@ -194,18 +194,33 @@ public:
   NVXRuntime(void *_shm, struct nvx_target_config *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf) {
     if (_shm_base) {
-      OKF("NVX-RT: nvx runtime constructed");
+      OKF("NVX-RT: NVX runtime constructed");
     } else {
       ERRF("NVX-RT: invalid shared memory address");
       _exit(NVX_EXIT_BAD_SHM);
     }
   }
 
-  /**
-   * If NVXRuntime is constructed in the forkserver process, its destructor will
-   * only run when the forkserver exits.
-   */
-  ~NVXRuntime() = default;
+  ~NVXRuntime() {
+    if (is_enabled()) {
+      uint64_t epoch = 0; // ++epochid;
+      int linenr = 0;
+      char *file = const_cast<char *>("Program");
+      char *func = const_cast<char *>("Program exit");
+      /*
+       * TODO: It may not be safe to perform reordering tests at this point
+       * because the mapped memory could be already unmapped. We may instrument
+       * munmap() calls, or make reordering tests independent of the previous
+       * mmaped region.
+       *
+       * check_reorder(epoch, func, file, linenr);
+       */
+      check_missing_fence(epoch, func, file, linenr);
+      check_dirty_stores(epoch, func, file, linenr);
+    }
+
+    OKF("NVX-RT: NVX runtime destructed");
+  }
 
 private:
   void *_shm_base;

@@ -5,11 +5,13 @@ static std::atomic_uint64_t epochid{0};
 /* event timestamp, shared between threads */
 static std::atomic_uint64_t timestamp{0};
 /**
- * NVXRuntime handle. If forserver is enabled, the forkserver process will
- * construct nvxrt, and destruct it when the forkserver process exits. Child
- * process will inherit nvxrt via forking, but nvxrt does not destruct when a
- * child process exits. Changes to nvxrt made by a child process all disappear
- * when the child process exits due to copy-on-write of fork().
+ * NVXRuntime handle. When the forserver is enabled, the forkserver process will
+ * construct nvxrt, and a child process inherits nvxrt via forking. If nvxrt is
+ * constructed by new, it does not automatically destruct when the child process
+ * exits (unless using delete). If nvxrt is constructed using make_unique, it
+ * automatically destructs before the child calls __nvs_fini(). No matter how
+ * nvxrt is created, changes to nvxrt made by a child process all disappear when
+ * the child process exits due to the copy-on-write nature of fork().
  */
 static std::unique_ptr<NVXRuntime> nvxrt;
 
@@ -24,14 +26,14 @@ static void __nvx_setup_shm() {
 
     void *shm_base = shmat(shmid, nullptr, 0);
     if (shm_base == reinterpret_cast<void *>(-1))
-      _exit(NVX_EXIT_BAD_SHM);
+      exit(NVX_EXIT_BAD_SHM);
 
     auto *config = (struct nvx_config *)(shm_base);
 
     /* should be initialized by parent (nvscope) */
     if (!config->initialized) {
       ERRF("NVX-RT: config region not initialized");
-      _exit(NVX_EXIT_BAD_SHM);
+      exit(NVX_EXIT_BAD_SHM);
     }
 
     struct nvx_target_config *tgconf = nullptr;
@@ -43,16 +45,16 @@ static void __nvx_setup_shm() {
       OKF("NVX-RT: target recovery attached to shared memory");
     } else {
       ERRF("NVX-RT: invalid target type");
-      _exit(NVX_EXIT_BAD_CONFIG);
+      exit(NVX_EXIT_BAD_CONFIG);
     }
 
     nvxrt = std::make_unique<NVXRuntime>(shm_base, tgconf);
     if (!nvxrt) {
-      ERRF("NVX-RT: creating nvx runtime failed");
-      _exit(NVX_EXIT_BAD_CONFIG);
+      ERRF("NVX-RT: creating NVX runtime failed");
+      exit(NVX_EXIT_BAD_CONFIG);
     }
   } else {
-    WARNF("NVX-RT: running instrumented binary but nvx runtime disabled");
+    WARNF("NVX-RT: running instrumented binary but NVX runtime disabled");
   }
 }
 
@@ -71,12 +73,13 @@ static void __start_forkserver() {
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVX-RT: forkserver received command to exit");
       nvxrt->close_channels();
-      _exit(EXIT_SUCCESS);
+      /* If nvxrt was created by new: delete nvxrt; */
+      exit(EXIT_SUCCESS);
     }
 
     if (command != MSG_FORK_AND_RUN) {
       ERRF("NVX-RT: received inappropriate message %d", command);
-      _exit(NVX_EXIT_BAD_MSG);
+      exit(NVX_EXIT_BAD_MSG);
     }
 
     pid_t cpid = fork();
@@ -84,7 +87,7 @@ static void __start_forkserver() {
     /* Check afl-llvm-rt.o.c for persistent mode and using SIGCONT. */
     if (cpid < 0) {
       ERRF("NVX-RT: fork() to run the target program failed");
-      _exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     }
 
     if (cpid == 0) {
@@ -122,7 +125,7 @@ static void __start_forkserver() {
     pid_t cpidw = waitpid(cpid, &status, 0);
     if (cpidw < 0) {
       ERRF("NVX-RT: waitpid() for %u failed", cpid);
-      _exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     } else if (cpidw == cpid) { // child process reaped
       DBGF("NVX-RT: target process %u finished", cpid);
     } else {
@@ -145,7 +148,7 @@ __attribute__((constructor(NVX_INIT_PRIO))) void __nvx_init() {
      * if NVX-RT is already enabled.
      */
     ERRF("NVX-RT: instrumented program already started");
-    _exit(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
 
   __nvx_setup_shm();
@@ -267,27 +270,11 @@ extern "C" void __nvx_sfence(char *func, char *file, int line) {
 }
 
 /**
- * The destructor will be called with a child process exits and also when a
- * forkserver exits.
+ * The destructor will run when a child process finishes or a forkserver process
+ * finishes if they call exit(..) or normally terminate. If they finish via
+ * calling _exit(..), this destructor will not run.
  */
 __attribute__((destructor(NVX_FINI_PRIO))) void __nvx_fini() {
   DBGF("NVX-RT: process %d exit", getpid());
-
-  if (!nvxrt || !nvxrt->is_enabled())
-    return;
-
-  uint64_t epoch = ++epochid;
-  int linenr = 0;
-  char *file = const_cast<char *>("Program");
-  char *func = const_cast<char *>("Program exit");
-  /*
-   * TODO: It may not be safe to perform reordering tests at this point because
-   * the mapped memory could be already unmapped. We should instrument program
-   * munmap() calls, or make reordering tests independent of the previous mmaped
-   * region.
-   *
-   * check_reorder(epoch, func, file, linenr);
-   */
-  nvxrt->check_missing_fence(epoch, func, file, linenr);
-  nvxrt->check_dirty_stores(epoch, func, file, linenr);
+  /* If nvxrt was created by new: delete nvxrt; */
 }
