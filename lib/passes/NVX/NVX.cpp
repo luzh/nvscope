@@ -106,7 +106,7 @@ void NVXFunctionPass::collectStackVariables(Function &F) {
 void NVXFunctionPass::printInstrumentedCall(const StringRef &func,
                                             const StringRef &file,
                                             const int line) {
-  errs() << "NVS-Pass:   ";
+  errs() << "NVX-Pass:   ";
   errs().write_escaped(file) << ":" << line << " CALLED " << func << "\n";
 }
 
@@ -158,7 +158,7 @@ bool NVXFunctionPass::instrumentStore(Function &F, StoreInst *StI) {
                                 IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                 IRB.getInt32Ty()};
   FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-  IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
+  IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", ProbeTy),
                  {Ptr->getType() == IRB.getInt8PtrTy()
                       ? Ptr
                       : IRB.CreatePointerCast(Ptr, IRB.getInt8PtrTy()),
@@ -167,7 +167,7 @@ bool NVXFunctionPass::instrumentStore(Function &F, StoreInst *StI) {
                   ConstantInt::get(IRB.getInt32Ty(), line, false)});
   ++NVXStoreInsts;
 
-  errs() << "NVS-Pass:   ";
+  errs() << "NVX-Pass:   ";
   errs().write_escaped(file) << ":" << line << " STORE " << size << " bytes\n";
 
   return true;
@@ -189,7 +189,7 @@ bool NVXFunctionPass::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
                                   IRB.getInt8PtrTy(), IRB.getInt8PtrTy(),
                                   IRB.getInt32Ty()};
     FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-    IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
+    IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", ProbeTy),
                    {MI->getOperand(0), MI->getOperand(2),
                     findName(IRB, func, _funcs), findName(IRB, file, _files),
                     ConstantInt::get(IRB.getInt32Ty(), line, false)});
@@ -243,7 +243,7 @@ bool NVXFunctionPass::instrumentMmap(Function &F) {
     Args.push_back(findName(IRB, file, _files));
     Args.push_back(ConstantInt::get(IRB.getInt32Ty(), line, false));
     auto ProbeTy = FunctionType::get(FT->getReturnType(), Params, false);
-    auto Callee = F.getParent()->getOrInsertFunction("__nvs_mmap", ProbeTy);
+    auto Callee = F.getParent()->getOrInsertFunction("__nvx_mmap", ProbeTy);
     ReplaceInstWithInst(CI, CallInst::Create(Callee, Args));
 
     Modified = true;
@@ -296,7 +296,7 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
       IRBuilder<> IRB(CI);
       getDebugInfo(CI, func, file, line);
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
-      IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvs_store", ProbeTy),
+      IRB.CreateCall(F.getParent()->getOrInsertFunction("__nvx_store", ProbeTy),
                      {CI->getOperand(0), CI->getOperand(2),
                       findName(IRB, func, _funcs), findName(IRB, file, _files),
                       ConstantInt::get(Int32Ty, line, false)});
@@ -306,15 +306,15 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
 
     } else if (callee == "clwb" || callee == "llvm.x86.sse2.clwb") {
       ++NVXCLWBOps;
-      Modified = instrumentCLfwb(F, CI, "__nvs_clwb");
+      Modified = instrumentCLfwb(F, CI, "__nvx_clwb");
 
     } else if (callee == "clflushopt" || callee == "llvm.x86.sse2.clflushopt") {
       ++NVXCLFOptOps;
-      Modified = instrumentCLfwb(F, CI, "__nvs_clflushopt");
+      Modified = instrumentCLfwb(F, CI, "__nvx_clflushopt");
 
     } else if (callee == "clflush" || callee == "llvm.x86.sse2.clflush") {
       ++NVXCLFlushOps;
-      Modified = instrumentCLfwb(F, CI, "__nvs_clflush");
+      Modified = instrumentCLfwb(F, CI, "__nvx_clflush");
 
     } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
       ++NVXSFenceOps;
@@ -324,7 +324,7 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
       FunctionType *ProbeTy = FunctionType::get(IRB.getVoidTy(), Params, false);
 
       IRB.CreateCall(
-          F.getParent()->getOrInsertFunction("__nvs_sfence", ProbeTy),
+          F.getParent()->getOrInsertFunction("__nvx_sfence", ProbeTy),
           {findName(IRB, func, _funcs), findName(IRB, file, _files),
            ConstantInt::get(Int32Ty, line, false)});
 
@@ -334,7 +334,7 @@ bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
   } else {
     // Calls through function pointers can be this type.
     // stackoverflow.com/questions/11686951/how-can-i-get-function-name-from-callinst-in-llvm
-    errs() << "NVS-Pass: WARNING - Indirect call detected but not handled!\n";
+    errs() << "NVX-Pass: WARNING - Indirect call detected but not handled!\n";
   }
 
   if (Modified) {
@@ -351,12 +351,12 @@ bool NVXFunctionPass::runOnFunction(Function &F) {
   ++NVXFunctions;
 
   if (auto fname = _excluded.find(F.getName()) != _excluded.end()) {
-    errs() << "NVS-Pass: Skipping function ";
+    errs() << "NVX-Pass: Skipping function ";
     errs().write_escaped(F.getName()) << "()\n";
     return false;
   }
 
-  errs() << "NVS-Pass: Analyzing function ";
+  errs() << "NVX-Pass: Analyzing function ";
   errs().write_escaped(F.getName()) << "()\n";
 
   collectStackVariables(F);
