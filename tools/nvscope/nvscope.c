@@ -256,7 +256,7 @@ static void setup_shm(void) {
  *
  * In essence, the instrumentation allows us to skip execve(), and just keep
  * cloning a stopped child. So, we just execute once, and then send commands
- * through a pipe. The other part of this logic is in lib/nvsrt/nvsrt.c.
+ * through a pipe. The other part of this logic is in lib/nvxrt/nvxrt.c.
  */
 static pid_t start_forkserver(char *target, char **target_argv,
                               struct nvs_target_config *target_conf,
