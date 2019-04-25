@@ -1,4 +1,4 @@
-#include "nvsrt.h"
+#include "nvx_runtime.h"
 
 void StoreInfo::print_data(size_t limit) {
   if (!_extbuf)

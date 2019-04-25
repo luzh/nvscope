@@ -1,17 +1,17 @@
-set(SRCS nvsrt.cpp probes.cpp)
+set(SRCS nvx_runtime.cc nvx_interface.cc)
 
 # Link statically for performance (inline) and initializations before main().
-add_library(nvsrt STATIC ${SRCS})
+add_library(clang_rt.nvx STATIC ${SRCS})
 
 # may use -stdlib=libstdc++
-target_compile_options(nvsrt
+target_compile_options(clang_rt.nvx
   PUBLIC -Wall -Wextra -Ofast -funroll-loops -Wno-pointer-sign -masm=intel
 )
 
-target_compile_definitions(nvsrt
+target_compile_definitions(clang_rt.nvx
   PUBLIC
     _GNU_SOURCE _FORTIFY_SOURCE=2
     $<$<BOOL:${NVS_DEBUG}>:NVS_DEBUG>
     $<$<BOOL:${COLORPRINT}>:COLORPRINT>
 )
-target_include_directories(nvsrt PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
+target_include_directories(clang_rt.nvx PUBLIC ${CMAKE_HOME_DIRECTORY}/include)

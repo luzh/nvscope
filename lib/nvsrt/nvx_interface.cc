@@ -1,4 +1,4 @@
-#include "nvsrt.h"
+#include "nvx_runtime.h"
 
 /* epoch id, shared between threads */
 static std::atomic_uint64_t epochid{0};
