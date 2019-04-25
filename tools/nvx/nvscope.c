@@ -4,7 +4,7 @@
 
 #include "afl/alloc-inl.h"
 #include "headers.h"
-#include "nvscope/config.h"
+#include "nvx/config.h"
 #include "utils.h"
 
 #define HAVE_AFFINITY 1
