@@ -1,5 +1,5 @@
-//===- NVScope.cpp --------------------------------------------------------===//
-// NVScope instrumentation pass
+//===- NVX.cpp --------------------------------------------------------===//
+// NVX instrumentation pass
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/Statistic.h"
@@ -34,22 +34,22 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "[NVScope Pass]"
+#define DEBUG_TYPE "[NVX Pass]"
 
-STATISTIC(NVScopeFunctions, "Scanned functions");
-STATISTIC(NVScopeMMapOps, "mmap() calls");
-STATISTIC(NVScopeCallInsts, "CallInst instructions");
-STATISTIC(NVScopeStoreInsts, "StoreInst instructions");
-STATISTIC(NVScopeCLWBOps, "CLWB operations");
-STATISTIC(NVScopeCLFOptOps, "CLFLUSHOPT operations");
-STATISTIC(NVScopeCLFlushOps, "CLFLUSH operations");
-STATISTIC(NVScopeSFenceOps, "SFENCE operations");
+STATISTIC(NVXFunctions, "Scanned functions");
+STATISTIC(NVXMMapOps, "mmap() calls");
+STATISTIC(NVXCallInsts, "CallInst instructions");
+STATISTIC(NVXStoreInsts, "StoreInst instructions");
+STATISTIC(NVXCLWBOps, "CLWB operations");
+STATISTIC(NVXCLFOptOps, "CLFLUSHOPT operations");
+STATISTIC(NVXCLFlushOps, "CLFLUSH operations");
+STATISTIC(NVXSFenceOps, "SFENCE operations");
 
 namespace {
-// NVScopeProbes
-struct NVScopeProbes : public FunctionPass {
+// NVXFunctionPass
+struct NVXFunctionPass : public FunctionPass {
   static char ID; // Pass identification, replacement for typeid
-  NVScopeProbes() : FunctionPass(ID) {}
+  NVXFunctionPass() : FunctionPass(ID) {}
   bool runOnFunction(Function &F) override;
 
 private:
@@ -58,7 +58,7 @@ private:
                              int line);
 
   bool instrumentMmap(Function &F);
-  bool instrumentCLOp(Function &F, CallInst *CI, const StringRef &ProbeName);
+  bool instrumentCLfwb(Function &F, CallInst *CI, const StringRef &ProbeName);
   bool instrumentCall(Function &F, CallInst *CI);
   bool instrumentStore(Function &F, StoreInst *StI);
   bool instrumentMemIntrinsic(Function &F, MemIntrinsic *MI);
@@ -74,22 +74,22 @@ private:
   std::unordered_map<std::string, Value *> _files;
   std::unordered_map<std::string, Value *> _funcs;
 
-  static const std::unordered_set<std::string> _clops;
+  static const std::unordered_set<std::string> _clfwbs;
   static const std::unordered_set<std::string> _excluded;
 };
 
 /**
  */
-const std::unordered_set<std::string> NVScopeProbes::_clops = {
+const std::unordered_set<std::string> NVXFunctionPass::_clfwbs = {
     "clwb",    "llvm.x86.sse2.clwb",   "clflushopt", "llvm.x86.sse2.clflushopt",
     "clflush", "llvm.x86.sse2.clflush"};
-const std::unordered_set<std::string> NVScopeProbes::_excluded = {
+const std::unordered_set<std::string> NVXFunctionPass::_excluded = {
     "clflush", "clflushopt", "clwb", "sfence"};
 
 /**
  * Collect values that are allocated on the function stack.
  */
-void NVScopeProbes::collectStackVariables(Function &F) {
+void NVXFunctionPass::collectStackVariables(Function &F) {
   _stackvars.clear();
   for (auto &B : F) {
     for (auto &I : B) {
@@ -103,15 +103,16 @@ void NVScopeProbes::collectStackVariables(Function &F) {
 /**
  * Print source code information about instrumented locations.
  */
-void NVScopeProbes::printInstrumentedCall(const StringRef &func,
-                                          const StringRef &file,
-                                          const int line) {
+void NVXFunctionPass::printInstrumentedCall(const StringRef &func,
+                                            const StringRef &file,
+                                            const int line) {
   errs() << "NVS-Pass:   ";
   errs().write_escaped(file) << ":" << line << " CALLED " << func << "\n";
 }
 
-Value *NVScopeProbes::findName(IRBuilder<> &irb, const StringRef &name,
-                               std::unordered_map<std::string, Value *> &map) {
+Value *
+NVXFunctionPass::findName(IRBuilder<> &irb, const StringRef &name,
+                          std::unordered_map<std::string, Value *> &map) {
   auto pair = map.find(name.str());
   if (pair == map.end()) {
     auto value = irb.CreateGlobalStringPtr(name);
@@ -121,8 +122,8 @@ Value *NVScopeProbes::findName(IRBuilder<> &irb, const StringRef &name,
   return pair->second;
 }
 
-void NVScopeProbes::getDebugInfo(Instruction *I, StringRef &func,
-                                 StringRef &file, int &line) {
+void NVXFunctionPass::getDebugInfo(Instruction *I, StringRef &func,
+                                   StringRef &file, int &line) {
   if (DILocation *Loc = I->getDebugLoc()) {
     line = Loc->getLine();
     file = Loc->getFilename();
@@ -136,7 +137,7 @@ void NVScopeProbes::getDebugInfo(Instruction *I, StringRef &func,
  * Instruments store instructions. Inserts a call to a run-time function that
  * records information about the store, before the store is executed.
  */
-bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
+bool NVXFunctionPass::instrumentStore(Function &F, StoreInst *StI) {
   Value *Ptr = StI->getPointerOperand();
   // ignore stores to the function stack.
   auto it = _stackvars.find(Ptr);
@@ -164,7 +165,7 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
                   ConstantInt::get(IRB.getInt64Ty(), size, false),
                   findName(IRB, func, _funcs), findName(IRB, file, _files),
                   ConstantInt::get(IRB.getInt32Ty(), line, false)});
-  ++NVScopeStoreInsts;
+  ++NVXStoreInsts;
 
   errs() << "NVS-Pass:   ";
   errs().write_escaped(file) << ":" << line << " STORE " << size << " bytes\n";
@@ -175,10 +176,10 @@ bool NVScopeProbes::instrumentStore(Function &F, StoreInst *StI) {
 /**
  * Instrumentation to the memory intrinsic functions: memset/memcpy/memmove.
  */
-bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
+bool NVXFunctionPass::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
   IRBuilder<> IRB(MI);
   if (isa<MemTransferInst>(MI) || isa<MemSetInst>(MI)) {
-    ++NVScopeStoreInsts;
+    ++NVXStoreInsts;
 
     int line = -1;
     StringRef func = F.getName();
@@ -197,8 +198,8 @@ bool NVScopeProbes::instrumentMemIntrinsic(Function &F, MemIntrinsic *MI) {
   return false;
 }
 
-bool NVScopeProbes::instrumentCLOp(Function &F, CallInst *CI,
-                                   const StringRef &ProbeName) {
+bool NVXFunctionPass::instrumentCLfwb(Function &F, CallInst *CI,
+                                      const StringRef &ProbeName) {
   int line = -1;
   StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
@@ -222,7 +223,7 @@ bool NVScopeProbes::instrumentCLOp(Function &F, CallInst *CI,
  * Replaces calls to standard mmap functions with a warpper function, where
  * mapping flags could be manipulated and the mapped region is recorded.
  */
-bool NVScopeProbes::instrumentMmap(Function &F) {
+bool NVXFunctionPass::instrumentMmap(Function &F) {
   int line = -1;
   StringRef func = F.getName();
   StringRef file = "unknown source file (missing debug information?)";
@@ -257,7 +258,7 @@ bool NVScopeProbes::instrumentMmap(Function &F) {
  * Instrument interesting function calls:
  *   mmap(), clflush(), clflushopt(), clwb(), sfence(), and similar ones.
  */
-bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
+bool NVXFunctionPass::instrumentCall(Function &F, CallInst *CI) {
   LLVMContext &Ctx = F.getContext();
   Type *Int64Ty = Type::getInt64Ty(Ctx);
   Type *Int32Ty = Type::getInt32Ty(Ctx);
@@ -278,7 +279,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
     StringRef callee = CIF->getName();
     /* TODO: There can be other functions (not instrumented) doing mmap. */
     if (callee == "mmap") {
-      ++NVScopeMMapOps;
+      ++NVXMMapOps;
       /**
        * ReplaceInstWithInst deletes (i.e. frees) the instruction "From", any
        * iterators referring to From will be invalidated. We need to save the
@@ -289,7 +290,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
 
     } else if (callee == "memset" || callee == "memcpy" ||
                callee == "memmove") {
-      ++NVScopeStoreInsts;
+      ++NVXStoreInsts;
       std::vector<Type *> Params = {Int8PtrTy, Int64Ty, Int8PtrTy, Int8PtrTy,
                                     Int32Ty};
       IRBuilder<> IRB(CI);
@@ -304,19 +305,19 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
       printInstrumentedCall(callee, file, line);
 
     } else if (callee == "clwb" || callee == "llvm.x86.sse2.clwb") {
-      ++NVScopeCLWBOps;
-      Modified = instrumentCLOp(F, CI, "__nvs_clwb");
+      ++NVXCLWBOps;
+      Modified = instrumentCLfwb(F, CI, "__nvs_clwb");
 
     } else if (callee == "clflushopt" || callee == "llvm.x86.sse2.clflushopt") {
-      ++NVScopeCLFOptOps;
-      Modified = instrumentCLOp(F, CI, "__nvs_clflushopt");
+      ++NVXCLFOptOps;
+      Modified = instrumentCLfwb(F, CI, "__nvs_clflushopt");
 
     } else if (callee == "clflush" || callee == "llvm.x86.sse2.clflush") {
-      ++NVScopeCLFlushOps;
-      Modified = instrumentCLOp(F, CI, "__nvs_clflush");
+      ++NVXCLFlushOps;
+      Modified = instrumentCLfwb(F, CI, "__nvs_clflush");
 
     } else if (callee == "sfence" || callee == "llvm.x86.sse.sfence") {
-      ++NVScopeSFenceOps;
+      ++NVXSFenceOps;
       std::vector<Type *> Params = {Int8PtrTy, Int8PtrTy, Int32Ty};
       IRBuilder<> IRB(CI);
       getDebugInfo(CI, func, file, line);
@@ -337,7 +338,7 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
   }
 
   if (Modified) {
-    ++NVScopeCallInsts;
+    ++NVXCallInsts;
   }
   return Modified;
 }
@@ -346,8 +347,8 @@ bool NVScopeProbes::instrumentCall(Function &F, CallInst *CI) {
  * Iterates over each function's instructions and adds instrumentation to the
  * instructions of interest.
  */
-bool NVScopeProbes::runOnFunction(Function &F) {
-  ++NVScopeFunctions;
+bool NVXFunctionPass::runOnFunction(Function &F) {
+  ++NVXFunctions;
 
   if (auto fname = _excluded.find(F.getName()) != _excluded.end()) {
     errs() << "NVS-Pass: Skipping function ";
@@ -379,6 +380,6 @@ bool NVScopeProbes::runOnFunction(Function &F) {
 
 } // namespace
 
-char NVScopeProbes::ID = 0;
-static RegisterPass<NVScopeProbes>
-    NVScopeProbesPass("probes", "NVScope Probes Insertion Pass");
+char NVXFunctionPass::ID = 0;
+static RegisterPass<NVXFunctionPass>
+    NVXFunctionPassPass("probes", "NVX Probes Insertion Pass");
