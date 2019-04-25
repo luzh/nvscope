@@ -97,7 +97,7 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
 /*--------------------- End of StoreInfo Implementation ---------------------*/
 
 void NVXRuntime::save_range(uintptr_t addr, size_t size, char *func, char *file,
-                           int line) {
+                            int line) {
   _nvranges.emplace_back(addr, addr + size, func, file, line);
 }
 
@@ -142,17 +142,17 @@ void NVXRuntime::close_channels() const {
 }
 
 void NVXRuntime::save_store(uint64_t time, uintptr_t addr, size_t size,
-                           char *func, char *file, int line) {
+                            char *func, char *file, int line) {
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
 void NVXRuntime::save_clfwb(uint64_t time, uintptr_t addr, char *func,
-                           char *file, int line) {
+                            char *file, int line) {
   _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
 void NVXRuntime::print_stores(std::vector<StoreInfo> &stores, size_t limit,
-                             size_t byteslimit = 0) const {
+                              size_t byteslimit = 0) const {
   size_t count = 0;
 
   for (auto &store : stores) {
@@ -165,7 +165,8 @@ void NVXRuntime::print_stores(std::vector<StoreInfo> &stores, size_t limit,
   }
 }
 
-void NVXRuntime::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
+void NVXRuntime::find_dirty_ranges(StoreInfo &store,
+                                   DirtyRanges &dirty_ranges) {
   /* initially the full range is dirty */
   uintptr_t dirty_start = store._start;
   /**
@@ -222,7 +223,7 @@ bool NVXRuntime::next_reorder() {
 }
 
 void NVXRuntime::check_reorder(uint64_t epoch, char *func, char *file,
-                              int line) {
+                               int line) {
   /* TODO: Consider reverting all _dirty_stores. */
   if (_nvstores.empty())
     return;
