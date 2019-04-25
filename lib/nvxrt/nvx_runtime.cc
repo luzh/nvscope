@@ -67,7 +67,7 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
       _offset = 0;
       _extbuf = nullptr;
       DBGF(cBRN
-           "NVS-RT: [%p +: %02zu) Internalize an external store buffer" cRST,
+           "NVX-RT: [%p +: %02zu) Internalize an external store buffer" cRST,
            reinterpret_cast<void *>(start), end - start);
     } else if (dirty_size <= _extbuf->_spth) {
       void *src = _extbuf->_data + _offset + (start - _start);
@@ -76,17 +76,17 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
       _offset = 0;
       _extbuf = make_snapshot(xstart, xend);
       DBGF(cBRN
-           "NVS-RT: [%p +: %02zu) Splits from an external store buffer" cRST,
+           "NVX-RT: [%p +: %02zu) Splits from an external store buffer" cRST,
            reinterpret_cast<void *>(start), end - start);
     } else {
       /* Update offset into the existing store buffer without splitting. */
       _offset += start - _start;
-      DBGF(cBRN "NVS-RT: [%p +: %02zu) Reuse an external store buffer" cRST,
+      DBGF(cBRN "NVX-RT: [%p +: %02zu) Reuse an external store buffer" cRST,
            reinterpret_cast<void *>(start), end - start);
     }
   } else {
     _offset += start - _start;
-    DBGF(cBRN "NVS-RT: [%p +: %02zu) Reuse an internal store buffer" cRST,
+    DBGF(cBRN "NVX-RT: [%p +: %02zu) Reuse an internal store buffer" cRST,
          reinterpret_cast<void *>(start), end - start);
   }
 
@@ -96,12 +96,12 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
 
 /*--------------------- End of StoreInfo Implementation ---------------------*/
 
-void NVScopeRT::save_range(uintptr_t addr, size_t size, char *func, char *file,
+void NVXRuntime::save_range(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
   _nvranges.emplace_back(addr, addr + size, func, file, line);
 }
 
-bool NVScopeRT::store_in_range(void *ptr, size_t size) {
+bool NVXRuntime::store_in_range(void *ptr, size_t size) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
   auto end = start + size;
 
@@ -111,47 +111,47 @@ bool NVScopeRT::store_in_range(void *ptr, size_t size) {
                      });
 }
 
-enum nvs_message NVScopeRT::read_message() const {
-  enum nvs_message msg;
+enum nvx_message NVXRuntime::read_message() const {
+  enum nvx_message msg;
   if (read(_tgconfig->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVS-RT: read() from fd %d failed", _tgconfig->read_fd);
+    ERRF("NVX-RT: read() from fd %d failed", _tgconfig->read_fd);
     _exit(EXIT_FAILURE);
   }
   return msg;
 }
 
-void NVScopeRT::send_message(enum nvs_message msg) const {
+void NVXRuntime::send_message(enum nvx_message msg) const {
   if (write(_tgconfig->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
-    ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
+    ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
     _exit(EXIT_FAILURE);
   }
 }
 
-void NVScopeRT::send_anydata(void *data, ssize_t len) const {
+void NVXRuntime::send_anydata(void *data, ssize_t len) const {
   if (write(_tgconfig->write_fd, data, len) != len) {
-    ERRF("NVS-RT: write() to fd %d failed", _tgconfig->write_fd);
+    ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
     _exit(EXIT_FAILURE);
   }
 }
 
-void NVScopeRT::close_channels() const {
+void NVXRuntime::close_channels() const {
   if (_tgconfig->read_fd > 0)
     close(_tgconfig->read_fd);
   if (_tgconfig->write_fd > 0)
     close(_tgconfig->write_fd);
 }
 
-void NVScopeRT::save_store(uint64_t time, uintptr_t addr, size_t size,
+void NVXRuntime::save_store(uint64_t time, uintptr_t addr, size_t size,
                            char *func, char *file, int line) {
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
-void NVScopeRT::save_clfwb(uint64_t time, uintptr_t addr, char *func,
+void NVXRuntime::save_clfwb(uint64_t time, uintptr_t addr, char *func,
                            char *file, int line) {
   _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
-void NVScopeRT::print_stores(std::vector<StoreInfo> &stores, size_t limit,
+void NVXRuntime::print_stores(std::vector<StoreInfo> &stores, size_t limit,
                              size_t byteslimit = 0) const {
   size_t count = 0;
 
@@ -165,7 +165,7 @@ void NVScopeRT::print_stores(std::vector<StoreInfo> &stores, size_t limit,
   }
 }
 
-void NVScopeRT::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
+void NVXRuntime::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
   /* initially the full range is dirty */
   uintptr_t dirty_start = store._start;
   /**
@@ -188,11 +188,11 @@ void NVScopeRT::find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges) {
   }
 }
 
-bool NVScopeRT::next_reorder() {
+bool NVXRuntime::next_reorder() {
   static size_t caseid = 0;
 
   if (caseid == 0) {
-    TESTC("NVS-RT: make test case #%zu: crash after sfence", caseid);
+    TESTC("NVX-RT: make test case #%zu: crash after sfence", caseid);
     caseid++;
     return true;
   }
@@ -201,7 +201,7 @@ bool NVScopeRT::next_reorder() {
     StoreInfo &store = _nvstores[caseid - 2];
     store.swap_data();
 
-    TESTC("NVS-RT: pass over test case #%zu: redo store to %p size %zu",
+    TESTC("NVX-RT: pass over test case #%zu: redo store to %p size %zu",
           caseid - 1, reinterpret_cast<void *>(store._start),
           store._end - store._start);
   }
@@ -214,53 +214,53 @@ bool NVScopeRT::next_reorder() {
   StoreInfo &store = _nvstores[caseid - 1];
   store.swap_data();
 
-  TESTC("NVS-RT: make test case #%zu: undo store to %p size %zu", caseid,
+  TESTC("NVX-RT: make test case #%zu: undo store to %p size %zu", caseid,
         reinterpret_cast<void *>(store._start), store._end - store._start);
   caseid++;
 
   return true;
 }
 
-void NVScopeRT::check_reorder(uint64_t epoch, char *func, char *file,
+void NVXRuntime::check_reorder(uint64_t epoch, char *func, char *file,
                               int line) {
   /* TODO: Consider reverting all _dirty_stores. */
   if (_nvstores.empty())
     return;
 
-#ifdef NVS_DEBUG
-  DBGF(cCYA "--- NVS-RT collected stores (...) in epoch #%zu ---" cRST, epoch);
+#ifdef NVX_DEBUG
+  DBGF(cCYA "--- NVX-RT collected stores (...) in epoch #%zu ---" cRST, epoch);
   print_stores(_nvstores, _nvstores.size(), 32);
-  DBGF(cCYA "--- NVS-RT collected stores (***) in epoch #%zu ---" cRST, epoch);
+  DBGF(cCYA "--- NVX-RT collected stores (***) in epoch #%zu ---" cRST, epoch);
 #endif
 
-  DBGF("NVS-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", epoch, func,
+  DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", epoch, func,
        file, line);
 
   while (next_reorder()) {
     send_message(MSG_AWAITING_CHECK);
 
-    enum nvs_message command = read_message();
+    enum nvx_message command = read_message();
 
     if (command == MSG_SHOW_BUG_AND_CONTINUE ||
         command == MSG_SHOW_BUG_AND_EXIT) {
       SAYF("\n" cLRD "[-] Store Races:" cRST
            " in epoch #%zu [%s() at %s:%4d]\n",
            epoch, func, file, line);
-      ERRF("NVS-RT needs a patch to report details of this store race due to "
+      ERRF("NVX-RT needs a patch to report details of this store race due to "
            "possible missing sfences.\n");
 
       if (command == MSG_SHOW_BUG_AND_EXIT)
-        _exit(NVS_EXIT_FOUNDBUG);
+        _exit(NVX_EXIT_FOUNDBUG);
 
     } else if (command != MSG_CONTINUE_TO_RUN) {
-      ERRF("NVS-RT: received inappropriate message %d", command);
-      _exit(NVS_EXIT_BAD_MSG);
+      ERRF("NVX-RT: received inappropriate message %d", command);
+      _exit(NVX_EXIT_BAD_MSG);
     }
   }
 }
 
-void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
-                                   int line) {
+void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
+                                    int line) {
   if (_nvstores.empty() && _dirty_stores.empty()) {
     /* TODO: Should report redundant flushes before clearing _nvclfwbs. */
     _nvclfwbs.clear();
@@ -354,8 +354,8 @@ void NVScopeRT::check_dirty_stores(uint64_t epoch, char *func, char *file,
   _nvstores.clear();
 }
 
-void NVScopeRT::check_missing_fence(uint64_t epoch, char *func, char *file,
-                                    int line) {
+void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
+                                     int line) {
   /* TODO: Also check _dirty_stores. */
   if (_nvstores.empty() && _dirty_stores.empty())
     return;

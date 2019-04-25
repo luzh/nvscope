@@ -1,5 +1,5 @@
-#ifndef _NVS_CONFIG_H
-#define _NVS_CONFIG_H
+#ifndef _NVX_CONFIG_H
+#define _NVX_CONFIG_H
 
 #define CACHELINE_SIZE (64)
 #define CLSIZE (CACHELINE_SIZE)
@@ -22,9 +22,9 @@
 
 /* Environment variable used to pass SHM ID to the target programs. */
 
-#define NVS_ENV_SHM "__NVS_SHM_ID"
+#define NVX_ENV_SHM "__NVX_SHM_ID"
 
-enum nvs_message {
+enum nvx_message {
   MSG_INVALID = 0,
 
   /* Control commands: nvscope telling target */
@@ -42,21 +42,21 @@ enum nvs_message {
   MSG_TARGET_STARTED,
   MSG_TARGET_EXITED,
 
-  NVS_PIPE_MSG_MAX
+  NVX_PIPE_MSG_MAX
 };
 
-enum nvs_excode {
-  NVS_EXIT_SUCCESS = 0,
-  NVS_EXIT_BAD_SHM,
-  NVS_EXIT_BAD_MSG,
-  NVS_EXIT_BAD_CONFIG,
-  NVS_EXIT_FOUNDBUG
+enum nvx_excode {
+  NVX_EXIT_SUCCESS = 0,
+  NVX_EXIT_BAD_SHM,
+  NVX_EXIT_BAD_MSG,
+  NVX_EXIT_BAD_CONFIG,
+  NVX_EXIT_FOUNDBUG
 };
 
-enum nvs_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
+enum nvx_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
 
-struct nvs_target_config {
-  int enabled;      // if nvscope run-time is enabled
+struct nvx_target_config {
+  int enabled;      // if nvx run-time is enabled
   pid_t pid;        // target process pid
   int status;       // target process status
   pid_t fksv_pid;   // target forkserver pid
@@ -65,12 +65,12 @@ struct nvs_target_config {
   int reserved[10]; // pack to whole cache lines
 } __attribute__((packed));
 
-struct nvs_config {
+struct nvx_config {
   int initialized;
-  enum nvs_target_type target_type;
+  enum nvx_target_type target_type;
   int reserved[14]; // pack to whole cache lines
-  struct nvs_target_config mainproc;
-  struct nvs_target_config recovery;
+  struct nvx_target_config mainproc;
+  struct nvx_target_config recovery;
 } __attribute__((packed));
 
 #endif

@@ -1,5 +1,5 @@
-#ifndef _NVSRT_H
-#define _NVSRT_H
+#ifndef _NVX_RUNTIME_H
+#define _NVX_RUNTIME_H
 
 #include <algorithm>
 #include <atomic>
@@ -15,13 +15,13 @@
 
 #include "debug.h"
 #include "headers.h"
-#include "nvscope/config.h"
+#include "nvx/config.h"
 
 using byte_t = uint8_t; /* TODO: Consider std::byte? */
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
-static const int NVS_INIT_PRIO{0}; // __nvs_init priority (runs before main)
-static const int NVS_FINI_PRIO{0}; // __nvs_init priority (runs after main)
+static const int NVX_INIT_PRIO{0}; // __nvx_init priority (runs before main)
+static const int NVX_FINI_PRIO{0}; // __nvx_init priority (runs after main)
 /**
  * If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
  * resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
@@ -67,17 +67,17 @@ struct StoreData {
     static_assert(sizeof(byte_t) == 1);
 
     if (!_size) {
-      ERRF("NVS-RT: Invalid data size!");
+      ERRF("NVX-RT: Invalid data size!");
       _exit(EXIT_FAILURE);
     }
     if (!_data) {
-      ERRF("NVS-RT: Invalid data buffer!");
+      ERRF("NVX-RT: Invalid data buffer!");
       _exit(EXIT_FAILURE);
     }
 
     /* TODO: Consider std::copy()? */
     std::memcpy(_data, reinterpret_cast<void *>(start), _size);
-    DBGF(cBRN "NVS-RT: StoreData for size %zu constructed, split threshold "
+    DBGF(cBRN "NVX-RT: StoreData for size %zu constructed, split threshold "
               "%zu" cRST,
          _size, _spth);
   }
@@ -87,7 +87,7 @@ struct StoreData {
 
   ~StoreData() {
     delete[] _data;
-    DBGF(cGRN "NVS-RT: StoreData for size %zu destructed" cRST, _size);
+    DBGF(cGRN "NVX-RT: StoreData for size %zu destructed" cRST, _size);
   }
 };
 
@@ -148,10 +148,10 @@ struct CLfwbInfo {
   //};
 };
 
-class NVScopeRT {
+class NVXRuntime {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
 public:
-  /* Check if NVS-RT is enabled. */
+  /* Check if NVX-RT is enabled. */
   bool is_enabled() const { return _tgconfig->enabled; }
 
   /* Set target process PID. */
@@ -160,8 +160,8 @@ public:
   void set_target_status(int st) { _tgconfig->status = st; }
 
   /* Communication methods. */
-  enum nvs_message read_message() const;
-  void send_message(enum nvs_message msg) const;
+  enum nvx_message read_message() const;
+  void send_message(enum nvx_message msg) const;
   void send_anydata(void *data, ssize_t len) const;
   void close_channels() const;
 
@@ -191,25 +191,25 @@ public:
   void print_stores(std::vector<StoreInfo> &stores, size_t nstores,
                     size_t bytes) const;
 
-  NVScopeRT(void *_shm, struct nvs_target_config *tgconf)
+  NVXRuntime(void *_shm, struct nvx_target_config *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf) {
     if (_shm_base) {
-      OKF("NVS-RT: nvscope run-time constructed");
+      OKF("NVX-RT: nvx runtime constructed");
     } else {
-      ERRF("NVS-RT: invalid shared memory address");
-      _exit(NVS_EXIT_BAD_SHM);
+      ERRF("NVX-RT: invalid shared memory address");
+      _exit(NVX_EXIT_BAD_SHM);
     }
   }
 
   /**
-   * If NVScopeRT is constructed in the forkserver process, its destructor will
+   * If NVXRuntime is constructed in the forkserver process, its destructor will
    * only run when the forkserver exits.
    */
-  ~NVScopeRT() = default;
+  ~NVXRuntime() = default;
 
 private:
   void *_shm_base;
-  struct nvs_target_config *_tgconfig;
+  struct nvx_target_config *_tgconfig;
 
   /**
    * TODO: Using a vector for _nvranges assumes there are only few mappings
@@ -222,4 +222,4 @@ private:
   std::vector<StoreInfo> _dirty_stores;
 };
 
-#endif // _NVSRT_H
+#endif // _NVX_RUNTIME_H
