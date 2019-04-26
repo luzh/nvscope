@@ -147,6 +147,15 @@ int main(int argc, char **argv) {
 
   close(fd);
 
+#if 0
+  uint8_t *data = (uint8_t *)pmem;
+  for (int i = 0; i < MMAP_SIZE; i++)
+    data[i] = (uint8_t)(i & 0xFF);
+  for (int i = 0; i < MMAP_SIZE; i+=64)
+    clflushopt(&data[i]);
+  sfence();
+#endif
+
   int err = 0;
 
   if (runcase)
