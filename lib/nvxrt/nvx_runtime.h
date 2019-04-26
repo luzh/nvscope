@@ -22,11 +22,13 @@
 #include "debug.h"
 #include "nvx/config.h"
 
+namespace __nvx {
+
 using byte_t = uint8_t; /* TODO: Consider std::byte? */
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
-static const int NVX_INIT_PRIO{0}; // __nvx_init priority (runs before main)
-static const int NVX_FINI_PRIO{0}; // __nvx_fini priority (runs after main)
+static const int INIT_PRIO{0}; // __nvx_init priority (runs before main)
+static const int FINI_PRIO{0}; // __nvx_fini priority (runs after main)
 /**
  * If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
  * resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
@@ -247,5 +249,7 @@ private:
   std::vector<CLfwbInfo> _nvclfwbs;
   std::vector<StoreInfo> _dirty_stores;
 };
+
+} // namespace __nvx
 
 #endif // _NVX_RUNTIME_H

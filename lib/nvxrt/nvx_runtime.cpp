@@ -1,5 +1,7 @@
 #include "nvx_runtime.h"
 
+namespace __nvx {
+
 void StoreInfo::print_data(size_t limit) {
   if (!_extbuf)
     assert(_end - _start <= STBUF_INTERNAL_SIZE);
@@ -373,3 +375,5 @@ void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
 
   /* Do not print dirty stores here. Let the caller call check_dirty_stores. */
 }
+
+} // namespace __nvx
