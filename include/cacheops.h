@@ -1,5 +1,5 @@
-#ifndef _NVX_CACHEOPS_H_
-#define _NVX_CACHEOPS_H_
+#ifndef NVX_CACHEOPS_H_
+#define NVX_CACHEOPS_H_
 
 #include <immintrin.h>
 
@@ -43,4 +43,4 @@ void __attribute__((optnone, noinline)) clwb(void const *ptr) {
     --loopcnt;
 }
 
-#endif
+#endif // NVX_CACHEOPS_H_

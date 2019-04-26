@@ -1,5 +1,5 @@
-#ifndef _NVX_HEADERS_H_
-#define _NVX_HEADERS_H_
+#ifndef NVX_HEADERS_H_
+#define NVX_HEADERS_H_
 
 /* a list of headers to resolve most dependencies in this repository */
 
@@ -30,4 +30,4 @@
 #include <time.h>
 #include <unistd.h>
 
-#endif
+#endif // NVX_HEADERS_H_

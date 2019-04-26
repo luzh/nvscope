@@ -1,5 +1,5 @@
-#ifndef _NVX_CONFIG_H
-#define _NVX_CONFIG_H
+#ifndef NVX_CONFIG_H_
+#define NVX_CONFIG_H_
 
 #define CACHELINE_SIZE (64)
 #define CLSIZE (CACHELINE_SIZE)
@@ -73,4 +73,4 @@ struct nvx_config {
   struct nvx_target_config recovery;
 } __attribute__((packed));
 
-#endif
+#endif // NVX_CONFIG_H_

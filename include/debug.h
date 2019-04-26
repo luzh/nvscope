@@ -1,5 +1,5 @@
-#ifndef _NVX_DEBUG_H
-#define _NVX_DEBUG_H
+#ifndef NVX_DEBUG_H_
+#define NVX_DEBUG_H_
 
 /*
  * definitions and handy macros for debugging
@@ -298,4 +298,4 @@
 #define OFFSETOF(type, member) ((size_t) & (((type *)0)->member))
 #define COMPILE_ERROR_ON(cond) ((void)sizeof(char[(cond) ? -1 : 1]))
 
-#endif /* ! _DEBUG_H */
+#endif // NVX_DEBUG_H_

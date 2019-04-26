@@ -1,5 +1,5 @@
-#ifndef _NVX_UTILS_H
-#define _NVX_UTILS_H
+#ifndef NVX_UTILS_H_
+#define NVX_UTILS_H_
 
 #define NSECPSEC 1000000000
 
@@ -21,4 +21,4 @@ void benchmark_time_set(benchmark_time_t *time, unsigned long long nsecs);
 
 unsigned long long benchmark_get_avg_get_time(void);
 
-#endif
+#endif // NVX_UTILS_H_
