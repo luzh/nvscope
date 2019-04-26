@@ -115,7 +115,7 @@ enum nvx_message NVXRuntime::read_message() const {
   enum nvx_message msg;
   if (read(_tgconfig->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
     ERRF("NVX-RT: read() from fd %d failed", _tgconfig->read_fd);
-    _exit(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
   return msg;
 }
@@ -123,14 +123,14 @@ enum nvx_message NVXRuntime::read_message() const {
 void NVXRuntime::send_message(enum nvx_message msg) const {
   if (write(_tgconfig->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
     ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
-    _exit(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
 }
 
 void NVXRuntime::send_anydata(void *data, ssize_t len) const {
   if (write(_tgconfig->write_fd, data, len) != len) {
     ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
-    _exit(EXIT_FAILURE);
+    exit(EXIT_FAILURE);
   }
 }
 
@@ -252,11 +252,11 @@ void NVXRuntime::check_reorder(uint64_t epoch, char *func, char *file,
            "possible missing sfences.\n");
 
       if (command == MSG_SHOW_BUG_AND_EXIT)
-        _exit(NVX_EXIT_FOUNDBUG);
+        exit(NVX_EXIT_FOUNDBUG);
 
     } else if (command != MSG_CONTINUE_TO_RUN) {
       ERRF("NVX-RT: received inappropriate message %d", command);
-      _exit(NVX_EXIT_BAD_MSG);
+      exit(NVX_EXIT_BAD_MSG);
     }
   }
 }

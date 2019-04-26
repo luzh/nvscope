@@ -2,6 +2,7 @@
 #define _NVX_RUNTIME_H
 
 #include <algorithm>
+#include <assert.h>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -9,12 +10,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "debug.h"
-#include "headers.h"
 #include "nvx/config.h"
 
 using byte_t = uint8_t; /* TODO: Consider std::byte? */
@@ -68,11 +73,11 @@ struct StoreData {
 
     if (!_size) {
       ERRF("NVX-RT: Invalid data size!");
-      _exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     }
     if (!_data) {
       ERRF("NVX-RT: Invalid data buffer!");
-      _exit(EXIT_FAILURE);
+      exit(EXIT_FAILURE);
     }
 
     /* TODO: Consider std::copy()? */
@@ -198,7 +203,7 @@ public:
       OKF("NVX-RT: NVX runtime constructed");
     } else {
       ERRF("NVX-RT: invalid shared memory address");
-      _exit(NVX_EXIT_BAD_SHM);
+      exit(NVX_EXIT_BAD_SHM);
     }
   }
 
