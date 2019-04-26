@@ -2,7 +2,7 @@
 
 namespace __nvx {
 
-void StoreInfo::print_data(size_t limit) {
+void StoreInfo::PrintStoreData(size_t bytes) {
   if (!_extbuf)
     assert(_end - _start <= STBUF_INTERNAL_SIZE);
   else
@@ -11,7 +11,7 @@ void StoreInfo::print_data(size_t limit) {
   auto lineaddr = _start & ~(16UL - 1);
   auto skip = _start - lineaddr;
 
-  auto size = limit > 0 && limit < _end - _start ? limit : _end - _start;
+  auto size = bytes > 0 && bytes < _end - _start ? bytes : _end - _start;
 
   auto print_bytes = [size, skip](uintptr_t lineaddr, const byte_t *data,
                                   const std::string &title) {
@@ -46,7 +46,7 @@ void StoreInfo::print_data(size_t limit) {
   SAYF("-----------------------------------------------------------------\n");
 }
 
-void StoreInfo::swap_data() {
+void StoreInfo::SwapData() {
   auto *start = reinterpret_cast<byte_t *>(_start); // pmem start address
   auto *end = reinterpret_cast<byte_t *>(_end);     // pmem end address
   auto *bufdata = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
@@ -58,7 +58,7 @@ void StoreInfo::swap_data() {
   std::swap_ranges(start, end, bufdata);
 }
 
-void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
+void StoreInfo::ResizeStoreData(uintptr_t start, uintptr_t end) {
   assert(_start <= start && start < end && end <= _end);
 
   if (_extbuf) {
@@ -98,12 +98,12 @@ void StoreInfo::resize_store_data(uintptr_t start, uintptr_t end) {
 
 /*--------------------- End of StoreInfo Implementation ---------------------*/
 
-void NVXRuntime::save_range(uintptr_t addr, size_t size, char *func, char *file,
-                            int line) {
+void NVXRuntime::SaveRange(uintptr_t addr, size_t size, char *func, char *file,
+                           int line) {
   _nvranges.emplace_back(addr, addr + size, func, file, line);
 }
 
-bool NVXRuntime::store_in_range(void *ptr, size_t size) {
+bool NVXRuntime::StoreInRange(void *ptr, size_t size) {
   auto start = reinterpret_cast<uintptr_t>(ptr);
   auto end = start + size;
 
@@ -113,7 +113,7 @@ bool NVXRuntime::store_in_range(void *ptr, size_t size) {
                      });
 }
 
-enum nvx_message NVXRuntime::read_message() const {
+enum nvx_message NVXRuntime::ReadMessage() const {
   enum nvx_message msg;
   if (read(_tgconfig->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
     ERRF("NVX-RT: read() from fd %d failed", _tgconfig->read_fd);
@@ -122,54 +122,53 @@ enum nvx_message NVXRuntime::read_message() const {
   return msg;
 }
 
-void NVXRuntime::send_message(enum nvx_message msg) const {
+void NVXRuntime::SendMessage(enum nvx_message msg) const {
   if (write(_tgconfig->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
     ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
     exit(EXIT_FAILURE);
   }
 }
 
-void NVXRuntime::send_anydata(void *data, ssize_t len) const {
+void NVXRuntime::SendAnyData(void *data, ssize_t len) const {
   if (write(_tgconfig->write_fd, data, len) != len) {
     ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
     exit(EXIT_FAILURE);
   }
 }
 
-void NVXRuntime::close_channels() const {
+void NVXRuntime::CloseChannels() const {
   if (_tgconfig->read_fd > 0)
     close(_tgconfig->read_fd);
   if (_tgconfig->write_fd > 0)
     close(_tgconfig->write_fd);
 }
 
-void NVXRuntime::save_store(uintptr_t addr, size_t size, char *func, char *file,
-                            int line) {
+void NVXRuntime::SaveStore(uintptr_t addr, size_t size, char *func, char *file,
+                           int line) {
   uint64_t time = ++_time;
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
-void NVXRuntime::save_clfwb(uintptr_t addr, char *func, char *file, int line) {
+void NVXRuntime::SaveCLfwb(uintptr_t addr, char *func, char *file, int line) {
   uint64_t time = ++_time;
   _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
-void NVXRuntime::print_stores(std::vector<StoreInfo> &stores, size_t limit,
-                              size_t byteslimit = 0) const {
+void NVXRuntime::PrintStoreInfoVec(std::vector<StoreInfo> &stores,
+                                   size_t nstores, size_t bytes = 0) const {
   size_t count = 0;
 
   for (auto &store : stores) {
     DBGF("StoreInfo[%zu]: [%s() at %s:%4d], start from %p size %zu", count,
          store._func, store._file, store._linenr,
          reinterpret_cast<void *>(store._start), store._end - store._start);
-    store.print_data(byteslimit);
-    if (0 < limit && limit <= ++count)
+    store.PrintStoreData(bytes);
+    if (0 < nstores && nstores <= ++count)
       break;
   }
 }
 
-void NVXRuntime::find_dirty_ranges(StoreInfo &store,
-                                   DirtyRanges &dirty_ranges) {
+void NVXRuntime::FindDirtyRanges(StoreInfo &store, DirtyRanges &dirty_ranges) {
   /* initially the full range is dirty */
   uintptr_t dirty_start = store._start;
   /**
@@ -192,7 +191,7 @@ void NVXRuntime::find_dirty_ranges(StoreInfo &store,
   }
 }
 
-bool NVXRuntime::next_reorder() {
+bool NVXRuntime::NextReorder() {
   static size_t caseid = 0;
 
   if (caseid == 0) {
@@ -203,7 +202,7 @@ bool NVXRuntime::next_reorder() {
 
   if (caseid > 1) {
     StoreInfo &store = _nvstores[caseid - 2];
-    store.swap_data();
+    store.SwapData();
 
     TESTC("NVX-RT: pass over test case #%zu: redo store to %p size %zu",
           caseid - 1, reinterpret_cast<void *>(store._start),
@@ -216,7 +215,7 @@ bool NVXRuntime::next_reorder() {
   }
 
   StoreInfo &store = _nvstores[caseid - 1];
-  store.swap_data();
+  store.SwapData();
 
   TESTC("NVX-RT: make test case #%zu: undo store to %p size %zu", caseid,
         reinterpret_cast<void *>(store._start), store._end - store._start);
@@ -225,25 +224,25 @@ bool NVXRuntime::next_reorder() {
   return true;
 }
 
-void NVXRuntime::check_reorder(uint64_t epoch, char *func, char *file,
-                               int line) {
+void NVXRuntime::CheckReorder(uint64_t epoch, char *func, char *file,
+                              int line) {
   /* TODO: Consider reverting all _dirty_stores. */
   if (_nvstores.empty())
     return;
 
 #ifdef NVX_DEBUG
   DBGF(cCYA "--- NVX-RT collected stores (...) in epoch #%zu ---" cRST, epoch);
-  print_stores(_nvstores, _nvstores.size(), 32);
+  PrintStoreInfoVec(_nvstores, _nvstores.size(), 32);
   DBGF(cCYA "--- NVX-RT collected stores (***) in epoch #%zu ---" cRST, epoch);
 #endif
 
   DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", epoch, func,
        file, line);
 
-  while (next_reorder()) {
-    send_message(MSG_AWAITING_CHECK);
+  while (NextReorder()) {
+    SendMessage(MSG_AWAITING_CHECK);
 
-    enum nvx_message command = read_message();
+    enum nvx_message command = ReadMessage();
 
     if (command == MSG_SHOW_BUG_AND_CONTINUE ||
         command == MSG_SHOW_BUG_AND_EXIT) {
@@ -263,8 +262,8 @@ void NVXRuntime::check_reorder(uint64_t epoch, char *func, char *file,
   }
 }
 
-void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
-                                    int line) {
+void NVXRuntime::CheckDirtyStores(uint64_t epoch, char *func, char *file,
+                                  int line) {
   if (_nvstores.empty() && _dirty_stores.empty()) {
     /* TODO: Should report redundant flushes before clearing _nvclfwbs. */
     _nvclfwbs.clear();
@@ -284,7 +283,7 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
   std::vector<StoreInfo> new_dirty_stores;
   for (auto sti = _dirty_stores.begin(); sti != _dirty_stores.end();) {
     dirty_ranges.clear();
-    find_dirty_ranges(*sti, dirty_ranges);
+    FindDirtyRanges(*sti, dirty_ranges);
     /**
      * TODO: Previous calls of check_dirty_stores() should have reported
      * StoreInfo stored in _dirty_stores, so do not report it again here. But
@@ -308,10 +307,10 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
        * the end of _dirty_stores.
        */
       if (dti == dirty_ranges.end() - 1) {
-        sti->resize_store_data(dti->first, dti->second);
+        sti->ResizeStoreData(dti->first, dti->second);
       } else {
         new_dirty_stores.push_back(*sti);
-        new_dirty_stores.back().resize_store_data(dti->first, dti->second);
+        new_dirty_stores.back().ResizeStoreData(dti->first, dti->second);
       }
     }
 
@@ -329,7 +328,7 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
   bool report = false;
   for (auto sti = _nvstores.begin(); sti != _nvstores.end(); ++sti) {
     dirty_ranges.clear();
-    find_dirty_ranges(*sti, dirty_ranges);
+    FindDirtyRanges(*sti, dirty_ranges);
 
     if (!dirty_ranges.empty()) {
       report = true;
@@ -348,7 +347,7 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
 
       _dirty_stores.push_back(*sti);
       StoreInfo &stx = _dirty_stores.back();
-      stx.resize_store_data(dti->first, dti->second);
+      stx.ResizeStoreData(dti->first, dti->second);
     }
   }
   SAYF("%s", report ? "\n" : "");
@@ -358,8 +357,8 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
   _nvstores.clear();
 }
 
-void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
-                                     int line) {
+void NVXRuntime::CheckMissingFence(uint64_t epoch, char *func, char *file,
+                                   int line) {
   /**
    * If _dirty_stores is not empty, its content should have been reported so we
    * do not warn it again.
@@ -373,7 +372,7 @@ void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
   ERRF("Probably an sfence is missing because there are pending stores that "
        "cannot be guaranteed persistent.\n");
 
-  /* Do not print dirty stores here. Let the caller call check_dirty_stores. */
+  /* Do not print dirty stores here. Let the caller call CheckDirtyStores. */
 }
 
 } // namespace __nvx

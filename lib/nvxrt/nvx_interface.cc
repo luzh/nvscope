@@ -61,16 +61,16 @@ static void __nvx_setup_shm() {
  */
 static void __start_forkserver() {
   /* initial communication with nvscope */
-  nvxrt->send_message(MSG_FORKSERVER_HELLO);
+  nvxrt->SendMessage(MSG_FORKSERVER_HELLO);
 
   while (true) {
-    nvxrt->send_message(MSG_FORKSERVER_READY);
+    nvxrt->SendMessage(MSG_FORKSERVER_READY);
 
-    enum nvx_message command = nvxrt->read_message();
+    enum nvx_message command = nvxrt->ReadMessage();
 
     if (command == MSG_EXIT_FORKSERVER) {
       ACTF("NVX-RT: forkserver received command to exit");
-      nvxrt->close_channels();
+      nvxrt->CloseChannels();
       /* If nvxrt was created by new: delete nvxrt; */
       exit(EXIT_SUCCESS);
     }
@@ -106,8 +106,8 @@ static void __start_forkserver() {
        * (parent) does not see changes that the child made to nvxrt.
        */
 
-      nvxrt->set_target_pid(getpid());
-      nvxrt->send_message(MSG_TARGET_STARTED);
+      nvxrt->SetTargetPid(getpid());
+      nvxrt->SendMessage(MSG_TARGET_STARTED);
 
       return; // execute the target progrm, e.g. from main().
     }
@@ -130,8 +130,8 @@ static void __start_forkserver() {
       ERRF("NVX-RT: unexpected waitpid() return value %u", cpidw);
     }
 
-    nvxrt->set_target_status(status);
-    nvxrt->send_message(MSG_TARGET_EXITED);
+    nvxrt->SetTargetStatus(status);
+    nvxrt->SendMessage(MSG_TARGET_EXITED);
   }
 }
 
@@ -169,10 +169,10 @@ extern "C" void __nvx_store(void *ptr, size_t size, char *func, char *file,
   MUTEF("NVX-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
         size);
 
-  if (!nvxrt || !nvxrt->is_enabled() || !nvxrt->store_in_range(ptr, size))
+  if (!nvxrt || !nvxrt->Enabled() || !nvxrt->StoreInRange(ptr, size))
     return;
 
-  nvxrt->save_store(reinterpret_cast<uint64_t>(ptr), size, func, file, line);
+  nvxrt->SaveStore(reinterpret_cast<uint64_t>(ptr), size, func, file, line);
 }
 
 /**
@@ -197,10 +197,10 @@ extern "C" void *__nvx_mmap(void *addr, size_t size, int prot, int flags,
   DBGF("NVX-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
        pmap, size);
 
-  if (!nvxrt || !nvxrt->is_enabled())
+  if (!nvxrt || !nvxrt->Enabled())
     return pmap;
 
-  nvxrt->save_range(reinterpret_cast<uint64_t>(pmap), size, func, file, line);
+  nvxrt->SaveRange(reinterpret_cast<uint64_t>(pmap), size, func, file, line);
 
   return pmap;
 }
@@ -211,10 +211,10 @@ extern "C" void __nvx_clwb(void *ptr, char *func, char *file, int line) {
   MUTEF("NVX-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file,
         line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
-  if (!nvxrt || !nvxrt->is_enabled())
+  if (!nvxrt || !nvxrt->Enabled())
     return;
 
-  nvxrt->save_clfwb(addr, func, file, line);
+  nvxrt->SaveCLfwb(addr, func, file, line);
 }
 
 extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
@@ -223,10 +223,10 @@ extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
   MUTEF("NVX-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func,
         file, line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
-  if (!nvxrt || !nvxrt->is_enabled())
+  if (!nvxrt || !nvxrt->Enabled())
     return;
 
-  nvxrt->save_clfwb(addr, func, file, line);
+  nvxrt->SaveCLfwb(addr, func, file, line);
 }
 
 extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
@@ -235,15 +235,15 @@ extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
   MUTEF("NVX-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", epoch, func,
         file, line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
-  if (!nvxrt || !nvxrt->is_enabled())
+  if (!nvxrt || !nvxrt->Enabled())
     return;
 
-  uint64_t epoch = nvxrt->current_epoch();
+  uint64_t epoch = nvxrt->CurrentEpoch();
 
-  nvxrt->save_clfwb(addr, func, file, line);
+  nvxrt->SaveCLfwb(addr, func, file, line);
 
-  nvxrt->check_reorder(epoch, func, file, line);
-  nvxrt->check_dirty_stores(epoch, func, file, line);
+  nvxrt->CheckReorder(epoch, func, file, line);
+  nvxrt->CheckDirtyStores(epoch, func, file, line);
 
   TESTC("NVX-RT: pass over epoch #%zu [clflush]", epoch);
 }
@@ -251,13 +251,13 @@ extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
 extern "C" void __nvx_sfence(char *func, char *file, int line) {
   MUTEF("NVX-RT: [%s() at %s:%4d]: SFENCE", func, file, line);
 
-  if (!nvxrt || !nvxrt->is_enabled())
+  if (!nvxrt || !nvxrt->Enabled())
     return;
 
-  uint64_t epoch = nvxrt->current_epoch();
+  uint64_t epoch = nvxrt->CurrentEpoch();
 
-  nvxrt->check_reorder(epoch, func, file, line);
-  nvxrt->check_dirty_stores(epoch, func, file, line);
+  nvxrt->CheckReorder(epoch, func, file, line);
+  nvxrt->CheckDirtyStores(epoch, func, file, line);
 
   TESTC("NVX-RT: pass over epoch #%zu [sfence]", epoch);
 }

@@ -128,11 +128,11 @@ struct StoreInfo {
   }
 
   /* Print byte content. */
-  void print_data(size_t bytes);
+  void PrintStoreData(size_t bytes);
   /* Swap data between [_start, _end) and this store's data buffer. */
-  void swap_data();
+  void SwapData();
   /* Resize this store's data buffer (consequence of partial flushing). */
-  void resize_store_data(uintptr_t start, uintptr_t end);
+  void ResizeStoreData(uintptr_t start, uintptr_t end);
 };
 
 struct CLfwbInfo {
@@ -159,45 +159,43 @@ class NVXRuntime {
   /* TODO: Many methods are not safe, e.g. _tgconfig may be nullptr. */
 public:
   /* Check if NVX-RT is enabled. */
-  bool is_enabled() const { return _tgconfig->enabled; }
+  bool Enabled() const { return _tgconfig->enabled; }
 
   /* Set target process PID. */
-  void set_target_pid(pid_t pid) { _tgconfig->pid = pid; }
+  void SetTargetPid(pid_t pid) { _tgconfig->pid = pid; }
   /* Set target process status. */
-  void set_target_status(int st) { _tgconfig->status = st; }
+  void SetTargetStatus(int st) { _tgconfig->status = st; }
 
   /* Communication methods. */
-  enum nvx_message read_message() const;
-  void send_message(enum nvx_message msg) const;
-  void send_anydata(void *data, ssize_t len) const;
-  void close_channels() const;
+  enum nvx_message ReadMessage() const;
+  void SendMessage(enum nvx_message msg) const;
+  void SendAnyData(void *data, ssize_t len) const;
+  void CloseChannels() const;
 
-  uint64_t current_epoch() { return ++_epoch; };
+  uint64_t CurrentEpoch() { return ++_epoch; };
 
   /* Add one mmaped range. */
-  void save_range(uintptr_t addr, size_t size, char *func, char *file,
-                  int line);
+  void SaveRange(uintptr_t addr, size_t size, char *func, char *file, int line);
   /* Check if the stored data falls into mmaped ranges. */
-  bool store_in_range(void *ptr, size_t size);
+  bool StoreInRange(void *ptr, size_t size);
   /* Save store information. */
-  void save_store(uintptr_t addr, size_t size, char *func, char *file,
-                  int line);
+  void SaveStore(uintptr_t addr, size_t size, char *func, char *file, int line);
   /* Save CLFLUSH(OPT) or CLWB operations. */
-  void save_clfwb(uintptr_t addr, char *func, char *file, int line);
+  void SaveCLfwb(uintptr_t addr, char *func, char *file, int line);
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */
-  void find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges);
+  void FindDirtyRanges(StoreInfo &store, DirtyRanges &dirty_ranges);
 
   /* Generate the next test case. */
-  bool next_reorder();
+  bool NextReorder();
   /* Perform analysis for insights. */
-  void check_reorder(uint64_t epoch, char *func, char *file, int line);
-  void check_dirty_stores(uint64_t epoch, char *func, char *file, int line);
-  void check_missing_fence(uint64_t epoch, char *func, char *file, int line);
+  void CheckReorder(uint64_t epoch, char *func, char *file, int line);
+  void CheckDirtyStores(uint64_t epoch, char *func, char *file, int line);
+  void CheckMissingFence(uint64_t epoch, char *func, char *file, int line);
 
   /* Print content of a StoreInfo vector (up to limit entries). */
-  void print_stores(std::vector<StoreInfo> &stores, size_t nstores,
-                    size_t bytes) const;
+  void PrintStoreInfoVec(std::vector<StoreInfo> &stores, size_t nstores,
+                         size_t bytes) const;
 
   NVXRuntime(void *_shm, struct nvx_target_config *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf), _time(0), _epoch(0) {
@@ -210,7 +208,7 @@ public:
   }
 
   ~NVXRuntime() {
-    if (is_enabled()) {
+    if (Enabled()) {
       int linenr = 0;
       char *file = const_cast<char *>("Program");
       char *func = const_cast<char *>("Program exit");
@@ -221,10 +219,10 @@ public:
        * munmap() calls, or make reordering tests independent of the previous
        * mmaped region.
        *
-       * check_reorder(epoch, func, file, linenr);
+       * CheckReorder(epoch, func, file, linenr);
        */
-      check_missing_fence(epoch, func, file, linenr);
-      check_dirty_stores(epoch, func, file, linenr);
+      CheckMissingFence(epoch, func, file, linenr);
+      CheckDirtyStores(epoch, func, file, linenr);
     }
 
     OKF("NVX-RT: NVX runtime destructed");
