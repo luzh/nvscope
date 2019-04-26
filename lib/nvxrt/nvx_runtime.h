@@ -165,17 +165,18 @@ public:
   void send_anydata(void *data, ssize_t len) const;
   void close_channels() const;
 
+  uint64_t current_epoch() { return ++_epoch; };
+
   /* Add one mmaped range. */
   void save_range(uintptr_t addr, size_t size, char *func, char *file,
                   int line);
   /* Check if the stored data falls into mmaped ranges. */
   bool store_in_range(void *ptr, size_t size);
   /* Save store information. */
-  void save_store(uint64_t time, uintptr_t addr, size_t size, char *func,
-                  char *file, int line);
-  /* Save CLFLUSH(OPT) or CLWB operations. */
-  void save_clfwb(uint64_t time, uintptr_t addr, char *func, char *file,
+  void save_store(uintptr_t addr, size_t size, char *func, char *file,
                   int line);
+  /* Save CLFLUSH(OPT) or CLWB operations. */
+  void save_clfwb(uintptr_t addr, char *func, char *file, int line);
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */
   void find_dirty_ranges(StoreInfo &store, DirtyRanges &dirty_ranges);
@@ -192,7 +193,7 @@ public:
                     size_t bytes) const;
 
   NVXRuntime(void *_shm, struct nvx_target_config *tgconf)
-      : _shm_base(_shm), _tgconfig(tgconf) {
+      : _shm_base(_shm), _tgconfig(tgconf), _time(0), _epoch(0) {
     if (_shm_base) {
       OKF("NVX-RT: NVX runtime constructed");
     } else {
@@ -203,10 +204,10 @@ public:
 
   ~NVXRuntime() {
     if (is_enabled()) {
-      uint64_t epoch = 0; // ++epochid;
       int linenr = 0;
       char *file = const_cast<char *>("Program");
       char *func = const_cast<char *>("Program exit");
+      uint64_t epoch = _epoch;
       /*
        * TODO: It may not be safe to perform reordering tests at this point
        * because the mapped memory could be already unmapped. We may instrument
@@ -225,6 +226,11 @@ public:
 private:
   void *_shm_base;
   struct nvx_target_config *_tgconfig;
+
+  /* timestamp, shared between threads */
+  std::atomic_uint64_t _time;
+  /* epoch id, shared between threads */
+  std::atomic_uint64_t _epoch;
 
   /**
    * TODO: Using a vector for _nvranges assumes there are only few mappings

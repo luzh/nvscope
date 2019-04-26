@@ -141,13 +141,14 @@ void NVXRuntime::close_channels() const {
     close(_tgconfig->write_fd);
 }
 
-void NVXRuntime::save_store(uint64_t time, uintptr_t addr, size_t size,
-                            char *func, char *file, int line) {
+void NVXRuntime::save_store(uintptr_t addr, size_t size, char *func, char *file,
+                            int line) {
+  uint64_t time = ++_time;
   _nvstores.emplace_back(time, addr, addr + size, func, file, line);
 }
 
-void NVXRuntime::save_clfwb(uint64_t time, uintptr_t addr, char *func,
-                            char *file, int line) {
+void NVXRuntime::save_clfwb(uintptr_t addr, char *func, char *file, int line) {
+  uint64_t time = ++_time;
   _nvclfwbs.emplace_back(time, addr, func, file, line);
 }
 
@@ -357,7 +358,11 @@ void NVXRuntime::check_dirty_stores(uint64_t epoch, char *func, char *file,
 
 void NVXRuntime::check_missing_fence(uint64_t epoch, char *func, char *file,
                                      int line) {
-  if (_nvstores.empty() && _dirty_stores.empty())
+  /**
+   * If _dirty_stores is not empty, its content should have been reported so we
+   * do not warn it again.
+   */
+  if (_nvstores.empty())
     return;
 
   SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s:%4d]\n",

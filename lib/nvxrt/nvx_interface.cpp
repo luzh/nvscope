@@ -1,9 +1,5 @@
 #include "nvx_runtime.h"
 
-/* epoch id, shared between threads */
-static std::atomic_uint64_t epochid{0};
-/* event timestamp, shared between threads */
-static std::atomic_uint64_t timestamp{0};
 /**
  * NVXRuntime handle. When the forserver is enabled, the forkserver process will
  * construct nvxrt, and a child process inherits nvxrt via forking. If nvxrt is
@@ -174,9 +170,7 @@ extern "C" void __nvx_store(void *ptr, size_t size, char *func, char *file,
   if (!nvxrt || !nvxrt->is_enabled() || !nvxrt->store_in_range(ptr, size))
     return;
 
-  uint64_t time = ++timestamp;
-  nvxrt->save_store(time, reinterpret_cast<uint64_t>(ptr), size, func, file,
-                    line);
+  nvxrt->save_store(reinterpret_cast<uint64_t>(ptr), size, func, file, line);
 }
 
 /**
@@ -218,8 +212,7 @@ extern "C" void __nvx_clwb(void *ptr, char *func, char *file, int line) {
   if (!nvxrt || !nvxrt->is_enabled())
     return;
 
-  uint64_t time = ++timestamp;
-  nvxrt->save_clfwb(time, addr, func, file, line);
+  nvxrt->save_clfwb(addr, func, file, line);
 }
 
 extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
@@ -231,23 +224,21 @@ extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
   if (!nvxrt || !nvxrt->is_enabled())
     return;
 
-  uint64_t time = ++timestamp;
-  nvxrt->save_clfwb(time, addr, func, file, line);
+  nvxrt->save_clfwb(addr, func, file, line);
 }
 
 extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
-  uint64_t epoch = ++epochid;
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  MUTEF("NVX-RT: epoch %zu [%s() at %s:%4d]: CLFLUSH addr %p cache line %p",
-        epoch, func, file, line, ptr,
-        reinterpret_cast<void *>(cache_addr_of(addr)));
+  MUTEF("NVX-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", epoch, func,
+        file, line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvxrt || !nvxrt->is_enabled())
     return;
 
-  uint64_t time = ++timestamp;
-  nvxrt->save_clfwb(time, addr, func, file, line);
+  uint64_t epoch = nvxrt->current_epoch();
+
+  nvxrt->save_clfwb(addr, func, file, line);
 
   nvxrt->check_reorder(epoch, func, file, line);
   nvxrt->check_dirty_stores(epoch, func, file, line);
@@ -256,12 +247,12 @@ extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvx_sfence(char *func, char *file, int line) {
-  uint64_t epoch = ++epochid;
-
-  MUTEF("NVX-RT: epoch %zu [%s() at %s:%4d]: SFENCE", epoch, func, file, line);
+  MUTEF("NVX-RT: [%s() at %s:%4d]: SFENCE", func, file, line);
 
   if (!nvxrt || !nvxrt->is_enabled())
     return;
+
+  uint64_t epoch = nvxrt->current_epoch();
 
   nvxrt->check_reorder(epoch, func, file, line);
   nvxrt->check_dirty_stores(epoch, func, file, line);
