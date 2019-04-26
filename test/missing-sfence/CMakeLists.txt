@@ -36,4 +36,17 @@ add_test(NAME ${NVXBIN}-check1 COMMAND ${NVXBIN_PATH} check1 casefile1)
 
 # --- NVScope tests --- #
 
-# To be added
+function(add_nvscope_case)
+  foreach(N ${ARGV})
+    add_custom_target(scope-${NVXBIN}-case${N}
+      DEPENDS
+        ${NVXBIN} nvscope
+      COMMAND
+        ${NVX_TOOLS_DIR}/nvscope
+          --nvs-mainproc ${NVXBIN_PATH} case${N} casefile
+          --nvs-recovery ${NVXBIN_PATH} check${N} casefile
+    )
+  endforeach()
+endfunction()
+
+add_nvscope_case(1)
