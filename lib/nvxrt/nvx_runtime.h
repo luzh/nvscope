@@ -246,7 +246,7 @@ private:
   std::vector<StoreInfo> _nvstores;
   std::vector<CLfwbInfo> _nvclfwbs;
   std::vector<StoreInfo> _dirty_stores;
-};
+}; // class NVXRuntime
 
 } // namespace __nvx
 
