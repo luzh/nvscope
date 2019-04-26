@@ -1,4 +1,4 @@
-set(SRCS nvx_runtime.cpp nvx_interface.cpp)
+set(SRCS nvx_runtime.cc nvx_interface.cc)
 
 # Link statically for performance (inline) and initializations before main().
 add_library(clang_rt.nvx STATIC ${SRCS})
