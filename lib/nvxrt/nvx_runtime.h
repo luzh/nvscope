@@ -108,6 +108,7 @@ struct StoreData {
 };
 
 struct StoreInfo {
+  // TODO: How to initialize _intbuf using initializer list?
   StoreInfo(uint64_t tid, uint64_t time, uintptr_t start, uintptr_t end,
             char *func, char *file, int linenr)
       : _func(func), _file(file), _linenr(linenr), _tid(tid), _time(time),

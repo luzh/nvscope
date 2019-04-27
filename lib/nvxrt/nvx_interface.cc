@@ -139,7 +139,7 @@ static void __start_forkserver() {
  * Initialize NVX-RT runtime data structures. Runs before the target's main()
  * with the constructor attribute.
  */
-__attribute__((constructor(kNVXInitPrio))) void __nvx_init() {
+__attribute__((constructor(kNVXInitPrio), used)) void __nvx_init() {
   if (nvxrt) {
     /**
      * Because we use forkservers, this function should not fire more than once
@@ -164,8 +164,8 @@ __attribute__((constructor(kNVXInitPrio))) void __nvx_init() {
  * are written in C because C++ names are usually mangled.
  */
 
-extern "C" void __nvx_store(void *ptr, size_t size, char *func, char *file,
-                            int line) {
+extern "C" void __attribute__((used))
+__nvx_store(void *ptr, size_t size, char *func, char *file, int line) {
   MUTEF("NVX-RT: [%s() at %s: %d]: STORE to %p size %lu", func, file, line, ptr,
         size);
 
@@ -183,9 +183,9 @@ extern "C" void __nvx_store(void *ptr, size_t size, char *func, char *file,
  * The targeted range is determined by the program's call to mmap(). We ignore
  * stores that occur before the mmap() call.
  */
-extern "C" void *__nvx_mmap(void *addr, size_t size, int prot, int flags,
-                            int fd, off_t offset, char *func, char *file,
-                            int line) {
+extern "C" void *__attribute__((used))
+__nvx_mmap(void *addr, size_t size, int prot, int flags, int fd, off_t offset,
+           char *func, char *file, int line) {
   /**
    * TODO: If necessary, we can change how mmap() is called, for example, using
    * provate mapping other than shared.
@@ -205,7 +205,8 @@ extern "C" void *__nvx_mmap(void *addr, size_t size, int prot, int flags,
   return pmap;
 }
 
-extern "C" void __nvx_clwb(void *ptr, char *func, char *file, int line) {
+extern "C" void __attribute__((used))
+__nvx_clwb(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
   MUTEF("NVX-RT: [%s() at %s: %d]: CLWB addr %p cache line %p", func, file,
@@ -217,7 +218,8 @@ extern "C" void __nvx_clwb(void *ptr, char *func, char *file, int line) {
   nvxrt->SaveCLfwb(addr, func, file, line);
 }
 
-extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
+extern "C" void __attribute__((used))
+__nvx_clflushopt(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
   MUTEF("NVX-RT: [%s() at %s: %d]: CLFLUSHOPT addr %p cache line %p", func,
@@ -229,7 +231,8 @@ extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
   nvxrt->SaveCLfwb(addr, func, file, line);
 }
 
-extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
+extern "C" void __attribute__((used))
+__nvx_clflush(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
   MUTEF("NVX-RT: [%s() at %s: %d]: CLFLUSH addr %p cache line %p", epoch, func,
@@ -245,7 +248,8 @@ extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
   TESTC("NVX-RT: pass over epoch #%zu [clflush]", epoch);
 }
 
-extern "C" void __nvx_sfence(char *func, char *file, int line) {
+extern "C" void __attribute__((used))
+__nvx_sfence(char *func, char *file, int line) {
   MUTEF("NVX-RT: [%s() at %s: %d]: SFENCE", func, file, line);
 
   if (!nvxrt || !nvxrt->Enabled())
@@ -262,7 +266,7 @@ extern "C" void __nvx_sfence(char *func, char *file, int line) {
  * finishes if they call exit(..) or normally terminate. If they finish via
  * calling _exit(..), this destructor will not run.
  */
-__attribute__((destructor(kNVXFiniPrio))) void __nvx_fini() {
+__attribute__((destructor(kNVXFiniPrio), used)) void __nvx_fini() {
   DBGF("NVX-RT: process %d exit", getpid());
   /* If nvxrt was created by new: delete nvxrt; */
 }
