@@ -273,11 +273,13 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
   size_t nthreads = _nthreads;
   nthreads = (nthreads < kMaxThreads) ? nthreads : kMaxThreads;
 
-  DBGF(cBRN "NVX-RT: >>>>> epoch #%zu found %zu store(s) from %zu thread(s) "
-       cRST, epoch, nstores, nthreads);
+  DBGF(cBRN
+       "NVX-RT: >>>>> epoch #%zu found %zu store(s) from %zu thread(s) " cRST,
+       epoch, nstores, nthreads);
   PrintStoreInfoVec(nvstores, nstores, 32);
-  DBGF(cBRN "NVX-RT: <<<<< epoch #%zu found %zu store(s) from %zu thread(s) "
-       cRST, epoch, nstores, nthreads);
+  DBGF(cBRN
+       "NVX-RT: <<<<< epoch #%zu found %zu store(s) from %zu thread(s) " cRST,
+       epoch, nstores, nthreads);
 #endif
 
   DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s: %d]", epoch, func,
@@ -290,7 +292,8 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
 
     if (command == MSG_SHOW_BUG_AND_CONTINUE ||
         command == MSG_SHOW_BUG_AND_EXIT) {
-      SAYF("\n" cLRD "[-] Store Race:" cRST " in epoch #%zu [%s() at %s: %d]\n",
+      SAYF("\n" cLRD "[-] Store Race:" cRST
+           " found in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
       ERRF("NVX-RT needs a patch to report details of this store race due to "
            "possible missing sfences.\n");
@@ -377,8 +380,8 @@ void NVXRuntime::CheckDirtyStores(uint64_t epoch,
 
     if (!dirty_ranges.empty()) {
       report = true;
-      SAYF("\n" cLRD "[-] Dirty Stores:" cRST
-           " in epoch #%zu [%s() at %s: %d]\n",
+      SAYF("\n" cLRD "[-] Dirty Store:" cRST
+           " found in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
       ERRF("store size %zu made by [%s() at %s: %d] has unflushed ranges:",
            sti->_end - sti->_start, sti->_func, sti->_file, sti->_linenr);
@@ -423,7 +426,8 @@ void NVXRuntime::CheckMissingFence(uint64_t epoch, char *func, char *file,
   if (!missing)
     return;
 
-  SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s: %d]\n",
+  SAYF("\n" cLRD "[-] Missing SFence:" cRST
+       " found in epoch #%zu [%s() at %s: %d]\n",
        epoch, func, file, line);
 
   ERRF("Probably an sfence is missing because there are pending stores that "
