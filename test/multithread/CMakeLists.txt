@@ -48,4 +48,4 @@ function(add_nvscope_case)
   endforeach()
 endfunction()
 
-add_nvscope_case(1)
+add_nvscope_case(1 2)

@@ -28,9 +28,8 @@ static int case1(void *pmem) {
   uint64_t *pval2 = (uint64_t *)pmem + 10;;
   *pval1 = 0;
   *pval2 = 0;
-  clwb(pval1);
-  clwb(pval2);
-  sfence();
+  clflush(pval1);
+  clflush(pval2);
 
   pthread_t case1th1, case1th2;
 
@@ -46,11 +45,47 @@ static int case1(void *pmem) {
   return 0;
 }
 
-static int case2(void *pmem) {
-  uint64_t *ptr = (uint64_t *)pmem;
-  *ptr = 123;
-  /* Unflushed range (in-page hex offset): [000, 008). */
+void *case2func1(void *pmem) {
+  uint64_t *pval1 = (uint64_t *)pmem;
+  *pval1 = 0xAA;
+  clwb(pval1);
   sfence();
+
+  return NULL;
+}
+
+void *case2func2(void *pmem) {
+  volatile uint64_t *pval1 = (uint64_t *)pmem;
+  uint64_t *pval2 = (uint64_t *)pmem + 10;
+
+  while (*pval1 != 0xAA) {}
+
+  *pval2 = 0xBB;
+  clwb(pval2);
+  sfence();
+
+  return NULL;
+}
+
+static int case2(void *pmem) {
+  uint64_t *pval1 = (uint64_t *)pmem;
+  uint64_t *pval2 = (uint64_t *)pmem + 10;
+  *pval2 = 0;
+  clflush(pval2);
+  *pval1 = 0;
+  clflush(pval1);
+
+  pthread_t case2th1, case2th2;
+
+  // The two threads make two store-writeback-sfence sequences separately.
+  // If NVX checks at each sfence(), it may occasionally report dirty stores
+  // depending on the instruction sequences of the two threads.
+  pthread_create(&case2th1, NULL, case2func1, pmem);
+  pthread_create(&case2th2, NULL, case2func2, pmem);
+
+  pthread_join(case2th1, NULL);
+  pthread_join(case2th2, NULL);
+
   return 0;
 }
 
@@ -62,10 +97,13 @@ static int check1(void *pmem) {
 }
 
 static int check2(void *pmem) {
-  if (pmem)
-    return 0;
+  uint64_t *pval1 = (uint64_t *)pmem;
+  uint64_t *pval2 = (uint64_t *)pmem + 10;;
 
-  return 1;
+  if (*pval2 == 0xBB && *pval1 != 0xAA)
+    return 1;
+
+  return 0;
 }
 
 int main(int argc, char **argv) {
