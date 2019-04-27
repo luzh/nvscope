@@ -28,26 +28,29 @@ namespace __nvx {
 using byte_t = uint8_t; // TODO: Consider std::byte?
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
-static const int NVX_INIT_PRIO{0}; // __nvx_init priority (runs before main)
-static const int NVX_FINI_PRIO{0}; // __nvx_fini priority (runs after main)
-// If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
+static const int kNVXInitPrio{0}; // __nvx_init priority (runs before main)
+static const int kNVXFiniPrio{0}; // __nvx_fini priority (runs after main)
+
+static const uint32_t kCacheLineSize{64};
+// If a store's data size is less than or equal to kStBufInternalSize, it
 // resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
 // the store's data.
-static const uint32_t STBUF_INTERNAL_SIZE{32};
+static const uint32_t kStBufInternalSize{32};
 // Content saved in StoreData becomes persistent due to cache line flushes or
 // write-backs. But incomplete flushes may break a StoreData into small pieces.
 // A dirty store splits off from a StoreData if
-// StoreData._size >= STBUF_SPLIT_THRESHOLD and the dirty store size is less
-// than or equal to (StoreData._size >> STBUF_SPTH_RATIO_SHIFT).
+// StoreData._size >= kStBufMinSplitSize and the dirty store size is less
+// than or equal to (StoreData._size >> kStBufSplitRatioShift).
 //
 // A split store may become a new StoreData or internalized by StoreInfo,
 // depending on the store's size.
-static const uint32_t STBUF_SPLIT_THRESHOLD{4096};
-static const uint32_t STBUF_SPTH_SHIFT{3}; // one eigth of STBUF_SPLIT_THRESHOLD
+static const uint32_t kStBufMinSplitSize{4096};
+// one eigth of kStBufMinSplitSize
+static const uint32_t kStBufSplitRatioShift{3};
 
-// Valid thread id is between [0..MAX_THREADS), right open.
+// Valid thread id is between [0..kMaxThreads), right open.
 // TODO: Make it configurable at runtime using environment variables.
-static const uint32_t MAX_THREADS{4};
+static const uint32_t kMaxThreads{4};
 
 // Check requests
 static const uint32_t kCheckReorder{1};
@@ -74,7 +77,7 @@ struct StoreData {
   StoreData(uintptr_t start, uintptr_t end)
       : _size(start < end ? end - start : 0),
         /* A zero value of _spth prevents splitting. */
-        _spth(_size < STBUF_SPLIT_THRESHOLD ? 0 : _size >> STBUF_SPTH_SHIFT),
+        _spth(_size < kStBufMinSplitSize ? 0 : _size >> kStBufSplitRatioShift),
         _data(_size ? new byte_t[_size] : nullptr) {
 
     static_assert(sizeof(byte_t) == 1);
@@ -111,8 +114,8 @@ struct StoreInfo {
         _start(start), _end(end), _offset(0),
         _extbuf(make_snapshot(start, end)) {
 
-    static_assert(STBUF_INTERNAL_SIZE < CACHELINE_SIZE);
-    static_assert(STBUF_INTERNAL_SIZE < STBUF_SPLIT_THRESHOLD);
+    static_assert(kStBufInternalSize < kCacheLineSize);
+    static_assert(kStBufInternalSize < kStBufMinSplitSize);
   }
 
   char *_func;
@@ -123,11 +126,11 @@ struct StoreInfo {
   uintptr_t _start; // pmem address starting this store
   uintptr_t _end;   // pmem address ending this store (one byte off)
   size_t _offset;   // byte offset relative to _intbuf or _extbuf._data
-  byte_t _intbuf[STBUF_INTERNAL_SIZE];
+  byte_t _intbuf[kStBufInternalSize];
   std::shared_ptr<StoreData> _extbuf;
 
   std::shared_ptr<StoreData> make_snapshot(uintptr_t start, uintptr_t end) {
-    if (STBUF_INTERNAL_SIZE < end - start) {
+    if (kStBufInternalSize < end - start) {
       return std::make_shared<StoreData>(start, end);
     }
 
@@ -149,7 +152,7 @@ struct CLfwbInfo {
             int linenr)
       : _func(func), _file(file), _linenr(linenr), _tid(tid), _time(time),
         _addr(addr), _start(cache_addr_of(addr)),
-        _end(cache_addr_of(addr) + CACHELINE_SIZE) {}
+        _end(cache_addr_of(addr) + kCacheLineSize) {}
   char *_func;
   char *_file;
   int _linenr;
@@ -157,7 +160,7 @@ struct CLfwbInfo {
   uint64_t _time;   // logical timestamp
   uintptr_t _addr;  // user-provided address of this cache line op
   uintptr_t _start; // pmem cache-line address for _addr
-  uintptr_t _end;   // pmem cache-line address + CACHELINE_SIZE for _addr
+  uintptr_t _end;   // pmem cache-line address + kCacheLineSize for _addr
 
   // bool operator<(const CLfwbInfo &other) {
   //  if (_claddr != other._claddr)
@@ -255,8 +258,8 @@ private:
    * or hundreds of mappings we should use a hash map.
    */
   std::vector<RangeInfo> _nvranges;
-  std::vector<StoreInfo> _nvstores[MAX_THREADS];
-  std::vector<CLfwbInfo> _nvclfwbs[MAX_THREADS];
+  std::vector<StoreInfo> _nvstores[kMaxThreads];
+  std::vector<CLfwbInfo> _nvclfwbs[kMaxThreads];
   std::vector<StoreInfo> _dirty_stores;
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */

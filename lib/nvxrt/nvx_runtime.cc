@@ -4,9 +4,9 @@ namespace __nvx {
 
 void StoreInfo::PrintStoreData(size_t bytes) {
   if (!_extbuf)
-    assert(_end - _start <= STBUF_INTERNAL_SIZE);
+    assert(_end - _start <= kStBufInternalSize);
   else
-    assert(_end - _start > STBUF_INTERNAL_SIZE);
+    assert(_end - _start > kStBufInternalSize);
 
   auto lineaddr = _start & ~(16UL - 1);
   auto skip = _start - lineaddr;
@@ -62,7 +62,7 @@ void StoreInfo::ResizeStoreData(uintptr_t start, uintptr_t end) {
 
   if (_extbuf) {
     size_t dirty_size = end - start;
-    if (dirty_size <= STBUF_INTERNAL_SIZE) {
+    if (dirty_size <= kStBufInternalSize) {
       void *src = _extbuf->_data + _offset + (start - _start);
       std::memcpy(_intbuf, src, end - start);
       _offset = 0;
@@ -98,18 +98,18 @@ void StoreInfo::ResizeStoreData(uintptr_t start, uintptr_t end) {
 /*--------------------- End of StoreInfo Implementation ---------------------*/
 
 uint64_t NVXRuntime::GetThreadID() { // This function should be lock-free.
-  // tid equals MAX_THREADS means the current thread is not registered.
-  // tid > MAX_THREADS means the current thread is registered but it's beyond
+  // tid equals kMaxThreads means the current thread is not registered.
+  // tid > kMaxThreads means the current thread is registered but it's beyond
   // our predefined thread count threshold.
-  static thread_local uint64_t tid{MAX_THREADS};
+  static thread_local uint64_t tid{kMaxThreads};
 
-  if (tid == MAX_THREADS) {
-    if (_nthreads > MAX_THREADS) {
-      // TODO: Now we just ignore threads beyond MAX_THREADS. Perhaps NVX can
+  if (tid == kMaxThreads) {
+    if (_nthreads > kMaxThreads) {
+      // TODO: Now we just ignore threads beyond kMaxThreads. Perhaps NVX can
       // make an educated guess about what other thread to evict at this time.
       tid = _nthreads;
     } else {
-      // Value of _nthreads can go over MAX_THREADS if more than that amount of
+      // Value of _nthreads can go over kMaxThreads if more than that amount of
       // threads concurrently reach here.
       tid = _nthreads++;
     }
@@ -166,12 +166,12 @@ void NVXRuntime::CloseChannels() const {
 void NVXRuntime::SaveStore(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
   uint64_t tid = GetThreadID();
-  if (tid >= MAX_THREADS)
+  if (tid >= kMaxThreads)
     return;
 
   uint64_t time = ++_time;
 
-  assert(tid < MAX_THREADS);
+  assert(tid < kMaxThreads);
   std::shared_lock savelock(_nvxlock);
   auto &nvstore = _nvstores[tid];
   nvstore.emplace_back(tid, time, addr, addr + size, func, file, line);
@@ -179,12 +179,12 @@ void NVXRuntime::SaveStore(uintptr_t addr, size_t size, char *func, char *file,
 
 void NVXRuntime::SaveCLfwb(uintptr_t addr, char *func, char *file, int line) {
   uint64_t tid = GetThreadID();
-  if (tid >= MAX_THREADS)
+  if (tid >= kMaxThreads)
     return;
 
   uint64_t time = ++_time;
 
-  assert(tid < MAX_THREADS);
+  assert(tid < kMaxThreads);
   std::shared_lock savelock(_nvxlock);
   auto &nvclfwb = _nvclfwbs[tid];
   nvclfwb.emplace_back(tid, time, addr, func, file, line);
@@ -284,7 +284,7 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
 
     if (command == MSG_SHOW_BUG_AND_CONTINUE ||
         command == MSG_SHOW_BUG_AND_EXIT) {
-      SAYF("\n" cLRD "[-] Store Races:" cRST
+      SAYF("\n" cLRD "[-] Store Race:" cRST
            " in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
       ERRF("NVX-RT needs a patch to report details of this store race due to "
@@ -407,7 +407,7 @@ void NVXRuntime::CheckMissingFence(uint64_t epoch, char *func, char *file,
 
   bool missing = false;
   size_t nthreads = _nthreads;
-  nthreads = (nthreads < MAX_THREADS) ? nthreads : MAX_THREADS;
+  nthreads = (nthreads < kMaxThreads) ? nthreads : kMaxThreads;
   for (size_t tid = 0; tid < nthreads; ++tid) {
     if (!_nvstores[tid].empty()) {
       missing = true;
@@ -444,7 +444,7 @@ void NVXRuntime::Check(uint64_t epoch, uint32_t flags, char *func, char *file,
     // TODO: This copying method may become very expensive. We may use _nvstores
     // and _nvclfwbs without copying them.
     size_t nthreads = _nthreads;
-    nthreads = (nthreads < MAX_THREADS) ? nthreads : MAX_THREADS;
+    nthreads = (nthreads < kMaxThreads) ? nthreads : kMaxThreads;
     DBGF(cBRN "NVX-RT: collected information from %zu thread(s)" cRST,
          nthreads);
 

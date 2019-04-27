@@ -139,7 +139,7 @@ static void __start_forkserver() {
  * Initialize NVX-RT runtime data structures. Runs before the target's main()
  * with the constructor attribute.
  */
-__attribute__((constructor(NVX_INIT_PRIO))) void __nvx_init() {
+__attribute__((constructor(kNVXInitPrio))) void __nvx_init() {
   if (nvxrt) {
     /**
      * Because we use forkservers, this function should not fire more than once
@@ -239,9 +239,7 @@ extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
     return;
 
   uint64_t epoch = nvxrt->GetEpochID();
-
   nvxrt->SaveCLfwb(addr, func, file, line);
-
   nvxrt->Check(epoch, kCheckReorder | kCheckDirtyStores, func, file, line);
 
   TESTC("NVX-RT: pass over epoch #%zu [clflush]", epoch);
@@ -254,7 +252,6 @@ extern "C" void __nvx_sfence(char *func, char *file, int line) {
     return;
 
   uint64_t epoch = nvxrt->GetEpochID();
-
   nvxrt->Check(epoch, kCheckReorder | kCheckDirtyStores, func, file, line);
 
   TESTC("NVX-RT: pass over epoch #%zu [sfence]", epoch);
@@ -265,7 +262,7 @@ extern "C" void __nvx_sfence(char *func, char *file, int line) {
  * finishes if they call exit(..) or normally terminate. If they finish via
  * calling _exit(..), this destructor will not run.
  */
-__attribute__((destructor(NVX_FINI_PRIO))) void __nvx_fini() {
+__attribute__((destructor(kNVXFiniPrio))) void __nvx_fini() {
   DBGF("NVX-RT: process %d exit", getpid());
   /* If nvxrt was created by new: delete nvxrt; */
 }
