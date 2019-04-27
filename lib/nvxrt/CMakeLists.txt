@@ -15,3 +15,4 @@ target_compile_definitions(clang_rt.nvx
     $<$<BOOL:${COLORPRINT}>:COLORPRINT>
 )
 target_include_directories(clang_rt.nvx PUBLIC ${CMAKE_HOME_DIRECTORY}/include)
+target_link_options(clang_rt.nvx PUBLIC -lpthread)
