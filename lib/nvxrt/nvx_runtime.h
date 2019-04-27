@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <shared_mutex>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
@@ -24,29 +25,34 @@
 
 namespace __nvx {
 
-using byte_t = uint8_t; /* TODO: Consider std::byte? */
+using byte_t = uint8_t; // TODO: Consider std::byte?
 using DirtyRanges = std::vector<std::pair<uintptr_t, uintptr_t>>;
 
-static const int INIT_PRIO{0}; // __nvx_init priority (runs before main)
-static const int FINI_PRIO{0}; // __nvx_fini priority (runs after main)
-/**
- * If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
- * resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
- * the store's data.
- */
+static const int NVX_INIT_PRIO{0}; // __nvx_init priority (runs before main)
+static const int NVX_FINI_PRIO{0}; // __nvx_fini priority (runs after main)
+// If a store's data size is less than or equal to STBUF_INTERNAL_SIZE, it
+// resides inside StoreInfo. Otherwise, StoreInfo allocates a StoreData to hold
+// the store's data.
 static const uint32_t STBUF_INTERNAL_SIZE{32};
-/**
- * Content saved in StoreData becomes persistent due to cache line flushes or
- * write-backs. But incomplete flushes may break a StoreData into small pieces.
- * A dirty store splits off from a StoreData if
- * StoreData._size >= STBUF_SPLIT_THRESHOLD and the dirty store size is less
- * than or equal to (StoreData._size >> STBUF_SPTH_RATIO_SHIFT).
- *
- * A split store may become a new StoreData or internalized by StoreInfo,
- * depending on the store's size.
- */
+// Content saved in StoreData becomes persistent due to cache line flushes or
+// write-backs. But incomplete flushes may break a StoreData into small pieces.
+// A dirty store splits off from a StoreData if
+// StoreData._size >= STBUF_SPLIT_THRESHOLD and the dirty store size is less
+// than or equal to (StoreData._size >> STBUF_SPTH_RATIO_SHIFT).
+//
+// A split store may become a new StoreData or internalized by StoreInfo,
+// depending on the store's size.
 static const uint32_t STBUF_SPLIT_THRESHOLD{4096};
 static const uint32_t STBUF_SPTH_SHIFT{3}; // one eigth of STBUF_SPLIT_THRESHOLD
+
+// Valid thread id is between [0..MAX_THREADS), right open.
+// TODO: Make it configurable at runtime using environment variables.
+static const uint32_t MAX_THREADS{4};
+
+// Check requests
+static const uint32_t kCheckReorder{1};
+static const uint32_t kCheckDirtyStores{1U << 1U};
+static const uint32_t kCheckMissingFence{1U << 2U};
 
 static uintptr_t cache_addr_of(const uintptr_t addr) { return addr & ~63UL; }
 
@@ -99,10 +105,11 @@ struct StoreData {
 };
 
 struct StoreInfo {
-  StoreInfo(uint64_t time, uintptr_t start, uintptr_t end, char *func,
-            char *file, int linenr)
-      : _func(func), _file(file), _linenr(linenr), _time(time), _start(start),
-        _end(end), _offset(0), _extbuf(make_snapshot(start, end)) {
+  StoreInfo(uint64_t tid, uint64_t time, uintptr_t start, uintptr_t end,
+            char *func, char *file, int linenr)
+      : _func(func), _file(file), _linenr(linenr), _tid(tid), _time(time),
+        _start(start), _end(end), _offset(0),
+        _extbuf(make_snapshot(start, end)) {
 
     static_assert(STBUF_INTERNAL_SIZE < CACHELINE_SIZE);
     static_assert(STBUF_INTERNAL_SIZE < STBUF_SPLIT_THRESHOLD);
@@ -111,6 +118,7 @@ struct StoreInfo {
   char *_func;
   char *_file;
   int _linenr;
+  uint64_t _tid;    // thread id
   uint64_t _time;   // logical timestamp
   uintptr_t _start; // pmem address starting this store
   uintptr_t _end;   // pmem address ending this store (one byte off)
@@ -135,15 +143,18 @@ struct StoreInfo {
   void ResizeStoreData(uintptr_t start, uintptr_t end);
 };
 
+// TODO: Let this take addr + size as input.
 struct CLfwbInfo {
-  CLfwbInfo(uint64_t time, uintptr_t addr, char *func, char *file, int linenr)
-      : _func(func), _file(file), _linenr(linenr), _time(time), _addr(addr),
-        _start(cache_addr_of(addr)),
+  CLfwbInfo(uint64_t tid, uint64_t time, uintptr_t addr, char *func, char *file,
+            int linenr)
+      : _func(func), _file(file), _linenr(linenr), _tid(tid), _time(time),
+        _addr(addr), _start(cache_addr_of(addr)),
         _end(cache_addr_of(addr) + CACHELINE_SIZE) {}
   char *_func;
   char *_file;
   int _linenr;
-  uint64_t _time;
+  uint64_t _tid;    // thread id
+  uint64_t _time;   // logical timestamp
   uintptr_t _addr;  // user-provided address of this cache line op
   uintptr_t _start; // pmem cache-line address for _addr
   uintptr_t _end;   // pmem cache-line address + CACHELINE_SIZE for _addr
@@ -172,7 +183,11 @@ public:
   void SendAnyData(void *data, ssize_t len) const;
   void CloseChannels() const;
 
-  uint64_t CurrentEpoch() { return ++_epoch; };
+  /* Get the current epoch ID. */
+  uint64_t GetEpochID() { return ++_epoch; };
+
+  /* Get a thread ID. */
+  uint64_t GetThreadID();
 
   /* Add one mmaped range. */
   void SaveRange(uintptr_t addr, size_t size, char *func, char *file, int line);
@@ -184,21 +199,26 @@ public:
   void SaveCLfwb(uintptr_t addr, char *func, char *file, int line);
 
   /* Fill unflushed store ranges and save them in dirty_ranges. */
-  void FindDirtyRanges(StoreInfo &store, DirtyRanges &dirty_ranges);
+  void FindDirtyRanges(StoreInfo &store, std::vector<CLfwbInfo> &nvclfwbs,
+                       DirtyRanges &dirty_ranges);
 
   /* Generate the next test case. */
-  bool NextReorder();
+  bool NextReorder(std::vector<StoreInfo> &nvstores);
   /* Perform analysis for insights. */
-  void CheckReorder(uint64_t epoch, char *func, char *file, int line);
-  void CheckDirtyStores(uint64_t epoch, char *func, char *file, int line);
+  void CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
+                    char *func, char *file, int line);
+  void CheckDirtyStores(uint64_t epoch, std::vector<StoreInfo> &nvstores,
+                        std::vector<CLfwbInfo> &nvclfwbs, char *func,
+                        char *file, int line);
   void CheckMissingFence(uint64_t epoch, char *func, char *file, int line);
+  void Check(uint64_t epoch, uint32_t flags, char *func, char *file, int line);
 
   /* Print content of a StoreInfo vector (up to limit entries). */
   void PrintStoreInfoVec(std::vector<StoreInfo> &stores, size_t nstores,
                          size_t bytes) const;
 
   NVXRuntime(void *_shm, struct nvx_target_config *tgconf)
-      : _shm_base(_shm), _tgconfig(tgconf), _time(0), _epoch(0) {
+      : _shm_base(_shm), _tgconfig(tgconf), _time(0), _epoch(0), _nthreads(0) {
     if (_shm_base) {
       OKF("NVX-RT: NVX runtime constructed");
     } else {
@@ -209,20 +229,15 @@ public:
 
   ~NVXRuntime() {
     if (Enabled()) {
-      int linenr = 0;
+      int line = 0;
       char *file = const_cast<char *>("Program");
       char *func = const_cast<char *>("Program exit");
       uint64_t epoch = _epoch;
-      /*
-       * TODO: It may not be safe to perform reordering tests at this point
-       * because the mapped memory could be already unmapped. We may instrument
-       * munmap() calls, or make reordering tests independent of the previous
-       * mmaped region.
-       *
-       * CheckReorder(epoch, func, file, linenr);
-       */
-      CheckMissingFence(epoch, func, file, linenr);
-      CheckDirtyStores(epoch, func, file, linenr);
+      // TODO: It may not be safe to perform reordering tests at this point
+      // because the mapped memory could be already unmapped. We may instrument
+      // munmap() calls, or make reordering tests independent of the previous
+      // mmaped region.
+      Check(epoch, kCheckMissingFence | kCheckDirtyStores, func, file, line);
     }
 
     OKF("NVX-RT: NVX runtime destructed");
@@ -237,14 +252,17 @@ private:
   /* epoch id, shared between threads */
   std::atomic_uint64_t _epoch;
 
+  std::shared_mutex _nvxlock;
+  std::atomic_size_t _nthreads;
+
   /**
    * TODO: Using a vector for _nvranges assumes there are only few mappings
    * (less than 10), where a linear search is good enough. But if there are tens
    * or hundreds of mappings we should use a hash map.
    */
   std::vector<RangeInfo> _nvranges;
-  std::vector<StoreInfo> _nvstores;
-  std::vector<CLfwbInfo> _nvclfwbs;
+  std::vector<StoreInfo> _nvstores[MAX_THREADS];
+  std::vector<CLfwbInfo> _nvclfwbs[MAX_THREADS];
   std::vector<StoreInfo> _dirty_stores;
 }; // class NVXRuntime
 

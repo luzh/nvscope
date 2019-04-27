@@ -98,6 +98,27 @@ void StoreInfo::ResizeStoreData(uintptr_t start, uintptr_t end) {
 
 /*--------------------- End of StoreInfo Implementation ---------------------*/
 
+uint64_t NVXRuntime::GetThreadID() { // This function should be lock-free.
+  // tid equals MAX_THREADS means the current thread is not registered.
+  // tid > MAX_THREADS means the current thread is registered but it's beyond
+  // our predefined thread count threshold.
+  static thread_local uint64_t tid{MAX_THREADS};
+
+  if (tid == MAX_THREADS) {
+    if (_nthreads > MAX_THREADS) {
+      // TODO: Now we just ignore threads beyond MAX_THREADS. Perhaps NVX can
+      // make an educated guess about what other thread to evict at this time.
+      tid = _nthreads;
+    } else {
+      // Value of _nthreads can go over MAX_THREADS if more than that amount of
+      // threads concurrently reach here.
+      tid = _nthreads++;
+    }
+  }
+
+  return tid;
+}
+
 void NVXRuntime::SaveRange(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
   _nvranges.emplace_back(addr, addr + size, func, file, line);
@@ -145,13 +166,29 @@ void NVXRuntime::CloseChannels() const {
 
 void NVXRuntime::SaveStore(uintptr_t addr, size_t size, char *func, char *file,
                            int line) {
+  uint64_t tid = GetThreadID();
+  if (tid >= MAX_THREADS)
+    return;
+
   uint64_t time = ++_time;
-  _nvstores.emplace_back(time, addr, addr + size, func, file, line);
+
+  assert(tid < MAX_THREADS);
+  std::shared_lock savelock(_nvxlock);
+  auto &nvstore = _nvstores[tid];
+  nvstore.emplace_back(time, tid, addr, addr + size, func, file, line);
 }
 
 void NVXRuntime::SaveCLfwb(uintptr_t addr, char *func, char *file, int line) {
+  uint64_t tid = GetThreadID();
+  if (tid >= MAX_THREADS)
+    return;
+
   uint64_t time = ++_time;
-  _nvclfwbs.emplace_back(time, addr, func, file, line);
+
+  assert(tid < MAX_THREADS);
+  std::shared_lock savelock(_nvxlock);
+  auto &nvclfwb = _nvclfwbs[tid];
+  nvclfwb.emplace_back(time, tid, addr, func, file, line);
 }
 
 void NVXRuntime::PrintStoreInfoVec(std::vector<StoreInfo> &stores,
@@ -168,14 +205,16 @@ void NVXRuntime::PrintStoreInfoVec(std::vector<StoreInfo> &stores,
   }
 }
 
-void NVXRuntime::FindDirtyRanges(StoreInfo &store, DirtyRanges &dirty_ranges) {
+void NVXRuntime::FindDirtyRanges(StoreInfo &store,
+                                 std::vector<CLfwbInfo> &nvclfwbs,
+                                 DirtyRanges &dirty_ranges) {
   /* initially the full range is dirty */
   uintptr_t dirty_start = store._start;
   /**
    * NOTE: This algorithm works only if _nvclfwbs is already sorted by _start
    * or by _time if _start equals.
    */
-  for (auto &clfwb : _nvclfwbs) {
+  for (auto &clfwb : nvclfwbs) {
     assert(clfwb._time != store._time);
     if (store._end <= clfwb._start)
       break; // remaining clfwbs can be skipped
@@ -191,7 +230,7 @@ void NVXRuntime::FindDirtyRanges(StoreInfo &store, DirtyRanges &dirty_ranges) {
   }
 }
 
-bool NVXRuntime::NextReorder() {
+bool NVXRuntime::NextReorder(std::vector<StoreInfo> &nvstores) {
   static size_t caseid = 0;
 
   if (caseid == 0) {
@@ -201,7 +240,7 @@ bool NVXRuntime::NextReorder() {
   }
 
   if (caseid > 1) {
-    StoreInfo &store = _nvstores[caseid - 2];
+    StoreInfo &store = nvstores[caseid - 2];
     store.SwapData();
 
     TESTC("NVX-RT: pass over test case #%zu: redo store to %p size %zu",
@@ -209,12 +248,12 @@ bool NVXRuntime::NextReorder() {
           store._end - store._start);
   }
 
-  if (_nvstores.size() < caseid) {
+  if (nvstores.size() < caseid) {
     caseid = 0;
     return false;
   }
 
-  StoreInfo &store = _nvstores[caseid - 1];
+  StoreInfo &store = nvstores[caseid - 1];
   store.SwapData();
 
   TESTC("NVX-RT: make test case #%zu: undo store to %p size %zu", caseid,
@@ -224,10 +263,10 @@ bool NVXRuntime::NextReorder() {
   return true;
 }
 
-void NVXRuntime::CheckReorder(uint64_t epoch, char *func, char *file,
-                              int line) {
+void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
+                              char *func, char *file, int line) {
   /* TODO: Consider reverting all _dirty_stores. */
-  if (_nvstores.empty())
+  if (nvstores.empty())
     return;
 
 #ifdef NVX_DEBUG
@@ -239,7 +278,7 @@ void NVXRuntime::CheckReorder(uint64_t epoch, char *func, char *file,
   DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", epoch, func,
        file, line);
 
-  while (NextReorder()) {
+  while (NextReorder(nvstores)) {
     SendMessage(MSG_AWAITING_CHECK);
 
     enum nvx_message command = ReadMessage();
@@ -262,16 +301,18 @@ void NVXRuntime::CheckReorder(uint64_t epoch, char *func, char *file,
   }
 }
 
-void NVXRuntime::CheckDirtyStores(uint64_t epoch, char *func, char *file,
-                                  int line) {
-  if (_nvstores.empty() && _dirty_stores.empty()) {
-    /* TODO: Should report redundant flushes before clearing _nvclfwbs. */
-    _nvclfwbs.clear();
+void NVXRuntime::CheckDirtyStores(uint64_t epoch,
+                                  std::vector<StoreInfo> &nvstores,
+                                  std::vector<CLfwbInfo> &nvclfwbs, char *func,
+                                  char *file, int line) {
+  if (nvstores.empty() && _dirty_stores.empty()) {
+    // TODO: Should report redundant flushes before clearing _nvclfwbs.
+    // _nvclfwbs.clear();
     return;
   }
 
   /* Sort by cache-line address, or timestamp if that equals. */
-  std::sort(_nvclfwbs.begin(), _nvclfwbs.end(),
+  std::sort(nvclfwbs.begin(), nvclfwbs.end(),
             [](const CLfwbInfo &lhs, const CLfwbInfo &rhs) {
               if (lhs._start != rhs._start)
                 return lhs._start < rhs._start;
@@ -283,7 +324,7 @@ void NVXRuntime::CheckDirtyStores(uint64_t epoch, char *func, char *file,
   std::vector<StoreInfo> new_dirty_stores;
   for (auto sti = _dirty_stores.begin(); sti != _dirty_stores.end();) {
     dirty_ranges.clear();
-    FindDirtyRanges(*sti, dirty_ranges);
+    FindDirtyRanges(*sti, nvclfwbs, dirty_ranges);
     /**
      * TODO: Previous calls of check_dirty_stores() should have reported
      * StoreInfo stored in _dirty_stores, so do not report it again here. But
@@ -326,9 +367,9 @@ void NVXRuntime::CheckDirtyStores(uint64_t epoch, char *func, char *file,
                        new_dirty_stores.end());
 
   bool report = false;
-  for (auto sti = _nvstores.begin(); sti != _nvstores.end(); ++sti) {
+  for (auto sti = nvstores.begin(); sti != nvstores.end(); ++sti) {
     dirty_ranges.clear();
-    FindDirtyRanges(*sti, dirty_ranges);
+    FindDirtyRanges(*sti, nvclfwbs, dirty_ranges);
 
     if (!dirty_ranges.empty()) {
       report = true;
@@ -352,18 +393,30 @@ void NVXRuntime::CheckDirtyStores(uint64_t epoch, char *func, char *file,
   }
   SAYF("%s", report ? "\n" : "");
 
-  /* Vector _dirty_stores will track any unflushed stored ranges. */
-  _nvclfwbs.clear();
-  _nvstores.clear();
+  // Vector _dirty_stores will track any unflushed stored ranges.
+  // _nvclfwbs.clear();
+  // _nvstores.clear();
 }
 
 void NVXRuntime::CheckMissingFence(uint64_t epoch, char *func, char *file,
                                    int line) {
-  /**
-   * If _dirty_stores is not empty, its content should have been reported so we
-   * do not warn it again.
-   */
-  if (_nvstores.empty())
+  // If _dirty_stores is not empty, its content should have been reported so we
+  // we do not warn it again.
+  // TODO: This logic assumes this function only runs when the target program
+  // exits. But this may not be accurate if this function is called before
+  // the target program exits.
+
+  bool missing = false;
+  size_t nthreads = _nthreads;
+  nthreads = (nthreads < MAX_THREADS) ? nthreads : MAX_THREADS;
+  for (size_t tid = 0; tid < nthreads; ++tid) {
+    if (!_nvstores[tid].empty()) {
+      missing = true;
+      break;
+    }
+  }
+
+  if (!missing)
     return;
 
   SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s:%4d]\n",
@@ -373,6 +426,48 @@ void NVXRuntime::CheckMissingFence(uint64_t epoch, char *func, char *file,
        "cannot be guaranteed persistent.\n");
 
   /* Do not print dirty stores here. Let the caller call CheckDirtyStores. */
+}
+
+void NVXRuntime::Check(uint64_t epoch, uint32_t flags, char *func, char *file,
+                       int line) {
+  // We do not check thread id here. Any thread encounters a checkpoint (sfence)
+  // can trigger a check action.
+
+  std::unique_lock checklock(_nvxlock);
+
+  if (flags & kCheckMissingFence) {
+    CheckMissingFence(epoch, func, file, line);
+  }
+
+  if (flags & (kCheckReorder | kCheckDirtyStores)) {
+    std::vector<StoreInfo> nvstores;
+
+    // TODO: This copying method may become very expensive. We may use _nvstores
+    // and _nvclfwbs without copying them.
+    size_t nthreads = _nthreads;
+    nthreads = (nthreads < MAX_THREADS) ? nthreads : MAX_THREADS;
+    for (size_t tid = 0; tid < nthreads; ++tid) {
+      auto &stores = _nvstores[tid];
+      nvstores.insert(nvstores.end(), stores.begin(), stores.end());
+      stores.clear();
+    }
+
+    if (flags & kCheckReorder) {
+      CheckReorder(epoch, nvstores, func, file, line);
+    }
+
+    if (flags & kCheckDirtyStores) {
+      std::vector<CLfwbInfo> nvclfwbs;
+
+      for (size_t tid = 0; tid < nthreads; ++tid) {
+        auto &clfwbs = _nvclfwbs[tid];
+        nvclfwbs.insert(nvclfwbs.end(), clfwbs.begin(), clfwbs.end());
+        clfwbs.clear();
+      }
+
+      CheckDirtyStores(epoch, nvstores, nvclfwbs, func, file, line);
+    }
+  }
 }
 
 } // namespace __nvx
