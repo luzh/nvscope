@@ -42,7 +42,7 @@ void StoreInfo::PrintStoreData(size_t bytes) {
   auto newdata = reinterpret_cast<byte_t *>(_start);
   print_bytes(lineaddr, newdata, "Current Bytes");
 
-  SAYF("-----------------------------------------------------------------\n");
+  SAYF("-------------------------------------------------------------------\n");
 }
 
 void StoreInfo::SwapData() {
@@ -233,7 +233,7 @@ bool NVXRuntime::NextReorder(std::vector<StoreInfo> &nvstores) {
   static size_t caseid = 0;
 
   if (caseid == 0) {
-    TESTC("NVX-RT: make test case #%zu: crash after sfence", caseid);
+    TESTC("NVX-RT: test case #%zu: crash after sfence with all stores", caseid);
     caseid++;
     return true;
   }
@@ -242,7 +242,7 @@ bool NVXRuntime::NextReorder(std::vector<StoreInfo> &nvstores) {
     StoreInfo &store = nvstores[caseid - 2];
     store.SwapData();
 
-    TESTC("NVX-RT: pass over test case #%zu: redo store to %p size %zu",
+    TESTC("NVX-RT: pass over test case #%zu: persist store to %p size %zu",
           caseid - 1, reinterpret_cast<void *>(store._start),
           store._end - store._start);
   }
@@ -255,7 +255,7 @@ bool NVXRuntime::NextReorder(std::vector<StoreInfo> &nvstores) {
   StoreInfo &store = nvstores[caseid - 1];
   store.SwapData();
 
-  TESTC("NVX-RT: make test case #%zu: undo store to %p size %zu", caseid,
+  TESTC("NVX-RT: test case #%zu: revert store to %p size %zu", caseid,
         reinterpret_cast<void *>(store._start), store._end - store._start);
   caseid++;
 
@@ -270,11 +270,14 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
 
 #ifdef NVX_DEBUG
   size_t nstores = nvstores.size();
-  DBGF(cCYA "NVX-RT: >>>>> collected %zu store(s) in epoch #%zu" cRST, nstores,
-       epoch);
+  size_t nthreads = _nthreads;
+  nthreads = (nthreads < kMaxThreads) ? nthreads : kMaxThreads;
+
+  DBGF(cBRN "NVX-RT: >>>>> epoch #%zu found %zu store(s) from %zu thread(s) "
+       cRST, epoch, nstores, nthreads);
   PrintStoreInfoVec(nvstores, nstores, 32);
-  DBGF(cCYA "NVX-RT: <<<<< collected %zu store(s) in epoch #%zu" cRST, nstores,
-       epoch);
+  DBGF(cBRN "NVX-RT: <<<<< epoch #%zu found %zu store(s) from %zu thread(s) "
+       cRST, epoch, nstores, nthreads);
 #endif
 
   DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s: %d]", epoch, func,
@@ -447,8 +450,6 @@ void NVXRuntime::Check(uint64_t epoch, uint32_t flags, char *func, char *file,
     // and _nvclfwbs without copying them.
     size_t nthreads = _nthreads;
     nthreads = (nthreads < kMaxThreads) ? nthreads : kMaxThreads;
-    DBGF(cBRN "NVX-RT: collected information from %zu thread(s)" cRST,
-         nthreads);
 
     for (size_t tid = 0; tid < nthreads; ++tid) {
       auto &stores = _nvstores[tid];
