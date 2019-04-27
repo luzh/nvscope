@@ -198,12 +198,6 @@ public:
   /* Save CLFLUSH(OPT) or CLWB operations. */
   void SaveCLfwb(uintptr_t addr, char *func, char *file, int line);
 
-  /* Fill unflushed store ranges and save them in dirty_ranges. */
-  void FindDirtyRanges(StoreInfo &store, std::vector<CLfwbInfo> &nvclfwbs,
-                       DirtyRanges &dirty_ranges);
-
-  /* Generate the next test case. */
-  bool NextReorder(std::vector<StoreInfo> &nvstores);
   /* Perform analysis for insights. */
   void CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
                     char *func, char *file, int line);
@@ -264,6 +258,14 @@ private:
   std::vector<StoreInfo> _nvstores[MAX_THREADS];
   std::vector<CLfwbInfo> _nvclfwbs[MAX_THREADS];
   std::vector<StoreInfo> _dirty_stores;
+
+  /* Fill unflushed store ranges and save them in dirty_ranges. */
+  static void FindDirtyRanges(StoreInfo &store,
+                              std::vector<CLfwbInfo> &nvclfwbs,
+                              DirtyRanges &dirty_ranges);
+
+  /* Generate the next test case. */
+  static bool NextReorder(std::vector<StoreInfo> &nvstores);
 }; // class NVXRuntime
 
 } // namespace __nvx

@@ -15,11 +15,10 @@ void StoreInfo::PrintStoreData(size_t bytes) {
 
   auto print_bytes = [size, skip](uintptr_t lineaddr, const byte_t *data,
                                   const std::string &title) {
-    SAYF(cBLU "-- %8s ---.\n" cRST, title.c_str());
-    SAYF(cBLU "%s 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n" cRST,
-         "    Address     |");
+    SAYF(cBLU " %15s | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n" cRST,
+         title.c_str());
     if (skip > 0) {
-      SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
+      SAYF("  %p |", reinterpret_cast<void *>(lineaddr));
       for (size_t i = 0; i < skip; ++i) {
         SAYF("   ");
       }
@@ -27,7 +26,7 @@ void StoreInfo::PrintStoreData(size_t bytes) {
     }
     for (size_t i = skip; i < size + skip; ++i) {
       if (i % 16 == 0) {
-        SAYF(" %p |", reinterpret_cast<void *>(lineaddr));
+        SAYF("  %p |", reinterpret_cast<void *>(lineaddr));
         lineaddr += 16;
       }
       SAYF(" %02X%s", data[i - skip] & 0xFFU, ((i + 1) % 16 ? "" : "\n"));
@@ -38,10 +37,10 @@ void StoreInfo::PrintStoreData(size_t bytes) {
   };
 
   auto olddata = _extbuf ? _extbuf->_data + _offset : _intbuf + _offset;
-  print_bytes(lineaddr, olddata, "Old Bytes");
+  print_bytes(lineaddr, olddata, "Snapshot Bytes");
 
   auto newdata = reinterpret_cast<byte_t *>(_start);
-  print_bytes(lineaddr, newdata, "New Bytes");
+  print_bytes(lineaddr, newdata, "Current Bytes");
 
   SAYF("-----------------------------------------------------------------\n");
 }
@@ -175,7 +174,7 @@ void NVXRuntime::SaveStore(uintptr_t addr, size_t size, char *func, char *file,
   assert(tid < MAX_THREADS);
   std::shared_lock savelock(_nvxlock);
   auto &nvstore = _nvstores[tid];
-  nvstore.emplace_back(time, tid, addr, addr + size, func, file, line);
+  nvstore.emplace_back(tid, time, addr, addr + size, func, file, line);
 }
 
 void NVXRuntime::SaveCLfwb(uintptr_t addr, char *func, char *file, int line) {
@@ -188,7 +187,7 @@ void NVXRuntime::SaveCLfwb(uintptr_t addr, char *func, char *file, int line) {
   assert(tid < MAX_THREADS);
   std::shared_lock savelock(_nvxlock);
   auto &nvclfwb = _nvclfwbs[tid];
-  nvclfwb.emplace_back(time, tid, addr, func, file, line);
+  nvclfwb.emplace_back(tid, time, addr, func, file, line);
 }
 
 void NVXRuntime::PrintStoreInfoVec(std::vector<StoreInfo> &stores,
@@ -196,8 +195,8 @@ void NVXRuntime::PrintStoreInfoVec(std::vector<StoreInfo> &stores,
   size_t count = 0;
 
   for (auto &store : stores) {
-    DBGF("StoreInfo[%zu]: [%s() at %s:%4d], start from %p size %zu", count,
-         store._func, store._file, store._linenr,
+    DBGF("StoreInfo[%zu]: [%s() at %s: %d] thread #%zu start from %p size %zu",
+         count, store._func, store._file, store._linenr, store._tid,
          reinterpret_cast<void *>(store._start), store._end - store._start);
     store.PrintStoreData(bytes);
     if (0 < nstores && nstores <= ++count)
@@ -270,12 +269,12 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
     return;
 
 #ifdef NVX_DEBUG
-  DBGF(cCYA "--- NVX-RT collected stores (...) in epoch #%zu ---" cRST, epoch);
-  PrintStoreInfoVec(_nvstores, _nvstores.size(), 32);
-  DBGF(cCYA "--- NVX-RT collected stores (***) in epoch #%zu ---" cRST, epoch);
+  DBGF(cCYA "NVX-RT: collected stores in epoch #%zu >>>>>" cRST, epoch);
+  PrintStoreInfoVec(nvstores, nvstores.size(), 32);
+  DBGF(cCYA "NVX-RT: collected stores in epoch #%zu <<<<<" cRST, epoch);
 #endif
 
-  DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s:%4d]", epoch, func,
+  DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s: %d]", epoch, func,
        file, line);
 
   while (NextReorder(nvstores)) {
@@ -286,7 +285,7 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
     if (command == MSG_SHOW_BUG_AND_CONTINUE ||
         command == MSG_SHOW_BUG_AND_EXIT) {
       SAYF("\n" cLRD "[-] Store Races:" cRST
-           " in epoch #%zu [%s() at %s:%4d]\n",
+           " in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
       ERRF("NVX-RT needs a patch to report details of this store race due to "
            "possible missing sfences.\n");
@@ -374,9 +373,9 @@ void NVXRuntime::CheckDirtyStores(uint64_t epoch,
     if (!dirty_ranges.empty()) {
       report = true;
       SAYF("\n" cLRD "[-] Dirty Stores:" cRST
-           " in epoch #%zu [%s() at %s:%4d]\n",
+           " in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
-      ERRF("store size %zu made by [%s() at %s:%4d] has unflushed ranges:",
+      ERRF("store size %zu made by [%s() at %s: %d] has unflushed ranges:",
            sti->_end - sti->_start, sti->_func, sti->_file, sti->_linenr);
     }
 
@@ -419,7 +418,7 @@ void NVXRuntime::CheckMissingFence(uint64_t epoch, char *func, char *file,
   if (!missing)
     return;
 
-  SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s:%4d]\n",
+  SAYF("\n" cLRD "[-] Missing SFence:" cRST " in epoch #%zu [%s() at %s: %d]\n",
        epoch, func, file, line);
 
   ERRF("Probably an sfence is missing because there are pending stores that "
@@ -446,6 +445,9 @@ void NVXRuntime::Check(uint64_t epoch, uint32_t flags, char *func, char *file,
     // and _nvclfwbs without copying them.
     size_t nthreads = _nthreads;
     nthreads = (nthreads < MAX_THREADS) ? nthreads : MAX_THREADS;
+    DBGF(cBRN "NVX-RT: collected information from %zu thread(s)" cRST,
+         nthreads);
+
     for (size_t tid = 0; tid < nthreads; ++tid) {
       auto &stores = _nvstores[tid];
       nvstores.insert(nvstores.end(), stores.begin(), stores.end());

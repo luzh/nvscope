@@ -166,7 +166,7 @@ __attribute__((constructor(NVX_INIT_PRIO))) void __nvx_init() {
 
 extern "C" void __nvx_store(void *ptr, size_t size, char *func, char *file,
                             int line) {
-  MUTEF("NVX-RT: [%s() at %s:%4d]: STORE to %p size %lu", func, file, line, ptr,
+  MUTEF("NVX-RT: [%s() at %s: %d]: STORE to %p size %lu", func, file, line, ptr,
         size);
 
   if (!nvxrt || !nvxrt->Enabled() || !nvxrt->StoreInRange(ptr, size))
@@ -194,7 +194,7 @@ extern "C" void *__nvx_mmap(void *addr, size_t size, int prot, int flags,
 
   /* TODO: Save the mapped address and size for store range checking. */
 
-  DBGF("NVX-RT: [%s() at %s:%4d]: MMAP addr %p size %lu", func, file, line,
+  DBGF("NVX-RT: [%s() at %s: %d]: MMAP addr %p size %lu", func, file, line,
        pmap, size);
 
   if (!nvxrt || !nvxrt->Enabled())
@@ -208,7 +208,7 @@ extern "C" void *__nvx_mmap(void *addr, size_t size, int prot, int flags,
 extern "C" void __nvx_clwb(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  MUTEF("NVX-RT: [%s() at %s:%4d]: CLWB addr %p cache line %p", func, file,
+  MUTEF("NVX-RT: [%s() at %s: %d]: CLWB addr %p cache line %p", func, file,
         line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvxrt || !nvxrt->Enabled())
@@ -220,7 +220,7 @@ extern "C" void __nvx_clwb(void *ptr, char *func, char *file, int line) {
 extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  MUTEF("NVX-RT: [%s() at %s:%4d]: CLFLUSHOPT addr %p cache line %p", func,
+  MUTEF("NVX-RT: [%s() at %s: %d]: CLFLUSHOPT addr %p cache line %p", func,
         file, line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvxrt || !nvxrt->Enabled())
@@ -232,7 +232,7 @@ extern "C" void __nvx_clflushopt(void *ptr, char *func, char *file, int line) {
 extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
 
-  MUTEF("NVX-RT: [%s() at %s:%4d]: CLFLUSH addr %p cache line %p", epoch, func,
+  MUTEF("NVX-RT: [%s() at %s: %d]: CLFLUSH addr %p cache line %p", epoch, func,
         file, line, ptr, reinterpret_cast<void *>(cache_addr_of(addr)));
 
   if (!nvxrt || !nvxrt->Enabled())
@@ -248,7 +248,7 @@ extern "C" void __nvx_clflush(void *ptr, char *func, char *file, int line) {
 }
 
 extern "C" void __nvx_sfence(char *func, char *file, int line) {
-  MUTEF("NVX-RT: [%s() at %s:%4d]: SFENCE", func, file, line);
+  MUTEF("NVX-RT: [%s() at %s: %d]: SFENCE", func, file, line);
 
   if (!nvxrt || !nvxrt->Enabled())
     return;
