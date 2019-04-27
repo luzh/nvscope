@@ -269,9 +269,12 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
     return;
 
 #ifdef NVX_DEBUG
-  DBGF(cCYA "NVX-RT: collected stores in epoch #%zu >>>>>" cRST, epoch);
-  PrintStoreInfoVec(nvstores, nvstores.size(), 32);
-  DBGF(cCYA "NVX-RT: collected stores in epoch #%zu <<<<<" cRST, epoch);
+  size_t nstores = nvstores.size();
+  DBGF(cCYA "NVX-RT: >>>>> collected %zu store(s) in epoch #%zu" cRST, nstores,
+       epoch);
+  PrintStoreInfoVec(nvstores, nstores, 32);
+  DBGF(cCYA "NVX-RT: <<<<< collected %zu store(s) in epoch #%zu" cRST, nstores,
+       epoch);
 #endif
 
   DBGF("NVX-RT: reordering stores at sfence #%zu [%s() at %s: %d]", epoch, func,
@@ -284,8 +287,7 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
 
     if (command == MSG_SHOW_BUG_AND_CONTINUE ||
         command == MSG_SHOW_BUG_AND_EXIT) {
-      SAYF("\n" cLRD "[-] Store Race:" cRST
-           " in epoch #%zu [%s() at %s: %d]\n",
+      SAYF("\n" cLRD "[-] Store Race:" cRST " in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
       ERRF("NVX-RT needs a patch to report details of this store race due to "
            "possible missing sfences.\n");

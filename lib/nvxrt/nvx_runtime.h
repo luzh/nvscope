@@ -237,7 +237,7 @@ public:
       Check(epoch, kCheckMissingFence | kCheckDirtyStores, func, file, line);
     }
 
-    OKF("NVX-RT: NVX runtime destructed");
+    DBGF("NVX-RT: NVX runtime destructed");
   }
 
 private:
