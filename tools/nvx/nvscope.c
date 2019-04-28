@@ -351,7 +351,7 @@ static void show_progress(size_t testid) {
 
 int main(int argc, char **argv) {
   COMPILE_ERROR_ON(sizeof(struct NvxTargetConfig) != CLSIZE);
-  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvx_config, mainproc)));
+  COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct NvxConfig, mainproc)));
 
   if (argc < 5)
     FATAL("NVSope usage: %s --nvs-mainproc <mainproc and args> --nvs-recovery "
