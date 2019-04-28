@@ -24,32 +24,32 @@ static void __nvx_setup_shm() {
 
     void *shm_base = shmat(shmid, nullptr, 0);
     if (shm_base == reinterpret_cast<void *>(-1))
-      exit(NVX_EXIT_BAD_SHM);
+      exit(kNvxExitBadShm);
 
-    auto *config = (struct nvx_config *)(shm_base);
+    auto *config = (struct NvxConfig *)(shm_base);
 
     /* should be initialized by parent (nvscope) */
     if (!config->initialized) {
       ERRF("NVX-RT: config region not initialized");
-      exit(NVX_EXIT_BAD_SHM);
+      exit(kNvxExitBadShm);
     }
 
-    struct nvx_target_config *tgconf = nullptr;
-    if (config->target_type == TYPE_MAINPROC) {
+    struct NvxTargetConfig *tgconf = nullptr;
+    if (config->target_type == kNvxTargetMainProc) {
       tgconf = &config->mainproc;
       OKF("NVX-RT: target mainproc attached to shared memory");
-    } else if (config->target_type == TYPE_RECOVERY) {
+    } else if (config->target_type == kNvxTargetRecovery) {
       tgconf = &config->recovery;
       OKF("NVX-RT: target recovery attached to shared memory");
     } else {
       ERRF("NVX-RT: invalid target type");
-      exit(NVX_EXIT_BAD_CONFIG);
+      exit(kNvxExitBadConfig);
     }
 
     nvxrt = std::make_unique<NVXRuntime>(shm_base, tgconf);
     if (!nvxrt) {
       ERRF("NVX-RT: creating NVX runtime failed");
-      exit(NVX_EXIT_BAD_CONFIG);
+      exit(kNvxExitBadConfig);
     }
   } else {
     WARNF("NVX-RT: running instrumented binary but NVX runtime disabled");
@@ -61,23 +61,23 @@ static void __nvx_setup_shm() {
  */
 static void __start_forkserver() {
   /* initial communication with nvscope */
-  nvxrt->SendMessage(MSG_FORKSERVER_HELLO);
+  nvxrt->SendMessage(kNvxMsgForkServerHello);
 
   while (true) {
-    nvxrt->SendMessage(MSG_FORKSERVER_READY);
+    nvxrt->SendMessage(kNvxMsgForkServerReady);
 
-    enum nvx_message command = nvxrt->ReadMessage();
+    enum NvxMessage command = nvxrt->ReadMessage();
 
-    if (command == MSG_EXIT_FORKSERVER) {
+    if (command == kNvxMsgExitForkServer) {
       ACTF("NVX-RT: forkserver received command to exit");
       nvxrt->CloseChannels();
       /* If nvxrt was created by new: delete nvxrt; */
       exit(EXIT_SUCCESS);
     }
 
-    if (command != MSG_FORK_AND_RUN) {
+    if (command != kNvxMsgForkAndRun) {
       ERRF("NVX-RT: received inappropriate message %d", command);
-      exit(NVX_EXIT_BAD_MSG);
+      exit(kNvxExitBadMsg);
     }
 
     pid_t cpid = fork();
@@ -107,7 +107,7 @@ static void __start_forkserver() {
        */
 
       nvxrt->SetTargetPid(getpid());
-      nvxrt->SendMessage(MSG_TARGET_STARTED);
+      nvxrt->SendMessage(kNvxMsgTargetStarted);
 
       return; // execute the target progrm, e.g. from main().
     }
@@ -131,7 +131,7 @@ static void __start_forkserver() {
     }
 
     nvxrt->SetTargetStatus(status);
-    nvxrt->SendMessage(MSG_TARGET_EXITED);
+    nvxrt->SendMessage(kNvxMsgTargetExited);
   }
 }
 

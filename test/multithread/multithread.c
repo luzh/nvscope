@@ -25,7 +25,7 @@ void *case1func2(void *arg) {
 
 static int case1(void *pmem) {
   uint64_t *pval1 = (uint64_t *)pmem;
-  uint64_t *pval2 = (uint64_t *)pmem + 10;;
+  uint64_t *pval2 = (uint64_t *)pmem + 10;
   *pval1 = 0;
   *pval2 = 0;
   clflush(pval1);
@@ -58,7 +58,8 @@ void *case2func2(void *pmem) {
   volatile uint64_t *pval1 = (uint64_t *)pmem;
   uint64_t *pval2 = (uint64_t *)pmem + 10;
 
-  while (*pval1 != 0xAA) {}
+  while (*pval1 != 0xAA) {
+  }
 
   *pval2 = 0xBB;
   clwb(pval2);
@@ -98,7 +99,7 @@ static int check1(void *pmem) {
 
 static int check2(void *pmem) {
   uint64_t *pval1 = (uint64_t *)pmem;
-  uint64_t *pval2 = (uint64_t *)pmem + 10;;
+  uint64_t *pval2 = (uint64_t *)pmem + 10;
 
   if (*pval2 == 0xBB && *pval1 != 0xAA)
     return 1;

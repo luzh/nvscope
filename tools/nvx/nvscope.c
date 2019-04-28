@@ -22,13 +22,13 @@ static char clockchars[4] = {'|', '/', '-', '\\'};
  *
  * Now we use pipes. It is possible to change them to use other mechanisms.
  */
-static inline void send_message(int channel, enum nvx_message msg) {
+static inline void send_message(int channel, enum NvxMessage msg) {
   if (write(channel, &msg, sizeof(msg)) != sizeof(msg))
     PFATAL("NVScope: write() to channel %d failed", channel);
 }
 
-static inline enum nvx_message read_message(int channel) {
-  enum nvx_message msg;
+static inline enum NvxMessage read_message(int channel) {
+  enum NvxMessage msg;
   if (read(channel, &msg, sizeof(msg)) != sizeof(msg))
     PFATAL("NVScope: read() from channel %d failed", channel);
   return msg;
@@ -259,7 +259,7 @@ static void setup_shm(void) {
  * through a pipe. The other part of this logic is in lib/nvxrt/nvxrt.c.
  */
 static pid_t start_forkserver(char *target, char **target_argv,
-                              struct nvx_target_config *target_conf,
+                              struct NvxTargetConfig *target_conf,
                               int *parent_read_fd, int *parent_write_fd) {
   int info_fds[2], ctrl_fds[2];
 
@@ -316,7 +316,7 @@ static pid_t start_forkserver(char *target, char **target_argv,
    * If we have ready message from the forkserver, we're all set. Otherwise,
    * try to figure out what went wrong with waitpid().
    */
-  if (read_message(*parent_read_fd) == MSG_FORKSERVER_HELLO) {
+  if (read_message(*parent_read_fd) == kNvxMsgForkServerHello) {
     OKF("NVScope: target program's forkserver is up, pid %u", fksv_pid);
     target_conf->fksv_pid = fksv_pid;
     return fksv_pid;
@@ -350,7 +350,7 @@ static void show_progress(size_t testid) {
 }
 
 int main(int argc, char **argv) {
-  COMPILE_ERROR_ON(sizeof(struct nvx_target_config) != CLSIZE);
+  COMPILE_ERROR_ON(sizeof(struct NvxTargetConfig) != CLSIZE);
   COMPILE_ERROR_ON(!ALIGNED_CL(OFFSETOF(struct nvx_config, mainproc)));
 
   if (argc < 5)
@@ -394,24 +394,26 @@ int main(int argc, char **argv) {
 
   setup_shm();
 
-  struct nvx_config *config = (struct nvx_config *)(shm_base);
+  struct NvxConfig *config = (struct NvxConfig *)(shm_base);
   config->initialized = 1;
 
-  struct nvx_target_config *tgconf_main = &config->mainproc;
-  struct nvx_target_config *tgconf_reco = &config->recovery;
+  struct NvxTargetConfig *tgconf_main = &config->mainproc;
+  struct NvxTargetConfig *tgconf_reco = &config->recovery;
 
   int main_ctrl_fd, main_info_fd; // mainproc control pipes
   int reco_ctrl_fd, reco_info_fd; // recovery control pipes
 
   ACTF("NVScope: spinning up the forkserver for mainproc...");
-  config->target_type = TYPE_MAINPROC; // must set before start_forkserver()
+  config->target_type =
+      kNvxTargetMainProc; // must set before start_forkserver()
   pid_t main_fksv_pid = start_forkserver(mainproc, mainproc_argv, tgconf_main,
                                          &main_info_fd, &main_ctrl_fd);
   if (main_fksv_pid < 0)
     FATAL("NVScope: mainproc's forkserver failed to start");
 
   ACTF("NVScope: spinning up the forkserver for recovery...");
-  config->target_type = TYPE_RECOVERY; // must set before start_forkserver()
+  config->target_type =
+      kNvxTargetRecovery; // must set before start_forkserver()
   pid_t reco_fksv_pid = start_forkserver(recovery, recovery_argv, tgconf_reco,
                                          &reco_info_fd, &reco_ctrl_fd);
   if (reco_fksv_pid < 0)
@@ -420,7 +422,7 @@ int main(int argc, char **argv) {
   int fatal = 0, stop = 0;
   int status, bug = 0;
   uint64_t testcases = 0;
-  enum nvx_message main_info, main_ctrl, reco_info;
+  enum NvxMessage main_info, main_ctrl, reco_info;
 
   /* testing mainproc but not recovery */
   tgconf_main->enabled = 1;
@@ -436,29 +438,29 @@ int main(int argc, char **argv) {
     main_info = read_message(main_info_fd);
 
     switch (main_info) {
-    case MSG_FORKSERVER_READY:
-      send_message(main_ctrl_fd, MSG_FORK_AND_RUN);
+    case kNvxMsgForkServerReady:
+      send_message(main_ctrl_fd, kNvxMsgForkAndRun);
       break;
-    case MSG_TARGET_STARTED:
+    case kNvxMsgTargetStarted:
       DBGF("NVScope: target process started, pid %d", tgconf_main->pid);
       break;
-    case MSG_AWAITING_CHECK:
+    case kNvxMsgAwaitChecking:
       DBGF("NVScope: mainproc requested to run recovery and checking");
 
       ++testcases;
       show_progress(testcases);
 
       reco_info = read_message(reco_info_fd);
-      if (reco_info != MSG_FORKSERVER_READY) {
+      if (reco_info != kNvxMsgForkServerReady) {
         ERRF("NVScope: received inappropriate message %d", reco_info);
         fatal = 1;
         break;
       }
 
-      send_message(reco_ctrl_fd, MSG_FORK_AND_RUN);
+      send_message(reco_ctrl_fd, kNvxMsgForkAndRun);
 
       reco_info = read_message(reco_info_fd);
-      if (reco_info != MSG_TARGET_STARTED) {
+      if (reco_info != kNvxMsgTargetStarted) {
         ERRF("NVScope: received inappropriate message %d", reco_info);
         fatal = 1;
         break;
@@ -466,7 +468,7 @@ int main(int argc, char **argv) {
       DBGF("NVScope: recovery process started, pid %d", tgconf_reco->pid);
 
       reco_info = read_message(reco_info_fd);
-      if (reco_info != MSG_TARGET_EXITED) {
+      if (reco_info != kNvxMsgTargetExited) {
         ERRF("NVScope: received inappropriate message %d", reco_info);
         fatal = 1;
         break;
@@ -477,17 +479,17 @@ int main(int argc, char **argv) {
        * TODO: Add an environment variable to control whether to exit or not.
        * main_ctrl = bug ? MSG_SHOW_BUG_AND_EXIT : MSG_CONTINUE_TO_RUN;
        */
-      main_ctrl = bug ? MSG_SHOW_BUG_AND_CONTINUE : MSG_CONTINUE_TO_RUN;
+      main_ctrl = bug ? kNvxMsgShowBugAndContinue : kNvxMsgContinue;
       send_message(main_ctrl_fd, main_ctrl);
       break;
-    case MSG_TARGET_EXITED:
+    case kNvxMsgTargetExited:
       if (testcases > 0)
         SAYF("\n");
       check_status(tgconf_main->status, tgconf_main->pid, "mainproc");
       ACTF("NVScope: terminiating the mainproc forkserver...");
-      send_message(main_ctrl_fd, MSG_EXIT_FORKSERVER);
+      send_message(main_ctrl_fd, kNvxMsgExitForkServer);
       ACTF("NVScope: terminiating the recovery forkserver...");
-      send_message(reco_ctrl_fd, MSG_EXIT_FORKSERVER);
+      send_message(reco_ctrl_fd, kNvxMsgExitForkServer);
       stop = 1; // can restart the mainproc process
       break;
     default:

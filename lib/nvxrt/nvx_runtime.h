@@ -182,8 +182,8 @@ public:
   void SetTargetStatus(int st) { _tgconfig->status = st; }
 
   /* Communication methods. */
-  enum nvx_message ReadMessage() const;
-  void SendMessage(enum nvx_message msg) const;
+  enum NvxMessage ReadMessage() const;
+  void SendMessage(enum NvxMessage msg) const;
   void SendAnyData(void *data, ssize_t len) const;
   void CloseChannels() const;
 
@@ -215,13 +215,13 @@ public:
   void PrintStoreInfoVec(std::vector<StoreInfo> &stores, size_t nstores,
                          size_t bytes) const;
 
-  NVXRuntime(void *_shm, struct nvx_target_config *tgconf)
+  NVXRuntime(void *_shm, struct NvxTargetConfig *tgconf)
       : _shm_base(_shm), _tgconfig(tgconf), _time(0), _epoch(0), _nthreads(0) {
     if (_shm_base) {
       OKF("NVX-RT: NVX runtime constructed");
     } else {
       ERRF("NVX-RT: invalid shared memory address");
-      exit(NVX_EXIT_BAD_SHM);
+      exit(kNvxExitBadShm);
     }
   }
 
@@ -243,7 +243,7 @@ public:
 
 private:
   void *_shm_base;
-  struct nvx_target_config *_tgconfig;
+  struct NvxTargetConfig *_tgconfig;
 
   /* timestamp, shared between threads */
   std::atomic_uint64_t _time;

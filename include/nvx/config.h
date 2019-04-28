@@ -24,38 +24,38 @@
 
 #define NVX_ENV_SHM "__NVX_SHM_ID"
 
-enum nvx_message {
-  MSG_INVALID = 0,
+enum NvxMessage {
+  kNvxMsgInvalid = 0,
 
   /* Control commands: nvscope telling target */
-  MSG_FORK_AND_RUN,
-  MSG_CONTINUE_TO_RUN,
-  MSG_SHOW_BUG_AND_EXIT,
-  MSG_SHOW_BUG_AND_CONTINUE,
-  MSG_EXIT_FORKSERVER,
+  kNvxMsgForkAndRun,
+  kNvxMsgContinue,
+  kNvxMsgShowBugAndExit,
+  kNvxMsgShowBugAndContinue,
+  kNvxMsgExitForkServer,
 
   /* Information: target telling nvscope */
-  MSG_FORKSERVER_HELLO,
-  MSG_FORKSERVER_READY,
-  MSG_AWAITING_CHECK,
+  kNvxMsgForkServerHello,
+  kNvxMsgForkServerReady,
+  kNvxMsgAwaitChecking,
   /* Information with payload */
-  MSG_TARGET_STARTED,
-  MSG_TARGET_EXITED,
+  kNvxMsgTargetStarted,
+  kNvxMsgTargetExited,
 
-  NVX_PIPE_MSG_MAX
+  kNvxNumMessages
 };
 
-enum nvx_excode {
-  NVX_EXIT_SUCCESS = 0,
-  NVX_EXIT_BAD_SHM,
-  NVX_EXIT_BAD_MSG,
-  NVX_EXIT_BAD_CONFIG,
-  NVX_EXIT_FOUNDBUG
+enum NvxExitCode {
+  kNvxExitOK = 0,
+  kNvxExitBadShm,
+  kNvxExitBadMsg,
+  kNvxExitBadConfig,
+  kNvxExitFoundBug
 };
 
-enum nvx_target_type { TYPE_MAINPROC = 0, TYPE_RECOVERY };
+enum NvxTargetType { kNvxTargetMainProc = 0, kNvxTargetRecovery };
 
-struct nvx_target_config {
+struct NvxTargetConfig {
   int enabled;      // if nvx run-time is enabled
   pid_t pid;        // target process pid
   int status;       // target process status
@@ -65,12 +65,12 @@ struct nvx_target_config {
   int reserved[10]; // pack to whole cache lines
 } __attribute__((packed));
 
-struct nvx_config {
+struct NvxConfig {
   int initialized;
-  enum nvx_target_type target_type;
+  enum NvxTargetType target_type;
   int reserved[14]; // pack to whole cache lines
-  struct nvx_target_config mainproc;
-  struct nvx_target_config recovery;
+  struct NvxTargetConfig mainproc;
+  struct NvxTargetConfig recovery;
 } __attribute__((packed));
 
 #endif // NVX_CONFIG_H_

@@ -133,8 +133,8 @@ bool NVXRuntime::StoreInRange(void *ptr, size_t size) {
                      });
 }
 
-enum nvx_message NVXRuntime::ReadMessage() const {
-  enum nvx_message msg;
+enum NvxMessage NVXRuntime::ReadMessage() const {
+  enum NvxMessage msg;
   if (read(_tgconfig->read_fd, &msg, sizeof(msg)) != sizeof(msg)) {
     ERRF("NVX-RT: read() from fd %d failed", _tgconfig->read_fd);
     exit(EXIT_FAILURE);
@@ -142,7 +142,7 @@ enum nvx_message NVXRuntime::ReadMessage() const {
   return msg;
 }
 
-void NVXRuntime::SendMessage(enum nvx_message msg) const {
+void NVXRuntime::SendMessage(enum NvxMessage msg) const {
   if (write(_tgconfig->write_fd, &msg, sizeof(msg)) != sizeof(msg)) {
     ERRF("NVX-RT: write() to fd %d failed", _tgconfig->write_fd);
     exit(EXIT_FAILURE);
@@ -286,24 +286,24 @@ void NVXRuntime::CheckReorder(uint64_t epoch, std::vector<StoreInfo> &nvstores,
        file, line);
 
   while (NextReorder(nvstores)) {
-    SendMessage(MSG_AWAITING_CHECK);
+    SendMessage(kNvxMsgAwaitChecking);
 
-    enum nvx_message command = ReadMessage();
+    enum NvxMessage command = ReadMessage();
 
-    if (command == MSG_SHOW_BUG_AND_CONTINUE ||
-        command == MSG_SHOW_BUG_AND_EXIT) {
+    if (command == kNvxMsgShowBugAndContinue ||
+        command == kNvxMsgShowBugAndExit) {
       SAYF("\n" cLRD "[-] Store Race:" cRST
            " found in epoch #%zu [%s() at %s: %d]\n",
            epoch, func, file, line);
       ERRF("NVX-RT needs a patch to report details of this store race due to "
            "possible missing sfences.\n");
 
-      if (command == MSG_SHOW_BUG_AND_EXIT)
-        exit(NVX_EXIT_FOUNDBUG);
+      if (command == kNvxMsgShowBugAndExit)
+        exit(kNvxExitFoundBug);
 
-    } else if (command != MSG_CONTINUE_TO_RUN) {
+    } else if (command != kNvxMsgContinue) {
       ERRF("NVX-RT: received inappropriate message %d", command);
-      exit(NVX_EXIT_BAD_MSG);
+      exit(kNvxExitBadMsg);
     }
   }
 }
