@@ -25,7 +25,7 @@ endif()
 list(APPEND CMAKE_PREFIX_PATH ${LLVM_INSTALL_DIR})
 
 # Require LLVM and Clang for instrumentation.
-find_package(LLVM REQUIRED CONFIG 7.0.1)
+find_package(LLVM REQUIRED CONFIG 8.0.0)
 
 # Print LLVM information.
 nvx_print("Found LLVM ${LLVM_PACKAGE_VERSION}")

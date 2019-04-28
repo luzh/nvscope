@@ -1,4 +1,4 @@
-add_llvm_loadable_module(AFLPasses AFL.cpp)
+add_llvm_library(AFLPasses MODULE AFL.cpp)
 
 target_include_directories(
   AFLPasses

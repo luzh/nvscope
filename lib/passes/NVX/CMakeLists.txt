@@ -1,4 +1,4 @@
-add_llvm_loadable_module(NVXProfiling NVXProfiling.cpp)
+add_llvm_library(NVXProfiling MODULE NVXProfiling.cpp)
 
 nvx_set_pass_properties(NVXProfiling)
 
