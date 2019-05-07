@@ -120,7 +120,11 @@ static void __start_forkserver() {
      */
 
     int status;
-    pid_t cpidw = waitpid(cpid, &status, 0);
+    pid_t cpidw = 0;
+    while (cpidw == 0) {
+      cpidw = waitpid(cpid, &status, WNOHANG);
+    }
+
     if (cpidw < 0) {
       ERRF("NVX-RT: waitpid() for %u failed", cpid);
       exit(EXIT_FAILURE);
